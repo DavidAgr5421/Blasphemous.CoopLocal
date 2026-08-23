@@ -1,0 +1,14 @@
+# Build artifacts
+bin/
+obj/
+publish/
+
+# Visual Studio / Rider local state
+.vs/
+.idea/
+*.user
+*.suo
+
+# OS cruft
+.DS_Store
+Thumbs.db
