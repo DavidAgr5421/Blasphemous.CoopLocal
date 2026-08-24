@@ -10,9 +10,13 @@ using Gameplay.GameControllers.AnimationBehaviours.Player.Crouch;
 using Gameplay.GameControllers.AnimationBehaviours.Player.Dash;
 using Gameplay.GameControllers.AnimationBehaviours.Player.Hurt;
 using Gameplay.GameControllers.AnimationBehaviours.Player.Jump;
+using Gameplay.GameControllers.AnimationBehaviours.Player.Dead;
+using Gameplay.GameControllers.AnimationBehaviours.Player.Prayer;
+using Gameplay.GameControllers.AnimationBehaviours.Player.RangeAttack;
 using Gameplay.GameControllers.AnimationBehaviours.Player.Run;
 using Gameplay.GameControllers.AnimationBehaviours.Player.SubStatesBehaviours;
 using Gameplay.GameControllers.Camera;
+using Gameplay.GameControllers.Effects.Player.Recolor;
 using Gameplay.GameControllers.Entities;
 using Gameplay.GameControllers.Enemies.Framework.Attack;
 using Gameplay.GameControllers.Environment.AreaEffects;
@@ -32,51 +36,548 @@ using UnityEngine.UI;
 
 namespace Blasphemous.CoopLocal;
 
-// P2's key scheme - centralized here so every patch below reads Player2Keys.Xxx instead of a
-// hardcoded KeyCode, making it a one-place change if it ever needs remapping again.
-//
-// History: briefly moved entirely onto the numpad (4/6/2/8 + corners + 0) on the theory that
-// P1's real Rewired bindings overlapped with P2's original arrow-keys assignment - reverted back
-// to arrow keys at the time because (a) the numpad turned out to be bound to manual CAMERA PAN
-// instead (a *different* real conflict), and (b) the freeze bug under investigation at the time
-// persisted unchanged either way, proving key overlap wasn't its cause (that freeze had a
-// completely separate, since-fixed root cause - see BlockerOverrideHelper).
-//
-// Round 28 dug up a *different*, confirmed-real instance of the same key-overlap family: with P1
-// dashing on repeat (holding the dash button), pressing P2's own move/crouch/jump keys (all on
-// arrows + Right Control) reliably cancels P1's dash mid-repeat. The fix at the time was to move
-// P2 entirely onto the numpad (movement on 4/6/2/8, jump on 0, Dash/Attack/Parry on Right
-// Shift/Period/Minus) plus CameraPan_Disable_Patch below (the numpad's directional keys collide
-// with the game's built-in manual camera pan otherwise).
-//
-// That numpad-only scheme turned out to have its own, worse cross-talk: with P1 dashing and the
-// dash button held, P2 couldn't attack or parry at all, P2's own dash key made it crouch instead,
-// and P2 moving/jumping made P1 stop being able to dash even while its button stayed held. Reverted
-// back to arrows for movement (accepting the round-28 dash-cancel overlap as the lesser bug) with
-// jump/attack/parry moved to Keypad0/1/2 (Dash stayed on Right Control) - which turned out to
-// still be broken, just differently: raw [DashParryDebug] logging (round 29) showed the *bare
-// keypress itself* misbehaving on Keypad0/1 while P1 held its own dash button (Left Shift) -
-// Keypad0 (Jump)/Keypad1 (Attack) simply stopped registering, while Keypad2 (Parry) kept
-// registering but got read as P2's *Down/crouch* key instead of Parry. That specific pairing -
-// numpad digit silently aliasing to the same signal as an arrow key - is the classic symptom of
-// NumLock being off: with NumLock off, the physical numpad sends the same virtual keys as the
-// navigation cluster (Keypad2->Down, Keypad4->Left, Keypad6->Right, Keypad8->Up, Keypad0->Insert),
-// so Keypad2 became indistinguishable from Player2Keys.Down (also an arrow key) while Keypad0/1
-// (Insert/End) matched nothing this mod reads at all. Whether the root cause is really NumLock, a
-// leftover CameraPan interaction despite CameraPan_Disable_Patch, or something else, the practical
-// fix (per the user's own suggestion) is the same either way: get Attack/Parry/Jump off the
-// numpad entirely so the ambiguity can't happen, regardless of NumLock state. Dash stays on Right
-// Control (confirmed working, never implicated in any round so far).
+// P2's input mode - Keyboard or Gamepad, toggled at runtime with Player2Input.ToggleKey (F9)
+// instead of being fixed at compile time, since not everyone testing this has a second
+// controller plugged in at all times. Round 32 tried auto-detecting this from which device P1
+// was actively using; the user asked for that removed in favour of an explicit, user-driven
+// choice instead - this is the "button to pick a mapping" version of that, just a keybind
+// rather than a clickable menu for now (this mod has no Canvas/uGUI infrastructure at all yet -
+// only world-space TextMesh labels - and no way to visually iterate on a real settings screen in
+// the environment this was built in; a proper clickable UI is still on the table if the hotkey
+// version doesn't cut it). Player2ModeIndicator shows the active mode as on-screen text so it
+// doesn't have to be guessed from feel alone.
+internal enum Player2InputMode
+{
+    Keyboard,
+    Gamepad,
+}
+
+// Round 34: confirmed by the user that in Keyboard mode, P2 owns the *entire* keyboard now (not
+// just arrows) - P1 no longer reads any keyboard input at all in this mode (see Player2Input's
+// exclusivity section), so there's nothing left to share keys with. WASD for movement, matching
+// the layout the user asked for; Attack/Parry/Jump/Dash on K/J/Space/LeftShift. Round 35 added
+// Heal/Interact/Menu/PrayerActivate on R/E/I/U per the user's own explicit list.
 internal static class Player2Keys
 {
-    internal const KeyCode Left = KeyCode.LeftArrow;
-    internal const KeyCode Right = KeyCode.RightArrow;
-    internal const KeyCode Down = KeyCode.DownArrow;
-    internal const KeyCode Up = KeyCode.UpArrow;
-    internal const KeyCode Jump = KeyCode.RightShift;
-    internal const KeyCode Dash = KeyCode.RightControl;
-    internal const KeyCode Attack = KeyCode.LeftBracket;
-    internal const KeyCode Parry = KeyCode.RightBracket;
+    internal const KeyCode Left = KeyCode.A;
+    internal const KeyCode Right = KeyCode.D;
+    internal const KeyCode Down = KeyCode.S;
+    internal const KeyCode Up = KeyCode.W;
+    internal const KeyCode Jump = KeyCode.Space;
+    internal const KeyCode Dash = KeyCode.LeftShift;
+    internal const KeyCode Attack = KeyCode.K;
+    internal const KeyCode Parry = KeyCode.J;
+    internal const KeyCode Heal = KeyCode.R;
+    internal const KeyCode Interact = KeyCode.E;
+    internal const KeyCode Menu = KeyCode.I;
+    // Round 46: moved from U to Q per explicit user request - U is being kept free for something
+    // planned later, not yet assigned to anything.
+    internal const KeyCode PrayerActivate = KeyCode.Q;
+}
+
+// P2's fixed gamepad scheme, active whenever Player2Input.Mode == Gamepad. Reads a physical
+// gamepad directly through Rewired's own Controller/Joystick API - the same backend
+// "Xinput1_4.dll" in the BepInEx log confirms this game already relies on for gamepad input -
+// rather than Unity's legacy Input class, whose virtual "Horizontal"/"Vertical" axes can
+// silently also read the keyboard depending on this project's Input Manager config (unverified,
+// and not worth the risk of reintroducing keyboard/gamepad cross-talk).
+//
+// Round 34 confirmed raw button INDICES (0=Jump, 1=Dash, 2=Attack, 3=Parry) worked. Round 36:
+// the user then reported Dash/Parry firing off different physical buttons (Y/B) than before
+// (Right Trigger/Left Bumper) with no code change to those indices in between - meaning the raw
+// index-to-physical-button order isn't stable across sessions for this pad (likely Steam Input's
+// virtual layer, or plain OS/driver re-enumeration on reconnect). Buttons are now resolved by
+// their Rewired-assigned NAME instead (e.g. "Right Trigger") via
+// GetButtonById/GetButtonDownById/GetButtonUpById - a stable id tied to the named element rather
+// than raw positional order. LogKnownButtonsOnce logs every button name this pad's Rewired
+// hardware map actually exposes (grep BepInEx/LogOutput.log for "[Player2Pad] known gamepad
+// buttons") - which turned out to be exactly: A, B, X, Y, Left/Right Shoulder, Back, Start,
+// Guide, Left/Right Stick Button, D-Pad Up/Right/Down/Left. No "Trigger" entries at all - this
+// pad's Rewired map exposes the analog triggers as AXES only, not as synthetic digital buttons,
+// which is why Dash ("Right Trigger") and PrayerActivate ("Left Trigger") kept failing to
+// resolve as buttons no matter what candidate names were tried. They're read as axes below
+// instead (ResolveAxisId, same by-name lookup, thresholded past AxisThreshold), with manual
+// edge-detection (TrackAxisEdge) since Rewired's axis API has no built-in GetAxisDownById the
+// way buttons do. Movement (left stick + d-pad, axes 0/1) is untouched - confirmed working and
+// not reported as unstable, so left on its raw indices rather than switched to name lookup too.
+internal static class Player2Pad
+{
+    private const int AxisLeftStickX = 0;
+    private const int AxisLeftStickY = 1;
+    private const float AxisThreshold = 0.5f;
+
+    internal static Rewired.Joystick Pad
+    {
+        get
+        {
+            var joysticks = Rewired.ReInput.controllers.Joysticks;
+            return joysticks.Count > 0 ? joysticks[0] : null;
+        }
+    }
+
+    // Round 46: left stick only originally - user explicitly asked for the D-Pad to also work as
+    // a fixed digital movement option alongside the analog stick, not replacing it. The pad's own
+    // "known gamepad buttons" log (confirmed earlier this session) lists "D-Pad Up/Right/Down/
+    // Left" as real button names, same by-name resolution as every other digital button here.
+    internal static bool Left => (Pad != null && Pad.GetAxis(AxisLeftStickX) <= -AxisThreshold) || ButtonHeld("D-Pad Left", "DPad Left", "Dpad Left");
+    internal static bool Right => (Pad != null && Pad.GetAxis(AxisLeftStickX) >= AxisThreshold) || ButtonHeld("D-Pad Right", "DPad Right", "Dpad Right");
+    internal static bool Up => (Pad != null && Pad.GetAxis(AxisLeftStickY) >= AxisThreshold) || ButtonHeld("D-Pad Up", "DPad Up", "Dpad Up");
+    internal static bool Down => (Pad != null && Pad.GetAxis(AxisLeftStickY) <= -AxisThreshold) || ButtonHeld("D-Pad Down", "DPad Down", "Dpad Down");
+
+    internal static bool JumpHeld => ButtonHeld("A Button", "A");
+    internal static bool AttackDown => ButtonDown("X Button", "X");
+    internal static bool AttackUp => ButtonUp("X Button", "X");
+    internal static bool ParryDown => ButtonDown("Left Bumper", "LB", "L1", "Left Shoulder");
+    internal static bool HealDown => ButtonDown("Right Bumper", "RB", "R1", "Right Shoulder");
+    internal static bool InteractDown => ButtonDown("Y Button", "Y");
+
+    internal static bool DashDown => AxisDown("DashTrigger", "Right Trigger", "RT", "R2");
+    internal static bool PrayerActivateDown => AxisDown("PrayerTrigger", "Left Trigger", "LT", "L2");
+    internal static bool PrayerActivateUp => AxisUp("PrayerTrigger", "Left Trigger", "LT", "L2");
+
+    private static readonly Dictionary<string, int> resolvedButtonIds = new Dictionary<string, int>();
+    private static readonly Dictionary<string, int> resolvedAxisIds = new Dictionary<string, int>();
+    private static readonly Dictionary<string, bool> lastAxisState = new Dictionary<string, bool>();
+    private static bool loggedKnownButtons;
+    private static bool loggedKnownAxes;
+
+    private static bool ButtonHeld(params string[] candidateNames)
+    {
+        int id = ResolveButtonId(candidateNames);
+        return id >= 0 && Pad.GetButtonById(id);
+    }
+
+    private static bool ButtonDown(params string[] candidateNames)
+    {
+        int id = ResolveButtonId(candidateNames);
+        return id >= 0 && Pad.GetButtonDownById(id);
+    }
+
+    private static bool ButtonUp(params string[] candidateNames)
+    {
+        int id = ResolveButtonId(candidateNames);
+        return id >= 0 && Pad.GetButtonUpById(id);
+    }
+
+    // cacheKey is a stable name for this *action* (not itself a candidate to match against),
+    // since the same physical axis can back both a Down and an Up read (PrayerActivate) and both
+    // need to observe the exact same edge-tracking state.
+    private static bool AxisDown(string cacheKey, params string[] candidateNames)
+    {
+        return TrackAxisEdge(cacheKey, candidateNames) == 1;
+    }
+
+    private static bool AxisUp(string cacheKey, params string[] candidateNames)
+    {
+        return TrackAxisEdge(cacheKey, candidateNames) == -1;
+    }
+
+    // Returns 1 on the press edge, -1 on the release edge, 0 otherwise (held or not-pressed).
+    private static int TrackAxisEdge(string cacheKey, string[] candidateNames)
+    {
+        int id = ResolveAxisId(cacheKey, candidateNames);
+        bool wasPressed;
+        lastAxisState.TryGetValue(cacheKey, out wasPressed);
+        bool isPressed = id >= 0 && Mathf.Abs(Pad.GetAxisById(id)) >= AxisThreshold;
+        lastAxisState[cacheKey] = isPressed;
+        if (isPressed && !wasPressed)
+        {
+            return 1;
+        }
+        if (!isPressed && wasPressed)
+        {
+            return -1;
+        }
+        return 0;
+    }
+
+    private static int ResolveButtonId(string[] candidateNames)
+    {
+        Rewired.Joystick pad = Pad;
+        if (pad == null)
+        {
+            return -1;
+        }
+
+        string cacheKey = candidateNames[0];
+        int cached;
+        if (resolvedButtonIds.TryGetValue(cacheKey, out cached))
+        {
+            return cached;
+        }
+
+        LogKnownButtonsOnce(pad);
+
+        int resolved = FindElementId(pad.ButtonElementIdentifiers, candidateNames);
+        resolvedButtonIds[cacheKey] = resolved;
+        if (resolved < 0 && Main.CoopLocal != null)
+        {
+            Blasphemous.ModdingAPI.ModLog.Info(
+                $"[Player2Pad] could not find a gamepad BUTTON named like '{string.Join("/", candidateNames)}' - " +
+                "see the button list above/below and add the real name to the candidates.",
+                Main.CoopLocal);
+        }
+        return resolved;
+    }
+
+    private static int ResolveAxisId(string cacheKey, string[] candidateNames)
+    {
+        Rewired.Joystick pad = Pad;
+        if (pad == null)
+        {
+            return -1;
+        }
+
+        int cached;
+        if (resolvedAxisIds.TryGetValue(cacheKey, out cached))
+        {
+            return cached;
+        }
+
+        LogKnownAxesOnce(pad);
+
+        int resolved = FindElementId(pad.AxisElementIdentifiers, candidateNames);
+        resolvedAxisIds[cacheKey] = resolved;
+        if (resolved < 0 && Main.CoopLocal != null)
+        {
+            Blasphemous.ModdingAPI.ModLog.Info(
+                $"[Player2Pad] could not find a gamepad AXIS named like '{string.Join("/", candidateNames)}' - " +
+                "see the axis list above/below and add the real name to the candidates.",
+                Main.CoopLocal);
+        }
+        return resolved;
+    }
+
+    private static int FindElementId(System.Collections.Generic.IList<Rewired.ControllerElementIdentifier> identifiers, string[] candidateNames)
+    {
+        foreach (Rewired.ControllerElementIdentifier identifier in identifiers)
+        {
+            foreach (string candidate in candidateNames)
+            {
+                if (identifier.name.IndexOf(candidate, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return identifier.id;
+                }
+            }
+        }
+        return -1;
+    }
+
+    private static void LogKnownButtonsOnce(Rewired.Joystick pad)
+    {
+        if (loggedKnownButtons || Main.CoopLocal == null)
+        {
+            return;
+        }
+        loggedKnownButtons = true;
+
+        List<string> entries = new List<string>();
+        foreach (Rewired.ControllerElementIdentifier identifier in pad.ButtonElementIdentifiers)
+        {
+            entries.Add($"{identifier.id}:{identifier.name}");
+        }
+        Blasphemous.ModdingAPI.ModLog.Info(
+            $"[Player2Pad] known gamepad buttons: {string.Join(", ", entries.ToArray())}", Main.CoopLocal);
+    }
+
+    private static void LogKnownAxesOnce(Rewired.Joystick pad)
+    {
+        if (loggedKnownAxes || Main.CoopLocal == null)
+        {
+            return;
+        }
+        loggedKnownAxes = true;
+
+        List<string> entries = new List<string>();
+        foreach (Rewired.ControllerElementIdentifier identifier in pad.AxisElementIdentifiers)
+        {
+            entries.Add($"{identifier.id}:{identifier.name}");
+        }
+        Blasphemous.ModdingAPI.ModLog.Info(
+            $"[Player2Pad] known gamepad axes: {string.Join(", ", entries.ToArray())}", Main.CoopLocal);
+    }
+}
+
+// Logs the raw index of every gamepad button the instant it's pressed or released (edge-
+// triggered per index, so holding a button doesn't spam) - purely so a button's real index can
+// be read directly off BepInEx/LogOutput.log instead of guessed, the same way every other
+// cross-talk question in this file has been settled. Grep "[Player2Pad] raw gamepad button".
+internal static class RawButtonScanLog
+{
+    private static readonly bool[] lastState = new bool[20];
+
+    internal static void Tick()
+    {
+        Rewired.Joystick pad = Player2Pad.Pad;
+        if (pad == null)
+        {
+            return;
+        }
+        for (int i = 0; i < lastState.Length; i++)
+        {
+            bool now = pad.GetButton(i);
+            if (now == lastState[i])
+            {
+                continue;
+            }
+            lastState[i] = now;
+            if (Main.CoopLocal != null)
+            {
+                Blasphemous.ModdingAPI.ModLog.Info($"[Player2Pad] raw gamepad button {i} -> {now}", Main.CoopLocal);
+            }
+        }
+    }
+}
+
+// Single dispatcher every patch below reads instead of Player2Keys/Player2Pad directly, so
+// switching P2's mode at runtime (ToggleKey, F9) takes effect everywhere at once. Also owns
+// device exclusivity for BOTH players, in both directions:
+//
+//   Gamepad mode: P2 = gamepad, P1 = keyboard only (any joystick removed from P1's Rewired
+//   player). This is what round 33 already had - the user confirmed it works correctly, P1
+//   doesn't react to the gamepad at all.
+//
+//   Keyboard mode (new, round 34): P2 = keyboard (Player2Keys, the full WASD scheme above),
+//   P1 = gamepad only (the keyboard controller removed from P1's Rewired player instead). P1's
+//   own vanilla, unpatched Update()/Rewired-driven logic keeps running exactly as it always has
+//   (same reasoning as Gamepad mode: reimplementing P1's own nuanced ladder/cliff-grab/etc logic
+//   raw, the way P2's has to be, is exactly the "too nuanced to safely reimplement" trap already
+//   documented elsewhere in this file) - it just no longer has a keyboard in its device list to
+//   read from, only the gamepad.
+//
+// Whichever direction is active, the *other* device type is deliberately left untouched on P1's
+// Rewired player rather than force-added back - Rewired's own auto-assignment (re-enabled below
+// whenever a device is released) picks it back up on its own once nothing else claims it
+// exclusively.
+//
+// Known open question, unverified: this removes the ENTIRE keyboard controller from P1's Rewired
+// player in Keyboard mode, which - if the game's "U"/"I" menu shortcuts are themselves read
+// through Rewired on Player 0 rather than through a separate menu/UI input path - could
+// theoretically also block them for P1. Every mode switch below logs P1's Rewired player's
+// exact remaining controller list so this is directly checkable in BepInEx/LogOutput.log rather
+// than assumed; if U/I stop opening menus for P1 specifically in Keyboard mode, report back and
+// this needs a more surgical fix (leave the keyboard attached, patch P1's own gameplay reads
+// individually instead - more code, but doesn't touch device assignment at all).
+//
+// The user also reported that a single one-time device removal (round 33's first attempt) didn't
+// hold - both players kept responding to the same device. Most likely cause: Rewired's own
+// automatic controller-to-player assignment (IControllerAssigner, runs continuously by default)
+// silently re-attaching a freed device to Player 0 sometime after the one-time removal. Fixed two
+// ways at once, in whichever direction is currently active: (1)
+// p1Rewired.controllers.excludeFromControllerAutoAssignment = true stops Rewired's auto-assigner
+// from re-offering *any* controller to Player 0, and (2) as a belt-and-braces safety net,
+// EnsureExclusiveDevices() re-clears the excluded type every frame, not just once -
+// ClearControllersOfType on an already-empty list is a cheap no-op either way.
+internal static class Player2Input
+{
+    private const KeyCode ToggleKey = KeyCode.F9;
+
+    internal static Player2InputMode Mode { get; private set; } = Player2InputMode.Gamepad;
+
+    internal static bool Left => Mode == Player2InputMode.Gamepad ? Player2Pad.Left : Input.GetKey(Player2Keys.Left);
+    internal static bool Right => Mode == Player2InputMode.Gamepad ? Player2Pad.Right : Input.GetKey(Player2Keys.Right);
+    internal static bool Up => Mode == Player2InputMode.Gamepad ? Player2Pad.Up : Input.GetKey(Player2Keys.Up);
+    internal static bool Down => Mode == Player2InputMode.Gamepad ? Player2Pad.Down : Input.GetKey(Player2Keys.Down);
+    internal static bool JumpHeld => Mode == Player2InputMode.Gamepad ? Player2Pad.JumpHeld : Input.GetKey(Player2Keys.Jump);
+
+    // Round 44: edge-triggered jump press, tracked once per Tick() - needed for GrabLadder's
+    // ladder-dismount trigger (see GrabLadder_OnUpdate_P2_Patch), which needs a GetButtonDown-style
+    // edge rather than JumpHeld's continuous state.
+    internal static bool JumpDown { get; private set; }
+    private static bool previousJumpHeld;
+    internal static bool AttackDown => Mode == Player2InputMode.Gamepad ? Player2Pad.AttackDown : Input.GetKeyDown(Player2Keys.Attack);
+    internal static bool AttackUp => Mode == Player2InputMode.Gamepad ? Player2Pad.AttackUp : Input.GetKeyUp(Player2Keys.Attack);
+    internal static bool DashDown => Mode == Player2InputMode.Gamepad ? Player2Pad.DashDown : Input.GetKeyDown(Player2Keys.Dash);
+    internal static bool ParryDown => Mode == Player2InputMode.Gamepad ? Player2Pad.ParryDown : Input.GetKeyDown(Player2Keys.Parry);
+    internal static bool HealDown => Mode == Player2InputMode.Gamepad ? Player2Pad.HealDown : Input.GetKeyDown(Player2Keys.Heal);
+    internal static bool InteractDown => Mode == Player2InputMode.Gamepad ? Player2Pad.InteractDown : Input.GetKeyDown(Player2Keys.Interact);
+    internal static bool PrayerActivateDown => Mode == Player2InputMode.Gamepad ? Player2Pad.PrayerActivateDown : Input.GetKeyDown(Player2Keys.PrayerActivate);
+    internal static bool PrayerActivateUp => Mode == Player2InputMode.Gamepad ? Player2Pad.PrayerActivateUp : Input.GetKeyUp(Player2Keys.PrayerActivate);
+
+    // Keyboard-only - opening the shared inventory/prayer menu isn't gamepad-mapped (not asked
+    // for), so this is a plain false in Gamepad mode rather than a guessed button.
+    internal static bool MenuDown => Mode == Player2InputMode.Keyboard && Input.GetKeyDown(Player2Keys.Menu);
+
+    private static bool everTicked;
+
+    // Checked every frame from PlatformCharacterInput_Update_Patch (already runs every frame for
+    // P2, so this rides along for free instead of needing its own separate Update hook).
+    internal static void Tick()
+    {
+        bool jumpHeldNow = JumpHeld;
+        JumpDown = jumpHeldNow && !previousJumpHeld;
+        previousJumpHeld = jumpHeldNow;
+
+        if (!everTicked)
+        {
+            everTicked = true;
+            ApplyExclusiveDevices();
+            Player2ModeIndicator.Show(Mode);
+            LogModeAndControllers($"P2 input mode starting as -> {Mode}");
+        }
+
+        if (Input.GetKeyDown(ToggleKey))
+        {
+            Mode = Mode == Player2InputMode.Gamepad ? Player2InputMode.Keyboard : Player2InputMode.Gamepad;
+            ApplyExclusiveDevices();
+            Player2ModeIndicator.Show(Mode);
+            string suffix = Mode == Player2InputMode.Gamepad && Player2Pad.Pad == null ? " (no gamepad detected!)" : "";
+            LogModeAndControllers($"P2 input mode -> {Mode}{suffix}");
+        }
+        else
+        {
+            EnsureExclusiveDevices();
+        }
+
+        if (Mode == Player2InputMode.Gamepad)
+        {
+            RawButtonScanLog.Tick();
+        }
+
+        Player2HudPositionTuner.Tick();
+        Player2PurgePoints.Tick();
+
+        // Opening the shared inventory/prayer menu isn't per-player state (there's only one
+        // save's worth of inventory/prayers), so this just calls the same public method the
+        // game's own menu button does - no Ability/Rewired-owner scoping needed.
+        if (MenuDown && Gameplay.UI.UIController.instance != null)
+        {
+            Gameplay.UI.UIController.instance.ToggleInventoryMenu();
+        }
+    }
+
+    private static Rewired.ControllerType ExcludedFromPlayer1 =>
+        Mode == Player2InputMode.Gamepad ? Rewired.ControllerType.Joystick : Rewired.ControllerType.Keyboard;
+
+    private static void ApplyExclusiveDevices()
+    {
+        Rewired.Player p1Rewired = GetP1Rewired();
+        if (p1Rewired == null)
+        {
+            return;
+        }
+        // excludeFromControllerAutoAssignment blocks Rewired's auto-assigner from giving P1
+        // *any* controller, not just the excluded type - confirmed live (round 34 testing):
+        // toggling Keyboard mode then back to Gamepad mode left P1 with neither Keyboard nor
+        // Joystick, since the flag being on the whole time meant nothing ever got auto-reattached.
+        // So the allowed type has to be re-added explicitly here rather than left to Rewired.
+        p1Rewired.controllers.excludeFromControllerAutoAssignment = true;
+        p1Rewired.controllers.ClearControllersOfType(ExcludedFromPlayer1);
+        ReattachAllowedDevice(p1Rewired);
+    }
+
+    private static void ReattachAllowedDevice(Rewired.Player p1Rewired)
+    {
+        if (Mode == Player2InputMode.Gamepad)
+        {
+            var keyboard = Rewired.ReInput.controllers.Keyboard;
+            if (keyboard != null && !p1Rewired.controllers.ContainsController(keyboard))
+            {
+                p1Rewired.controllers.AddController(keyboard, false);
+            }
+        }
+        else
+        {
+            Rewired.Joystick pad = Player2Pad.Pad;
+            if (pad != null && !p1Rewired.controllers.ContainsController(pad))
+            {
+                p1Rewired.controllers.AddController(pad, false);
+            }
+        }
+    }
+
+    // Re-clears every frame - see class comment above for why a single one-time clear (round
+    // 33's original approach) wasn't enough on its own.
+    private static void EnsureExclusiveDevices()
+    {
+        Rewired.Player p1Rewired = GetP1Rewired();
+        if (p1Rewired == null)
+        {
+            return;
+        }
+        Rewired.ControllerType excluded = ExcludedFromPlayer1;
+        int before = excluded == Rewired.ControllerType.Joystick
+            ? p1Rewired.controllers.joystickCount
+            : (p1Rewired.controllers.ContainsController(Rewired.ControllerType.Keyboard, 0) ? 1 : 0);
+        if (before > 0)
+        {
+            p1Rewired.controllers.ClearControllersOfType(excluded);
+            LogModeAndControllers(
+                $"P1's Rewired player still had a {excluded} controller assigned - cleared again " +
+                "(Rewired's auto-assigner likely re-attached it since the last check).");
+        }
+        ReattachAllowedDevice(p1Rewired);
+    }
+
+    private static void LogModeAndControllers(string message)
+    {
+        if (Main.CoopLocal == null)
+        {
+            return;
+        }
+        Rewired.Player p1Rewired = GetP1Rewired();
+        string controllerList = p1Rewired == null
+            ? "n/a"
+            : string.Join(", ", System.Linq.Enumerable.ToArray(
+                System.Linq.Enumerable.Select(p1Rewired.controllers.Controllers, c => $"{c.type}:{c.name}")));
+        Blasphemous.ModdingAPI.ModLog.Info($"{message} P1's Rewired controllers now: [{controllerList}]", Main.CoopLocal);
+    }
+
+    private static Rewired.Player GetP1Rewired()
+    {
+        Penitent p1 = Core.Logic.Penitent;
+        return p1 != null ? p1.PlatformCharacterInput.Rewired : null;
+    }
+}
+
+// On-screen "Controller mode" / "Keyboard mode" text, top-right corner - so P2's active input
+// scheme never has to be guessed from feel/trial-and-error alone. Built from a bare Canvas +
+// UI.Text rather than TextMeshPro (avoids needing a font asset reference) since this mod has no
+// existing Canvas/uGUI infrastructure to build on. Created once, lazily, and left alive for the
+// whole session (DontDestroyOnLoad) rather than tied to either player's own lifetime - the mode
+// itself isn't tied to a spawned player either.
+internal static class Player2ModeIndicator
+{
+    private static Text label;
+
+    internal static void Show(Player2InputMode mode)
+    {
+        EnsureCreated();
+        if (label != null)
+        {
+            label.text = mode == Player2InputMode.Gamepad ? "Controller mode" : "Keyboard mode";
+        }
+    }
+
+    private static void EnsureCreated()
+    {
+        if (label != null)
+        {
+            return;
+        }
+
+        GameObject canvasObject = new GameObject("CoopLocalModeIndicatorCanvas");
+        UnityEngine.Object.DontDestroyOnLoad(canvasObject);
+        Canvas canvas = canvasObject.AddComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvas.sortingOrder = short.MaxValue;
+
+        GameObject textObject = new GameObject("ModeText");
+        textObject.transform.SetParent(canvasObject.transform, worldPositionStays: false);
+        RectTransform rect = textObject.AddComponent<RectTransform>();
+        rect.anchorMin = new Vector2(1f, 1f);
+        rect.anchorMax = new Vector2(1f, 1f);
+        rect.pivot = new Vector2(1f, 1f);
+        rect.anchoredPosition = new Vector2(-16f, -16f);
+        rect.sizeDelta = new Vector2(320f, 40f);
+
+        label = textObject.AddComponent<Text>();
+        label.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+        label.fontSize = 22;
+        label.alignment = TextAnchor.UpperRight;
+        label.color = Color.white;
+        label.text = "";
+    }
 }
 
 // Debug-only logging for tracking down the remaining dash/parry cross-talk (P1 still freezing
@@ -98,7 +599,10 @@ internal static class DashParryDebugLog
 
     internal static void Log(string message)
     {
-        Main.CoopLocal?.Log("[DashParryDebug] " + message);
+        if (Main.CoopLocal != null)
+        {
+            Blasphemous.ModdingAPI.ModLog.Info("[DashParryDebug] " + message, Main.CoopLocal);
+        }
     }
 }
 
@@ -385,7 +889,7 @@ internal static class CrouchDownBehaviour_OnStateEnter_Patch
 // having its own. Rather than replace the original method (its ladder/cliff/attack-gating
 // logic is too nuanced to safely reimplement), this patch lets it run as-is - using the
 // shared input, so anything not explicitly overridden below still mirrors P1 for now (parry)
-// - and overwrites, for P2 only, everything driven by P2's own keys (Player2Keys) instead:
+// - and overwrites, for P2 only, everything driven by P2's own gamepad (Player2Pad) instead:
 //  - the movement/jump flags (position/physics), via PlatformCharacterController.SetActionState
 //  - ReachAxisThreshold, a public field AnimatorInyector reads to decide the walk/run
 //    animation and whether a jump plays "JUMP" or "FORWARD_JUMP"
@@ -431,6 +935,8 @@ internal static class PlatformCharacterInput_Update_Patch
     private static bool lastLoggedCrouch;
     private static bool lastLoggedJump;
     private static bool lastLoggedRawJumpKey;
+    private static bool lastLoggedLeft;
+    private static bool lastLoggedRight;
 
     // Diagnostic for the user's own finding: pressing P2's real crouch or jump button makes P1
     // stop dashing even while P1's own dash button stays physically held down. DashBehaviour
@@ -459,7 +965,9 @@ internal static class PlatformCharacterInput_Update_Patch
         Rewired.Player p1Rewired = p1.PlatformCharacterInput.Rewired;
         DashParryDebugLog.Log(
             $"P2 pressed its own {label} - P1's Rewired at that instant: GetButton(6) [jump]={p1Rewired.GetButton(6)}, " +
-            $"GetAxisRaw(4) [vertical]={p1Rewired.GetAxisRaw(4):F3} (frame {Time.frameCount})");
+            $"GetAxisRaw(0) [horizontal]={p1Rewired.GetAxisRaw(0):F3}, GetAxisRaw(4) [vertical]={p1Rewired.GetAxisRaw(4):F3}, " +
+            $"P2 mode={Player2Input.Mode}, P1's assigned joystick count={p1Rewired.controllers.joystickCount} " +
+            $"(frame {Time.frameCount})");
     }
 
     private static void Postfix(Penitent ____penitent)
@@ -488,16 +996,18 @@ internal static class PlatformCharacterInput_Update_Patch
         // the "still moving/attacking" half was reported.
         bool blocked = PlayerLogicBlocker.IsBlocked(____penitent) || ____penitent.Status.Dead;
 
-        bool rawDown = Input.GetKey(Player2Keys.Down);
-        bool left = !blocked && Input.GetKey(Player2Keys.Left);
-        bool right = !blocked && Input.GetKey(Player2Keys.Right);
-        bool rawJumpKey = Input.GetKey(Player2Keys.Jump);
+        Player2Input.Tick();
+
+        bool rawDown = Player2Input.Down;
+        bool left = !blocked && Player2Input.Left;
+        bool right = !blocked && Player2Input.Right;
+        bool rawJumpKey = Player2Input.JumpHeld;
         bool jump = !blocked && rawJumpKey;
         bool crouch = !blocked && rawDown;
-        bool attackUp = !blocked && Input.GetKey(Player2Keys.Up);
-        bool rawAttackKeyDown = Input.GetKeyDown(Player2Keys.Attack);
+        bool attackUp = !blocked && Player2Input.Up;
+        bool rawAttackKeyDown = Player2Input.AttackDown;
         bool attack = !blocked && rawAttackKeyDown;
-        bool rawDashKeyDown = Input.GetKeyDown(Player2Keys.Dash);
+        bool rawDashKeyDown = Player2Input.DashDown;
         bool dash = !blocked && rawDashKeyDown;
         if (rawDashKeyDown)
         {
@@ -543,6 +1053,16 @@ internal static class PlatformCharacterInput_Update_Patch
             lastLoggedJump = jump;
             LogP1RewiredCrossTalkCheck("jump", jump);
         }
+        if (left != lastLoggedLeft)
+        {
+            lastLoggedLeft = left;
+            LogP1RewiredCrossTalkCheck("left", left);
+        }
+        if (right != lastLoggedRight)
+        {
+            lastLoggedRight = right;
+            LogP1RewiredCrossTalkCheck("right", right);
+        }
 
         // The original method itself already blocks Left/Right while crouched (same rule
         // P1 follows) - our own crouch key is the source of truth for that here instead of
@@ -571,8 +1091,8 @@ internal static class PlatformCharacterInput_Update_Patch
         input.isJoystickUp = attackUp;
 
         // FVerAxis > AxisMovingThreshold => JOYSTICK_UP, < -threshold => JOYSTICK_DOWN (see
-        // comment above the patch). Player2Keys.Down doubles as both crouch and this axis;
-        // Player2Keys.Up (jump lives on its own key) drives the upward-attack state.
+        // comment above the patch). Player2Input.Down doubles as both crouch and this axis;
+        // Player2Input.Up (jump lives on its own button) drives the upward-attack state.
         FVerAxisBackingField.SetValue(input, crouch ? -1f : (attackUp ? 1f : 0f));
 
         // Attack/Dash are also plain public fields; GetKeyDown (not GetKey) matches the
@@ -638,8 +1158,8 @@ internal static class Dash_AddDashForce_Patch
             return;
         }
 
-        bool left = Input.GetKey(Player2Keys.Left);
-        bool right = Input.GetKey(Player2Keys.Right);
+        bool left = Player2Input.Left;
+        bool right = Player2Input.Right;
 
         ____dashDirection = left ? -1f : (right ? 1f : 0f);
         ____isDashDirectionSet = true;
@@ -1142,14 +1662,14 @@ internal static class DashBehaviour_OnStateUpdate_Patch
             return true;
         }
 
-        bool left = Input.GetKey(Player2Keys.Left);
-        bool right = Input.GetKey(Player2Keys.Right);
-        bool crouchAxis = Input.GetKey(Player2Keys.Down);
-        bool attackUpAxis = Input.GetKey(Player2Keys.Up);
-        bool jumpHeld = Input.GetKey(Player2Keys.Jump);
-        bool attackPressed = Input.GetKeyDown(Player2Keys.Attack);
-        bool attackReleased = Input.GetKeyUp(Player2Keys.Attack);
-        bool parryPressed = Input.GetKeyDown(Player2Keys.Parry);
+        bool left = Player2Input.Left;
+        bool right = Player2Input.Right;
+        bool crouchAxis = Player2Input.Down;
+        bool attackUpAxis = Player2Input.Up;
+        bool jumpHeld = Player2Input.JumpHeld;
+        bool attackPressed = Player2Input.AttackDown;
+        bool attackReleased = Player2Input.AttackUp;
+        bool parryPressed = Player2Input.ParryDown;
 
         if (stateInfo.normalizedTime > 0.9f && owner.Dash.IsUpperBlocked && !(bool)AddExtraDashField.GetValue(__instance))
         {
@@ -1259,7 +1779,7 @@ internal static class Parry_OnUpdate_Patch
         }
 
         bool grounded = (bool)IsGroundedMethod.Invoke(__instance, null);
-        bool rawParryKeyDown = Input.GetKeyDown(Player2Keys.Parry);
+        bool rawParryKeyDown = Player2Input.ParryDown;
         if (rawParryKeyDown)
         {
             // Same raw-vs-gated split as the Attack/Jump/Dash checks in
@@ -1380,8 +1900,8 @@ internal static class ParrySuccessBehaviour_OnStateEnter_Patch
 // reset). GetCameraTarget(...) guards against double-adding P2 in either path -
 // AddCameraTarget itself has no such guard and would otherwise create a second, competing
 // target entry for the exact same Transform.
-// Player2Keys puts P2's jump/attack/parry on Keypad0/1/2 (see that class's comment for why) -
-// which still touches CameraPan's own numpad-driven manual camera panning (Rewired axes 20/21,
+// A stale keyboard-numpad concern from the pre-gamepad-split era (see Player2Pad's comment for
+// current history) - CameraPan's own numpad-driven manual camera panning (Rewired axes 20/21,
 // read directly off the shared "Player 0" the same way everything else in this family does).
 // EnableCameraPan is a plain public field, never reassigned anywhere in the game's own
 // code after its initial Inspector-set value (confirmed - nothing else writes to it), so forcing
@@ -1959,11 +2479,29 @@ internal static class PenitentDamageArea_TakeDamage_DebugLog_Patch
     private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(PenitentDamageArea), "_penitent");
 
     private static float lifeBefore;
+    private static bool unattacableBefore;
+    private static bool invulnerableBefore;
+    private static bool isHurtBefore;
 
+    // Round 48: user reports P2 taking damage specifically while performing an upward/side
+    // attack ("parece daño por contacto al atacar hacia arriba o al lado") - a fresh live log
+    // showed 13 of 16 P2 damage events landing exactly 1-2 frames after P2 entered
+    // "Player_Upward_Attack_Clamped_anim" specifically. PenitentDamageArea.TakeDamage/CanTakeHit
+    // are both confirmed correctly per-instance already (no hardcoded Core.Logic.Penitent
+    // anywhere in that chain), and GroundHurtBehaviour/AirHurtBehaviour's own owner-fix patches
+    // (which set Status.Unattacable during the post-hit invulnerability window) were checked and
+    // are structurally correct too - no code-level cause has been confirmed yet, so capturing
+    // Unattacable/Invulnerable/IsHurt state *before* the hit resolves (Prefix) is the next
+    // concrete thing needed: either these flags were already true and got bypassed somehow (a
+    // real bug), or they were genuinely false (meaning this really is just BellGhost's own attack
+    // landing at the same moment the player swings - ordinary difficulty, not a mod bug).
     private static void Prefix(PenitentDamageArea __instance)
     {
         Penitent owner = PenitentField.GetValue(__instance) as Penitent;
         lifeBefore = owner != null ? owner.Stats.Life.Current : -1f;
+        unattacableBefore = owner != null && owner.Status.Unattacable;
+        invulnerableBefore = owner != null && owner.Status.Invulnerable;
+        isHurtBefore = owner != null && owner.Status.IsHurt;
     }
 
     // Only logs when Life.Current actually changed - TakeDamage has several early-out guards
@@ -1993,7 +2531,8 @@ internal static class PenitentDamageArea_TakeDamage_DebugLog_Patch
 
         DashParryDebugLog.Log(
             $"PenitentDamageArea.TakeDamage APPLIED on {ownerLabel} (instance={__instance.GetInstanceID()}) from attacker='{attackerName}' " +
-            $"damageType={hit.DamageType} lifeBefore={lifeBefore:F1} lifeAfter={lifeAfter:F1} | {ownerLabel}Pos={ownerPos} " +
+            $"damageType={hit.DamageType} lifeBefore={lifeBefore:F1} lifeAfter={lifeAfter:F1} " +
+            $"unattacableBefore={unattacableBefore} invulnerableBefore={invulnerableBefore} isHurtBefore={isHurtBefore} | {ownerLabel}Pos={ownerPos} " +
             $"{otherLabel}Pos={otherPos} distanceToOther={distanceToOther:F1} attackerPos={attackerPos} (frame {Time.frameCount})");
     }
 }
@@ -2041,11 +2580,32 @@ internal static class PenitentDamageArea_RaiseDamageEvent_HudFix_Patch
 // worrying about a less obtrusive final position.
 internal static class Player2HealthBar
 {
-    private const float Scale = 0.65f;
+    // Round 44: was a const - promoted to a mutable field so Player2HudPositionTuner's "." / "-"
+    // scale keys can adjust it live.
+    internal static float Scale = 0.65f;
+
+    // Round 45: final position, re-confirmed by the user via live Player2HudPositionTuner testing.
+    internal static Vector2 AnchoredPosition = new Vector2(-119f, -20f);
 
     private static readonly MethodInfo OnPenitentReadyMethod = AccessTools.Method(typeof(PlayerHealth), "OnPenitentReady");
 
     internal static PlayerHealth Instance { get; private set; }
+    internal static RectTransform CloneRect => instanceRoot != null ? instanceRoot.GetComponent<RectTransform>() : null;
+
+    // Round 41: user reported Health not visually rendering on top of Fervour's own group
+    // (which drags in the whole "LeftPart" portrait/frame - see Player2FervourBar's class
+    // comment). Unity UI renders later siblings on top of earlier ones, and Fervour is created
+    // *after* Health in CoopLocal.OnPlayerSpawn, so Health's smaller clone was sitting behind
+    // Fervour's larger one regardless of anchored position. Called from CoopLocal.cs after all
+    // three P2 HUD clones exist (not from inside Health's own EnsureCreated, which runs before
+    // Fervour is even created yet and so can't fix this from within itself).
+    internal static void BringToFront()
+    {
+        if (instanceRoot != null)
+        {
+            instanceRoot.transform.SetAsLastSibling();
+        }
+    }
 
     // Cached on first use and never looked up again. Object.Destroy() only *marks* a GameObject
     // for destruction - the real removal happens at the end of the current frame - so calling
@@ -2163,17 +2723,20 @@ internal static class Player2HealthBar
             (rect != null ? $", anchoredPosition={rect.anchoredPosition}, localScale={rect.localScale}" : ""));
         if (rect != null)
         {
-            // Back to dead center for now (round 33, per the user's own request) - the bottom-right
-            // placement ran partly off-screen and is hard to iterate on, while the decoration/icon
-            // pieces (see the sibling logging above) are still being tracked down. Once the visual
-            // is actually complete, revisit final positioning (bottom-right was the ask) as its own
-            // separate step - don't fold that back in until the bar itself looks right.
-            rect.anchorMin = new Vector2(0.5f, 0.5f);
-            rect.anchorMax = new Vector2(0.5f, 0.5f);
-            rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.anchoredPosition = Vector2.zero;
+            // Round 38: visual now confirmed complete (portrait/frame/bar all show correctly) -
+            // moved to the bottom-right corner as originally asked, aligned with
+            // Player2FervourBar below (same X inset, Fervour stacked directly under Health by
+            // FervourVerticalOffset). Pivot (1,0) = anchoredPosition is measured from this
+            // object's own bottom-right corner, so a negative X / positive Y inset pulls it away
+            // from the screen's actual corner instead of clipping off it - the exact inset values
+            // are a best-effort guess (this environment can't screenshot the live HUD to check),
+            // so this will likely still need one more visual tuning pass.
+            rect.anchorMin = new Vector2(1f, 0f);
+            rect.anchorMax = new Vector2(1f, 0f);
+            rect.pivot = new Vector2(1f, 0f);
+            rect.anchoredPosition = AnchoredPosition;
             rect.localScale *= Scale;
-            DashParryDebugLog.Log($"Player2HealthBar.EnsureCreated: positioned clone at screen center for testing, anchoredPosition={rect.anchoredPosition}, localScale={rect.localScale}");
+            DashParryDebugLog.Log($"Player2HealthBar.EnsureCreated: positioned clone at bottom-right, anchoredPosition={rect.anchoredPosition}, localScale={rect.localScale}");
         }
 
         // The clone's own Awake() already subscribed its own OnPenitentReady to the shared
@@ -2380,6 +2943,1099 @@ internal static class PlayerHealth_CalculateHealthBar_P2_Patch
     }
 }
 
+// Round 37: second HUD widget for P2, per the user's request to extend Player2HealthBar's
+// approach to Fervour too. Same clone-then-redirect mechanism, with one extra wrinkle
+// PlayerHealth didn't have: PlayerFervour.Awake() does `Instance = this` unconditionally (a
+// static singleton - other code, e.g. Healing.Heal()'s spark effect, calls
+// PlayerFervour.Instance.ShowSpark() expecting P1's real bar). Cloning it would otherwise
+// silently steal the global Instance for the clone and break that for P1 - EnsureCreated resets
+// Instance back to the original immediately after creating the clone to prevent this;
+// Player2FervourBar.Instance (not the static PlayerFervour.Instance) is what every patch below
+// actually checks against.
+//
+// Decompiling PlayerFervour turned up FIVE separate methods independently hardcoding
+// Core.Logic.Penitent (BarTarget, CalculateBarSize, CalculateFillsBars, CalculateMarks,
+// CalculateBarPentalty) - more than PlayerHealth's two. Reimplemented here, following the same
+// proven approach: CalculateBarSize (controls the bar's rendered width - the most visually
+// broken without a fix) and CalculateFillsBars (the actual fill-amount animation, computed
+// directly from P2's own stats rather than through the possibly-inlined BarTarget getter, same
+// as PlayerHealth's CalculateHealthBar/CalculateLossBar). CalculateMarks (segment tick marks) and
+// CalculateBarPentalty (the "guilt" overlay bar) are NOT reimplemented yet - known gap, left
+// running unmodified (so they'll still read P1's numbers for those two specific visual details)
+// rather than guessing their IL translations blind on top of everything else this round already
+// covers; revisit if the user reports those specific pieces looking wrong for P2.
+internal static class Player2FervourBar
+{
+    // Round 44: was a const - promoted to a mutable field so Player2HudPositionTuner's "." / "-"
+    // scale keys can adjust it live.
+    internal static float Scale = 0.65f;
+
+    // PlayerFervour.Instance's setter is private (Awake() calls it on itself) - reflection is the
+    // only way to reset the global singleton back to the original after the clone's own Awake()
+    // steals it.
+    private static readonly FieldInfo GlobalInstanceField =
+        AccessTools.Field(typeof(PlayerFervour), "<Instance>k__BackingField");
+
+    // Round 45: final position, re-confirmed by the user via live Player2HudPositionTuner testing
+    // (stacked below Health, which renders on top per the z-order fix).
+    internal static Vector2 AnchoredPosition = new Vector2(-75f, 7f);
+
+    internal static PlayerFervour Instance { get; private set; }
+
+    // Round 40: PlayerFlask ("Flask0"/"Flask1"/... potion sprites) lives as a sibling inside the
+    // same "LeftPart" hierarchy this class already clones wholesale (see the class comment above -
+    // follow-up #8's sibling dump listed "Flask" alongside "Fervour Bar"/"Penitence"/etc) - it
+    // rides along as an unpatched, un-redirected duplicate unless something registers and
+    // redirects it too, which is exactly why P2's potion count was frozen showing P1's count from
+    // the moment of cloning (4 slots, never decreasing) instead of P2's own (2 slots, live).
+    internal static PlayerFlask FlaskInstance { get; private set; }
+
+    internal static RectTransform CloneRect => instanceRoot != null ? instanceRoot.GetComponent<RectTransform>() : null;
+    private static PlayerFervour originalCache;
+    private static GameObject instanceRoot;
+
+    internal static void EnsureCreated(Penitent p2)
+    {
+        if (instanceRoot != null)
+        {
+            UnityEngine.Object.Destroy(instanceRoot);
+            instanceRoot = null;
+            Instance = null;
+            FlaskInstance = null;
+        }
+
+        if (originalCache == null)
+        {
+            originalCache = UnityEngine.Object.FindObjectOfType<PlayerFervour>();
+        }
+        PlayerFervour original = originalCache;
+        if (original == null || p2 == null)
+        {
+            DashParryDebugLog.Log($"Player2FervourBar.EnsureCreated: aborted - original PlayerFervour found={original != null}, p2 found={p2 != null}");
+            return;
+        }
+
+        Canvas canvas = original.GetComponentInParent<Canvas>();
+        while (canvas != null && canvas.transform.parent != null)
+        {
+            Canvas parentCanvas = canvas.transform.parent.GetComponentInParent<Canvas>();
+            if (parentCanvas == null)
+            {
+                break;
+            }
+            canvas = parentCanvas;
+        }
+        Transform cloneParent = canvas != null ? canvas.transform : original.transform.parent;
+
+        Transform originalParent = original.transform.parent;
+        GameObject sourceToClone = originalParent != null ? originalParent.gameObject : original.gameObject;
+
+        GameObject cloneObject = UnityEngine.Object.Instantiate(sourceToClone, cloneParent);
+        cloneObject.name = "PlayerFervour_P2";
+        instanceRoot = cloneObject;
+        Instance = cloneObject.GetComponentInChildren<PlayerFervour>();
+        FlaskInstance = cloneObject.GetComponentInChildren<PlayerFlask>();
+
+        // Undo the clone's own Awake() stealing the global static Instance - see class comment.
+        if (Instance != null)
+        {
+            GlobalInstanceField.SetValue(null, original);
+        }
+
+        RectTransform rect = cloneObject.GetComponent<RectTransform>();
+        if (rect != null)
+        {
+            // Same bottom-right corner as Player2HealthBar, positioned via AnchoredPosition above.
+            rect.anchorMin = new Vector2(1f, 0f);
+            rect.anchorMax = new Vector2(1f, 0f);
+            rect.pivot = new Vector2(1f, 0f);
+            rect.anchoredPosition = AnchoredPosition;
+            rect.localScale *= Scale;
+        }
+
+        DashParryDebugLog.Log(
+            $"Player2FervourBar.EnsureCreated: cloned from '{sourceToClone.name}', foundPlayerFervour={Instance != null}, " +
+            $"globalInstanceRestored={(PlayerFervour.Instance == original)}, foundPlayerFlask={FlaskInstance != null}");
+    }
+}
+
+[HarmonyPatch(typeof(PlayerFervour), "get_BarTarget")]
+internal static class PlayerFervour_BarTarget_P2_Patch
+{
+    private static void Postfix(PlayerFervour __instance, ref float __result)
+    {
+        if (__instance != Player2FervourBar.Instance)
+        {
+            return;
+        }
+        Penitent p2 = CoopLocal.Player2;
+        __result = p2 != null ? p2.Stats.Fervour.Current / p2.Stats.Fervour.CurrentMaxWithoutFactor : 0f;
+    }
+}
+
+// Round 41: the user reported the cloned Fervour bar frozen - never changing or resetting, even
+// though CalculateBarSize/CalculateFillsBars below were already correctly redirected. Root cause:
+// those two are only ever CALLED from Update() when `lastValue != this.BarTarget` - and Update()
+// itself was never patched, so it's still running vanilla, reading BarTarget through a plain
+// `call` to the small property getter. That's the exact same "small property likely gets JIT-
+// inlined past a Harmony Postfix" risk already proven real for PlayerHealth's own BarTarget (see
+// that class's comments) - if Update()'s own BarTarget read is inlined, it keeps comparing
+// against *P1's* ratio internally, so unless P1's Fervour happens to change too, the "did it
+// change" check never trips and CalculateBarSize/CalculateFillsBars simply never get called for
+// P2's clone at all - leaving it stuck at whatever it displayed at spawn. Fixed by reimplementing
+// Update() itself (mirroring PlayerHealth's CalculateHealthBar/CalculateLossBar being fully
+// reimplemented rather than just patching what they call) - computing barTarget directly from
+// P2's own stats, then invoking the *already-patched* CalculateBarSize/CalculateFillsBars
+// methods via reflection (Harmony patches the underlying method itself, so a reflection Invoke()
+// call from here still runs through those Prefixes correctly - no inlining risk for this call
+// site since it's our own C# code, not vanilla's). CalculateMarks/CalculateBarPentalty are still
+// unpatched (existing known gap - they'll run with their own internal Core.Logic.Penitent reads).
+[HarmonyPatch(typeof(PlayerFervour), "Update")]
+internal static class PlayerFervour_Update_P2_Patch
+{
+    private static readonly FieldInfo NormalPrayerInUseField = AccessTools.Field(typeof(PlayerFervour), "normalPrayerInUse");
+    private static readonly FieldInfo Pe02PrayerInUseField = AccessTools.Field(typeof(PlayerFervour), "pe02PrayerInUse");
+    private static readonly FieldInfo PrayerTimerField = AccessTools.Field(typeof(PlayerFervour), "prayerTimer");
+    private static readonly FieldInfo LastValueField = AccessTools.Field(typeof(PlayerFervour), "lastValue");
+    private static readonly FieldInfo FillsIncreaseField = AccessTools.Field(typeof(PlayerFervour), "fillsIncrease");
+    private static readonly FieldInfo TimeElapsedField = AccessTools.Field(typeof(PlayerFervour), "_timeElapsed");
+    private static readonly FieldInfo LastMaxFervourField = AccessTools.Field(typeof(PlayerFervour), "lastMaxFervour");
+    private static readonly MethodInfo CalculateBarSizeMethod = AccessTools.Method(typeof(PlayerFervour), "CalculateBarSize");
+    private static readonly MethodInfo CalculateFillsBarsMethod = AccessTools.Method(typeof(PlayerFervour), "CalculateFillsBars");
+    private static readonly MethodInfo CalculateMarksMethod = AccessTools.Method(typeof(PlayerFervour), "CalculateMarks");
+    private static readonly MethodInfo CalculateNotEnoughMethod = AccessTools.Method(typeof(PlayerFervour), "CalculateNotEnough");
+    private static readonly MethodInfo CalculateBarPentaltyMethod = AccessTools.Method(typeof(PlayerFervour), "CalculateBarPentalty");
+    private static readonly FieldInfo DiagFillExactField = AccessTools.Field(typeof(PlayerFervour), "fillExact");
+    private static readonly FieldInfo DiagFillAnimableField = AccessTools.Field(typeof(PlayerFervour), "fillAnimable");
+
+    // Round 43: the HIT and MISS branches previously shared one throttle counter - since both
+    // P1's real instance (MISS) and P2's clone (HIT) call Update() every frame, whichever one
+    // Unity happened to process first each frame "won" the shared 60-frame window and starved the
+    // other branch's log out entirely - confirmed live (an entire test session only ever logged
+    // MISS lines, never once HIT, even though the user's own report proves P2's bar *does*
+    // respond). Separate counters per branch so both get logged independently.
+    private static int lastLoggedMissFrame = -999;
+    private static int lastLoggedHitFrame = -999;
+
+    private static bool Prefix(PlayerFervour __instance)
+    {
+        if (__instance != Player2FervourBar.Instance)
+        {
+            if (Main.CoopLocal != null && Time.frameCount - lastLoggedMissFrame >= 60)
+            {
+                lastLoggedMissFrame = Time.frameCount;
+                Penitent owner = __instance.GetComponentInParent<Penitent>();
+                // Fervour bars live under a UI Canvas, not physically parented under the Penitent
+                // transform - GetComponentInParent<Penitent>() reliably returns null for *every*
+                // PlayerFervour instance (P1's real one included), confirmed live, so it can't be
+                // used to identify which instance this is. Not chasing that further this round.
+                Blasphemous.ModdingAPI.ModLog.Info(
+                    $"[FervourDiag] Update() MISS: instance={__instance.GetInstanceID()} owner={DashParryDebugLog.Label(owner)} " +
+                    $"Player2FervourBar.Instance={(Player2FervourBar.Instance != null ? Player2FervourBar.Instance.GetInstanceID().ToString() : "null")} " +
+                    $"gameObject='{__instance.gameObject.name}' active={__instance.gameObject.activeInHierarchy}",
+                    Main.CoopLocal);
+            }
+            return true;
+        }
+        Penitent p2 = CoopLocal.Player2;
+        if (p2 == null)
+        {
+            return false;
+        }
+
+        if (Main.CoopLocal != null && Time.frameCount - lastLoggedHitFrame >= 60)
+        {
+            lastLoggedHitFrame = Time.frameCount;
+            Image diagFillExact = (Image)DiagFillExactField.GetValue(__instance);
+            Image diagFillAnimable = (Image)DiagFillAnimableField.GetValue(__instance);
+            Blasphemous.ModdingAPI.ModLog.Info(
+                $"[FervourDiag] Update() HIT: instance={__instance.GetInstanceID()} P2.Fervour.Current={p2.Stats.Fervour.Current:F1} " +
+                $"P2.Fervour.CurrentMaxWithoutFactor={p2.Stats.Fervour.CurrentMaxWithoutFactor:F1} lastValue={LastValueField.GetValue(__instance)} " +
+                $"fillExact.fillAmount={(diagFillExact != null ? diagFillExact.fillAmount.ToString("F3") : "null")} " +
+                $"fillAnimable.fillAmount={(diagFillAnimable != null ? diagFillAnimable.fillAmount.ToString("F3") : "null")} " +
+                $"gameObject='{__instance.gameObject.name}' active={__instance.gameObject.activeInHierarchy}",
+                Main.CoopLocal);
+        }
+
+        PrayerUse prayerCast = p2.PrayerCast;
+        bool isUsing = prayerCast != null && prayerCast.IsUsingAbility;
+        bool useStocksOfHealth = Core.PenitenceManager.UseStocksOfHealth;
+        ((GameObject)NormalPrayerInUseField.GetValue(__instance)).SetActive(isUsing && !useStocksOfHealth);
+        ((GameObject)Pe02PrayerInUseField.GetValue(__instance)).SetActive(isUsing && useStocksOfHealth);
+
+        float castFillAmount = isUsing ? 1f - prayerCast.GetPercentTimeCasting() : 0f;
+        ((Image)PrayerTimerField.GetValue(__instance)).fillAmount = castFillAmount;
+
+        // Round 40 fix: decompiled the REAL Update() body with ICSharpCode.Decompiler (actual C#,
+        // not raw IL) and it does NOT gate CalculateBarSize/CalculateFillsBars/CalculateMarks/
+        // CalculateNotEnough behind "did barTarget change" the way round 41's version (and this
+        // Prefix, until now) assumed - vanilla calls all four UNCONDITIONALLY every single Update()
+        // tick. The "if (lastValue != barTarget)" check only resets fillsIncrease/lastValue/
+        // _timeElapsed (the direction/timer for the lerp animation) - it is NOT a call-gate. Putting
+        // the four Calculate calls inside that gate (as before) meant CalculateFillsBars - which
+        // does the actual per-frame Mathf.Lerp animation toward BarTarget - only ever ran ONCE per
+        // change instead of continuously, so the fill visually took one lerp step and then froze
+        // until the target changed again. This was the best explanation found for "no se actualiza
+        // en tiempo real" via static analysis - **the user still reports it broken after this fix**
+        // (round 42), so either this wasn't the whole story or something else is also wrong; the
+        // enriched [FervourDiag] log above is there to pin down which from real data.
+        float barTarget = p2.Stats.Fervour.CurrentMaxWithoutFactor > 0f
+            ? p2.Stats.Fervour.Current / p2.Stats.Fervour.CurrentMaxWithoutFactor
+            : 0f;
+        float lastValue = (float)LastValueField.GetValue(__instance);
+        if (!Mathf.Approximately(lastValue, barTarget))
+        {
+            FillsIncreaseField.SetValue(__instance, barTarget > lastValue);
+            LastValueField.SetValue(__instance, barTarget);
+            TimeElapsedField.SetValue(__instance, 0f);
+        }
+        CalculateBarSizeMethod.Invoke(__instance, null);
+        CalculateFillsBarsMethod.Invoke(__instance, null);
+        CalculateMarksMethod.Invoke(__instance, null);
+        CalculateNotEnoughMethod.Invoke(__instance, null);
+
+        float maxFervour = p2.Stats.Fervour.CurrentMaxWithoutFactor;
+        float lastMaxFervour = (float)LastMaxFervourField.GetValue(__instance);
+        if (!Mathf.Approximately(maxFervour, lastMaxFervour))
+        {
+            LastMaxFervourField.SetValue(__instance, maxFervour);
+            CalculateBarPentaltyMethod.Invoke(__instance, null);
+        }
+        return false;
+    }
+}
+
+[HarmonyPatch(typeof(PlayerFervour), "CalculateBarSize")]
+internal static class PlayerFervour_CalculateBarSize_P2_Patch
+{
+    private static readonly FieldInfo LastBarWidthField = AccessTools.Field(typeof(PlayerFervour), "lastBarWidth");
+    private static readonly FieldInfo BackgroundStartSizeField = AccessTools.Field(typeof(PlayerFervour), "backgroundStartSize");
+    private static readonly FieldInfo EndFillSizeField = AccessTools.Field(typeof(PlayerFervour), "endFillSize");
+    private static readonly FieldInfo BackgroundMidField = AccessTools.Field(typeof(PlayerFervour), "backgroundMid");
+    private static readonly FieldInfo FillExactTransformField = AccessTools.Field(typeof(PlayerFervour), "fillExactTransform");
+    private static readonly FieldInfo FillExactFullTransformField = AccessTools.Field(typeof(PlayerFervour), "fillExactFullTransform");
+    private static readonly FieldInfo FillAnimableTransformField = AccessTools.Field(typeof(PlayerFervour), "fillAnimableTransform");
+    private static readonly FieldInfo BackgroundField = AccessTools.Field(typeof(PlayerFervour), "background");
+    private static readonly FieldInfo FillNotEnoughTransformField = AccessTools.Field(typeof(PlayerFervour), "fillNotEnoughTransform");
+
+    private static bool Prefix(PlayerFervour __instance)
+    {
+        if (__instance != Player2FervourBar.Instance)
+        {
+            return true;
+        }
+        Penitent p2 = CoopLocal.Player2;
+        if (p2 == null)
+        {
+            return false;
+        }
+
+        float maxWithoutFactor = p2.Stats.Fervour.CurrentMaxWithoutFactor;
+        float lastBarWidth = (float)LastBarWidthField.GetValue(__instance);
+        if (maxWithoutFactor == lastBarWidth)
+        {
+            return false;
+        }
+        LastBarWidthField.SetValue(__instance, maxWithoutFactor);
+
+        float backgroundStartSize = (float)BackgroundStartSizeField.GetValue(__instance);
+        float endFillSize = (float)EndFillSizeField.GetValue(__instance);
+        float width = Mathf.Max(maxWithoutFactor - backgroundStartSize - endFillSize, 0f);
+
+        SetWidth(BackgroundMidField, __instance, width);
+        SetWidth(FillExactTransformField, __instance, maxWithoutFactor);
+        SetWidth(FillExactFullTransformField, __instance, maxWithoutFactor);
+        SetWidth(FillAnimableTransformField, __instance, maxWithoutFactor);
+        SetWidth(BackgroundField, __instance, maxWithoutFactor);
+        SetWidth(FillNotEnoughTransformField, __instance, maxWithoutFactor);
+        return false;
+    }
+
+    private static void SetWidth(FieldInfo field, PlayerFervour instance, float width)
+    {
+        RectTransform rect = (RectTransform)field.GetValue(instance);
+        rect.sizeDelta = new Vector2(width, rect.sizeDelta.y);
+    }
+}
+
+[HarmonyPatch(typeof(PlayerFervour), "CalculateFillsBars")]
+internal static class PlayerFervour_CalculateFillsBars_P2_Patch
+{
+    private static readonly FieldInfo TimeElapsedField = AccessTools.Field(typeof(PlayerFervour), "_timeElapsed");
+    private static readonly FieldInfo FillsIncreaseField = AccessTools.Field(typeof(PlayerFervour), "fillsIncrease");
+    private static readonly FieldInfo FillExactField = AccessTools.Field(typeof(PlayerFervour), "fillExact");
+    private static readonly FieldInfo FillAnimableField = AccessTools.Field(typeof(PlayerFervour), "fillAnimable");
+    private static readonly FieldInfo FillNotEnoughField = AccessTools.Field(typeof(PlayerFervour), "fillNotEnough");
+    private static readonly FieldInfo AddAnimationCurveField = AccessTools.Field(typeof(PlayerFervour), "AddAnimationCurve");
+    private static readonly FieldInfo LossAnimationCurveField = AccessTools.Field(typeof(PlayerFervour), "LossAnimationCurve");
+    private static readonly FieldInfo FervourSparkField = AccessTools.Field(typeof(PlayerFervour), "fervourSpark");
+
+    private static bool Prefix(PlayerFervour __instance)
+    {
+        if (__instance != Player2FervourBar.Instance)
+        {
+            return true;
+        }
+        Penitent p2 = CoopLocal.Player2;
+        if (p2 == null)
+        {
+            return false;
+        }
+
+        float barTarget = p2.Stats.Fervour.Current / p2.Stats.Fervour.CurrentMaxWithoutFactor;
+        float maxWithoutFactor = p2.Stats.Fervour.CurrentMaxWithoutFactor;
+        float timeElapsed = (float)TimeElapsedField.GetValue(__instance) + Time.deltaTime;
+        TimeElapsedField.SetValue(__instance, timeElapsed);
+
+        Image fillExact = (Image)FillExactField.GetValue(__instance);
+        Image fillAnimable = (Image)FillAnimableField.GetValue(__instance);
+        Image fillNotEnough = (Image)FillNotEnoughField.GetValue(__instance);
+        bool fillsIncrease = (bool)FillsIncreaseField.GetValue(__instance);
+
+        if (fillsIncrease)
+        {
+            if (Mathf.Approximately(fillExact.fillAmount, barTarget))
+            {
+                fillExact.fillAmount = barTarget;
+                TimeElapsedField.SetValue(__instance, 0f);
+            }
+            else
+            {
+                AnimationCurve addCurve = (AnimationCurve)AddAnimationCurveField.GetValue(__instance);
+                fillExact.fillAmount = Mathf.Lerp(fillExact.fillAmount, barTarget, addCurve.Evaluate(timeElapsed));
+
+                float sparkX = (float)(int)maxWithoutFactor * fillExact.fillAmount - 1f;
+                GameObject spark = (GameObject)FervourSparkField.GetValue(__instance);
+                Vector3 sparkPos = spark.transform.localPosition;
+                spark.transform.localPosition = new Vector3(sparkX, sparkPos.y);
+            }
+            // Round 40: real decompiled source sets this unconditionally at the end of the
+            // fillsIncrease branch (both the "reached target" and "still lerping" paths), not only
+            // inside the lerping else - the previous version left fillAnimable one step stale on
+            // the exact frame the target is reached.
+            fillAnimable.fillAmount = fillExact.fillAmount;
+        }
+        else
+        {
+            fillExact.fillAmount = barTarget;
+            if (Mathf.Approximately(fillAnimable.fillAmount, barTarget))
+            {
+                fillAnimable.fillAmount = barTarget;
+                TimeElapsedField.SetValue(__instance, 0f);
+            }
+            else
+            {
+                AnimationCurve lossCurve = (AnimationCurve)LossAnimationCurveField.GetValue(__instance);
+                fillAnimable.fillAmount = Mathf.Lerp(fillAnimable.fillAmount, barTarget, lossCurve.Evaluate(timeElapsed));
+            }
+        }
+        fillNotEnough.fillAmount = fillExact.fillAmount;
+        return false;
+    }
+}
+
+// Round 43: found the real cause of "reduce el fervor a 0 igual aparece en el HUD como a la
+// mitad" - CalculateMarks() was the one remaining unredirected Calculate method (documented as a
+// "tick marks" known gap since round 37/38, but it turns out to control far more than cosmetic
+// tick marks). It computes `fillExactFull.fillAmount` - a *visible* fill layer rendered alongside
+// fillExact/fillAnimable (both already correctly redirected) - straight from
+// Core.Logic.Penitent.Stats.Fervour.Current (always P1). Since P1 and P2's Fervour *max* now
+// matches after the stat-sync feature, the segment/tick-mark *positions* this method computes
+// (based on CurrentMax) happen to come out identical either way - but the *fill ratio itself*
+// (based on Current, which genuinely differs per player) was still showing P1's percentage
+// regardless of P2's real value, which is exactly the "stuck at half" symptom reported. Full
+// reimplementation, mirroring CalculateBarSize/CalculateFillsBars's own approach - every
+// Core.Logic.Penitent read redirected to p2, private fields/method accessed via reflection.
+[HarmonyPatch(typeof(PlayerFervour), "CalculateMarks")]
+internal static class PlayerFervour_CalculateMarks_P2_Patch
+{
+    private static readonly FieldInfo FillExactFullField = AccessTools.Field(typeof(PlayerFervour), "fillExactFull");
+    private static readonly FieldInfo EpsilonToShowLastBarField = AccessTools.Field(typeof(PlayerFervour), "epsilonToShowLastBar");
+    private static readonly FieldInfo CurrentMarksField = AccessTools.Field(typeof(PlayerFervour), "currentMarks");
+    private static readonly FieldInfo CurrentMarksSeparationField = AccessTools.Field(typeof(PlayerFervour), "currentMarksSeparation");
+    private static readonly FieldInfo CurrentSegmentsFilledField = AccessTools.Field(typeof(PlayerFervour), "currentSegmentsFilled");
+    private static readonly FieldInfo MarksParentField = AccessTools.Field(typeof(PlayerFervour), "marksParent");
+    private static readonly FieldInfo BarMaskChildNameField = AccessTools.Field(typeof(PlayerFervour), "barMaskChildName");
+    private static readonly FieldInfo BarBarChildNameField = AccessTools.Field(typeof(PlayerFervour), "barBarChildName");
+    private static readonly FieldInfo BarAnimChildNameField = AccessTools.Field(typeof(PlayerFervour), "barAnimChildName");
+    private static readonly FieldInfo BarAnimEndPositionField = AccessTools.Field(typeof(PlayerFervour), "barAnimEndPosition");
+    private static readonly FieldInfo BarAnimMovementPerElapsedField = AccessTools.Field(typeof(PlayerFervour), "barAnimMovementPerElapsed");
+    private static readonly FieldInfo BarAnimUpdatedElapsedField = AccessTools.Field(typeof(PlayerFervour), "barAnimUpdatedElapsed");
+    private static readonly FieldInfo CurrentAnimPositionField = AccessTools.Field(typeof(PlayerFervour), "currentAnimPosition");
+    private static readonly FieldInfo CurrentAnimElapsedField = AccessTools.Field(typeof(PlayerFervour), "currentAnimElapsed");
+    private static readonly FieldInfo AnimsField = AccessTools.Field(typeof(PlayerFervour), "anims");
+    private static readonly MethodInfo SetBarPositionMethod = AccessTools.Method(typeof(PlayerFervour), "SetBarPosition");
+
+    private static bool Prefix(PlayerFervour __instance)
+    {
+        if (__instance != Player2FervourBar.Instance)
+        {
+            return true;
+        }
+        Penitent p2 = CoopLocal.Player2;
+        if (p2 == null)
+        {
+            return false;
+        }
+
+        int num = 0;
+        float num2 = 0f;
+        Framework.Inventory.Prayer prayerInSlot = Core.InventoryManager.GetPrayerInSlot(0);
+        int num3 = prayerInSlot != null ? prayerInSlot.fervourNeeded + (int)p2.Stats.PrayerCostAddition.Final : 0;
+        Image fillExactFull = (Image)FillExactFullField.GetValue(__instance);
+        if (num3 > 0)
+        {
+            num = (int)p2.Stats.Fervour.CurrentMax / num3;
+            num2 = (int)p2.Stats.Fervour.Current / num3;
+            fillExactFull.fillAmount = num2 * num3 / p2.Stats.Fervour.CurrentMaxWithoutFactor;
+        }
+        else
+        {
+            fillExactFull.fillAmount = 0f;
+        }
+
+        float epsilonToShowLastBar = (float)EpsilonToShowLastBarField.GetValue(__instance);
+        bool showLastBar = p2.Stats.Fervour.CurrentMax - num3 * num > epsilonToShowLastBar;
+        bool skippedAnimReset = false;
+        float restPosition = -num3 + 1f;
+
+        int currentMarks = (int)CurrentMarksField.GetValue(__instance);
+        int currentMarksSeparation = (int)CurrentMarksSeparationField.GetValue(__instance);
+        float currentSegmentsFilled = (float)CurrentSegmentsFilledField.GetValue(__instance);
+
+        if (num != currentMarks || num3 != currentMarksSeparation || num2 != currentSegmentsFilled)
+        {
+            float currentAnimPosition = (float)CurrentAnimPositionField.GetValue(__instance);
+            int barAnimEndPosition = (int)BarAnimEndPositionField.GetValue(__instance);
+            List<RectTransform> anims = (List<RectTransform>)AnimsField.GetValue(__instance);
+
+            if (num == 0)
+            {
+                currentAnimPosition = restPosition;
+                CurrentAnimElapsedField.SetValue(__instance, 0f);
+                skippedAnimReset = true;
+            }
+            anims.Clear();
+            if (currentAnimPosition > barAnimEndPosition)
+            {
+                currentAnimPosition = restPosition;
+            }
+            CurrentAnimPositionField.SetValue(__instance, currentAnimPosition);
+
+            CurrentMarksField.SetValue(__instance, num);
+            CurrentMarksSeparationField.SetValue(__instance, num3);
+            CurrentSegmentsFilledField.SetValue(__instance, num2);
+
+            Transform marksParent = (Transform)MarksParentField.GetValue(__instance);
+            string barMaskChildName = (string)BarMaskChildNameField.GetValue(__instance);
+            string barBarChildName = (string)BarBarChildNameField.GetValue(__instance);
+            string barAnimChildName = (string)BarAnimChildNameField.GetValue(__instance);
+
+            float xPos = 0f;
+            for (int i = 0; i < marksParent.childCount; i++)
+            {
+                RectTransform rectTransform = (RectTransform)marksParent.GetChild(i);
+                bool active = i < num;
+                rectTransform.gameObject.SetActive(active);
+                if (!active)
+                {
+                    continue;
+                }
+                rectTransform.sizeDelta = new Vector2(num3, rectTransform.sizeDelta.y);
+                rectTransform.localPosition = new Vector3(xPos, 0f, 0f);
+                xPos += num3;
+                RectTransform mask = (RectTransform)rectTransform.Find(barMaskChildName);
+                mask.sizeDelta = new Vector2(num3 - 1f, mask.sizeDelta.y);
+                RectTransform bar = (RectTransform)rectTransform.Find(barBarChildName);
+                bar.gameObject.SetActive(showLastBar || i != num - 1);
+                bool filled = i < currentSegmentsFilled;
+                RectTransform anim = (RectTransform)mask.Find(barAnimChildName);
+                anim.gameObject.SetActive(filled);
+                if (filled)
+                {
+                    SetBarPositionMethod.Invoke(__instance, new object[] { anim });
+                    anims.Add(anim);
+                }
+            }
+        }
+
+        if (skippedAnimReset || num <= 0)
+        {
+            return false;
+        }
+
+        float elapsed = (float)CurrentAnimElapsedField.GetValue(__instance) + Time.deltaTime;
+        float barAnimUpdatedElapsed = (float)BarAnimUpdatedElapsedField.GetValue(__instance);
+        if (elapsed >= barAnimUpdatedElapsed)
+        {
+            elapsed = 0f;
+            float pos = (float)CurrentAnimPositionField.GetValue(__instance) + (float)BarAnimMovementPerElapsedField.GetValue(__instance);
+            int barAnimEndPosition = (int)BarAnimEndPositionField.GetValue(__instance);
+            if (pos > barAnimEndPosition)
+            {
+                pos = restPosition;
+            }
+            CurrentAnimPositionField.SetValue(__instance, pos);
+            List<RectTransform> anims = (List<RectTransform>)AnimsField.GetValue(__instance);
+            foreach (RectTransform anim in anims)
+            {
+                SetBarPositionMethod.Invoke(__instance, new object[] { anim });
+            }
+        }
+        CurrentAnimElapsedField.SetValue(__instance, elapsed);
+        return false;
+    }
+}
+
+// Round 40: P2's potion (Flask) HUD - user reported it showing a static 4 potions (P1's own count,
+// frozen at whatever it was the instant Player2FervourBar's wholesale "LeftPart" clone was made)
+// instead of P2's real 2, and never decreasing on use. PlayerFlask rides along inside that same
+// clone as an untouched duplicate (see Player2FervourBar.FlaskInstance's own comment) - decompiled
+// via ICSharpCode.Decompiler (real C#, not raw IL) to get an exact reimplementation: RefreshFlask()
+// hardcodes Core.Logic.Penitent in three reads (Stats.Flask, Stats.FlaskHealth.PermanetBonus,
+// Stats.FlaskHealthUpgrade) - redirected to P2 here, called unconditionally every frame from
+// Update() with no inlining-gate risk (unlike Fervour's BarTarget/Update() saga), so a direct
+// Prefix on RefreshFlask() itself is sufficient.
+[HarmonyPatch(typeof(PlayerFlask), "RefreshFlask")]
+internal static class PlayerFlask_RefreshFlask_P2_Patch
+{
+    private static readonly FieldInfo FlasksField = AccessTools.Field(typeof(PlayerFlask), "flasks");
+    private static readonly FieldInfo FlasksFullField = AccessTools.Field(typeof(PlayerFlask), "flasksFull");
+    private static readonly FieldInfo FlasksEmptyField = AccessTools.Field(typeof(PlayerFlask), "flasksEmpty");
+    private static readonly FieldInfo FlasksFullFervourField = AccessTools.Field(typeof(PlayerFlask), "flasksFullFervour");
+    private static readonly FieldInfo CurrentFlaskNumberField = AccessTools.Field(typeof(PlayerFlask), "currentFlaskNumber");
+    private static readonly FieldInfo CurrentFlaskFullField = AccessTools.Field(typeof(PlayerFlask), "currentFlaskFull");
+    private static readonly FieldInfo CurrentFlaskLevelField = AccessTools.Field(typeof(PlayerFlask), "currentFlaskLevel");
+    private static readonly FieldInfo CurrentFlaskIsFervourField = AccessTools.Field(typeof(PlayerFlask), "currentFlaskIsFervour");
+    private static readonly FieldInfo SwordHeart06Field = AccessTools.Field(typeof(PlayerFlask), "swordHeart06");
+
+    private static bool Prefix(PlayerFlask __instance)
+    {
+        if (__instance != Player2FervourBar.FlaskInstance)
+        {
+            return true;
+        }
+        Penitent p2 = CoopLocal.Player2;
+        if (p2 == null)
+        {
+            return false;
+        }
+
+        List<Image> flasks = (List<Image>)FlasksField.GetValue(__instance);
+        List<Sprite> flasksFull = (List<Sprite>)FlasksFullField.GetValue(__instance);
+        List<Sprite> flasksEmpty = (List<Sprite>)FlasksEmptyField.GetValue(__instance);
+        List<Sprite> flasksFullFervour = (List<Sprite>)FlasksFullFervourField.GetValue(__instance);
+        if (flasks == null || flasks.Count == 0)
+        {
+            return false;
+        }
+
+        Framework.FrameworkCore.Attributes.Flask flask = p2.Stats.Flask;
+        int level = (int)(p2.Stats.FlaskHealth.PermanetBonus / p2.Stats.FlaskHealthUpgrade);
+        if (level > flasksEmpty.Count)
+        {
+            level = flasksEmpty.Count;
+        }
+
+        Framework.Inventory.Sword swordHeart06 = (Framework.Inventory.Sword)SwordHeart06Field.GetValue(__instance);
+        if (swordHeart06 == null)
+        {
+            swordHeart06 = Core.InventoryManager.GetSword("HE06");
+            SwordHeart06Field.SetValue(__instance, swordHeart06);
+        }
+
+        if (swordHeart06 != null && swordHeart06.IsEquiped)
+        {
+            for (int i = 0; i < flasks.Count; i++)
+            {
+                flasks[i].gameObject.SetActive(false);
+            }
+            flask.Current = 0f;
+            return false;
+        }
+
+        float currentFlaskNumber = (float)CurrentFlaskNumberField.GetValue(__instance);
+        float currentFlaskFull = (float)CurrentFlaskFullField.GetValue(__instance);
+        float currentFlaskLevel = (float)CurrentFlaskLevelField.GetValue(__instance);
+        bool currentFlaskIsFervour = (bool)CurrentFlaskIsFervourField.GetValue(__instance);
+
+        if (currentFlaskNumber == flask.Final && currentFlaskFull == flask.Current && currentFlaskLevel == (float)level
+            && flasks[0].gameObject.activeInHierarchy && currentFlaskIsFervour == Core.PenitenceManager.UseFervourFlasks)
+        {
+            return false;
+        }
+
+        CurrentFlaskIsFervourField.SetValue(__instance, Core.PenitenceManager.UseFervourFlasks);
+        CurrentFlaskNumberField.SetValue(__instance, flask.Final);
+        CurrentFlaskFullField.SetValue(__instance, flask.Current);
+        CurrentFlaskLevelField.SetValue(__instance, (float)level);
+
+        for (int j = 0; j < flasks.Count; j++)
+        {
+            if ((float)j < flask.Current)
+            {
+                flasks[j].sprite = Core.PenitenceManager.UseFervourFlasks ? flasksFullFervour[level] : flasksFull[level];
+                flasks[j].gameObject.SetActive(true);
+            }
+            else if ((float)j < flask.Final)
+            {
+                flasks[j].sprite = flasksEmpty[level];
+                flasks[j].gameObject.SetActive(true);
+            }
+            else
+            {
+                flasks[j].gameObject.SetActive(false);
+            }
+        }
+        return false;
+    }
+}
+
+// Round 39: the user asked to check whether currency ("Tears"/Purge) could be separated per
+// player. Turned out to be much more tractable than first assessed: currency is stored as
+// Core.Logic.Penitent.Stats.Purge - a VariableAttribute on EntityStats, the *exact* same
+// per-instance mechanism Life and Fervour already use. P2 (a full Penitent clone) already has
+// its own separate Stats.Purge, sitting unused - this is the same "wrong owner" bug class
+// already fixed throughout this file all session, just not yet applied to currency.
+//
+// The catch: unlike Life/Fervour (touched from a handful of C# classes), every currency EARN in
+// the entire game runs through one of four PlayMaker actions (TearsAddition, and the newer
+// Playmaker2 Purge/PurgeAdd/PurgeSet - level-scripted, used by enemy drops, pickups, chests,
+// everywhere) - decompiling all four confirms each one unconditionally reads/writes
+// Core.Logic.Penitent.Stats.Purge with **no notion of "which player" caused it at all**. PlayMaker
+// FSMs don't carry per-Penitent context the way a C# call site normally would, so there is no
+// cheap way to determine "P2 specifically earned this one" the way Hit.AttackingEntity lets
+// damage be attributed elsewhere in this file. Rather than leave P2's pool permanently empty
+// (unusable) or invest in a much larger "track last damager per enemy" plumbing project just for
+// this, both players are credited the *same* amount independently whenever any of these actions
+// fire - two genuinely separate running totals, not a shared/split pool, which is what "no
+// compartan monedas" asked for; it just means both earn from every source rather than only
+// whoever specifically caused it. Revisit if the user wants strict per-causer attribution instead
+// - that's a real feature, not a quick follow-up.
+//
+// Spending (shops/Alms) is NOT touched here - shop UI/dialogue is still P1-only in this mod (no
+// P2 shop-interaction exists at all yet), so there's nothing to redirect on that side yet; P2's
+// pool just accumulates for now.
+[HarmonyPatch(typeof(Tools.PlayMaker.Action.TearsAddition), "OnEnter")]
+internal static class TearsAddition_CreditPlayer2_Patch
+{
+    private static void Postfix(Tools.PlayMaker.Action.TearsAddition __instance)
+    {
+        Penitent p2 = CoopLocal.Player2;
+        if (p2 == null)
+        {
+            return;
+        }
+        float delta = __instance.Tears != null ? __instance.Tears.Value : 0f;
+        p2.Stats.Purge.Current = Mathf.Max(0f, p2.Stats.Purge.Current + delta);
+    }
+}
+
+[HarmonyPatch(typeof(Tools.Playmaker2.Action.PurgeAdd), "OnEnter")]
+internal static class PurgeAdd_CreditPlayer2_Patch
+{
+    private static void Postfix(Tools.Playmaker2.Action.PurgeAdd __instance)
+    {
+        Penitent p2 = CoopLocal.Player2;
+        if (p2 == null)
+        {
+            return;
+        }
+        float delta = __instance.value != null ? __instance.value.Value : 0f;
+        p2.Stats.Purge.Current = Mathf.Max(0f, p2.Stats.Purge.Current + delta);
+    }
+}
+
+// PurgeSet is an absolute assignment (not a delta) - almost certainly used for rare story-level
+// resets rather than routine pickups, so mirroring it to P2 as an absolute set too (rather than
+// treating it like an add) keeps both players' pools consistent for whatever story moment this
+// actually is.
+[HarmonyPatch(typeof(Tools.Playmaker2.Action.PurgeSet), "OnEnter")]
+internal static class PurgeSet_CreditPlayer2_Patch
+{
+    private static void Postfix(Tools.Playmaker2.Action.PurgeSet __instance)
+    {
+        Penitent p2 = CoopLocal.Player2;
+        if (p2 == null)
+        {
+            return;
+        }
+        float value = __instance.value != null ? __instance.value.Value : 0f;
+        p2.Stats.Purge.Current = Mathf.Max(0f, value);
+    }
+}
+
+// Round 42: after three rounds of trying to clone-and-redirect various real PlayerPurgePoints
+// widgets (shop popup, then GameplayWidget.purgePoints, then a source-cycling tool to compare all
+// of them) the user decided cloning isn't worth it here - PlayerPurgePoints drags along baked-in
+// animation/background machinery that keeps looking wrong for reasons that were never fully
+// pinned down. Simpler and more reliable: a single plain UI.Text we own outright, showing P2's
+// Purge value as a number, styled with the *real* game font read once off the actual combat-HUD
+// counter (Core.UI.GameplayUI's private "purgePoints" field, found via the Mono.Cecil scan two
+// rounds ago) rather than guessed - no clone, no redirect patch, no inherited animation/background
+// quirks to fight.
+internal static class Player2PurgePoints
+{
+    private static readonly FieldInfo GameplayWidgetPurgePointsField =
+        AccessTools.Field(typeof(Gameplay.UI.Widgets.GameplayWidget), "purgePoints");
+    private static readonly FieldInfo PurgePointsTextField = AccessTools.Field(typeof(PlayerPurgePoints), "text");
+
+    // Round 45: final position, re-confirmed by the user via live Player2HudPositionTuner testing
+    // (moved from the original bottom-left placement to sit with the rest of P2's HUD block).
+    internal static Vector2 AnchoredPosition = new Vector2(-157f, -4f);
+
+    // Round 44: scale multipliers for the text/icon, adjustable live via Player2HudPositionTuner's
+    // "." / "-" keys - these two never had a Scale field before since they were created at native
+    // size (unlike Health/Fervour's cloned widgets, which always applied a fixed 0.65 shrink).
+    // Round 45: final values, confirmed by the user via live testing.
+    internal static float TextScale = 0.945f;
+    internal static float IconScale = 0.855f;
+
+    // Round 43: the coin/tears icon that sits behind the real HUD's currency text - independently
+    // positionable from the text itself via Player2HudPositionTuner's new CurrencyIcon target.
+    // Round 45: final position, re-confirmed by the user via live tuning.
+    internal static Vector2 IconAnchoredPosition = new Vector2(16f, -13f);
+
+    private static GameObject textRoot;
+    private static GameObject iconRoot;
+    private static Text label;
+
+    internal static RectTransform CloneRect => textRoot != null ? textRoot.GetComponent<RectTransform>() : null;
+    internal static RectTransform IconRect => iconRoot != null ? iconRoot.GetComponent<RectTransform>() : null;
+
+    internal static void EnsureCreated(Penitent p2)
+    {
+        if (textRoot != null)
+        {
+            UnityEngine.Object.Destroy(textRoot);
+            textRoot = null;
+            label = null;
+        }
+        if (iconRoot != null)
+        {
+            UnityEngine.Object.Destroy(iconRoot);
+            iconRoot = null;
+        }
+
+        Gameplay.UI.Widgets.GameplayWidget gameplayWidget = Core.UI != null ? Core.UI.GameplayUI : null;
+        PlayerPurgePoints original = gameplayWidget != null
+            ? (PlayerPurgePoints)GameplayWidgetPurgePointsField.GetValue(gameplayWidget)
+            : null;
+        Text originalText = original != null ? (Text)PurgePointsTextField.GetValue(original) : null;
+
+        Canvas canvas = original != null ? original.GetComponentInParent<Canvas>() : null;
+        while (canvas != null && canvas.transform.parent != null)
+        {
+            Canvas parentCanvas = canvas.transform.parent.GetComponentInParent<Canvas>();
+            if (parentCanvas == null)
+            {
+                break;
+            }
+            canvas = parentCanvas;
+        }
+        Transform parent = canvas != null ? canvas.transform : (original != null ? original.transform.parent : null);
+        if (parent == null)
+        {
+            DashParryDebugLog.Log("Player2PurgePoints.EnsureCreated: aborted - no Canvas parent found to attach the text to.");
+            return;
+        }
+
+        // Round 43: the user asked to add the coin/tears icon sprite that sits behind the real
+        // currency text. Looking for an Image sibling next to originalText's own GameObject
+        // (logging every candidate sibling found, same technique proven earlier this session for
+        // finding the HUD portrait) rather than guessing a hierarchy path blind.
+        Sprite iconSprite = null;
+        Color iconColor = Color.white;
+        if (originalText != null && originalText.transform.parent != null)
+        {
+            Transform textParent = originalText.transform.parent;
+            System.Text.StringBuilder siblingLog = new System.Text.StringBuilder();
+            for (int i = 0; i < textParent.childCount; i++)
+            {
+                Transform child = textParent.GetChild(i);
+                Image childImage = child.GetComponent<Image>();
+                siblingLog.Append($"[{i}] '{child.name}' hasImage={childImage != null} ");
+                if (childImage != null && childImage.sprite != null && child.gameObject != originalText.gameObject && iconSprite == null)
+                {
+                    iconSprite = childImage.sprite;
+                    iconColor = childImage.color;
+                }
+            }
+            DashParryDebugLog.Log($"Player2PurgePoints.EnsureCreated: '{textParent.name}' children (looking for the coin/tears icon): {siblingLog}");
+        }
+
+        // Icon created FIRST so the text (created after) ends up as the later sibling and renders
+        // on top - the same "later sibling wins" rule this file's Z-order fixes already rely on.
+        if (iconSprite != null)
+        {
+            GameObject iconObject = new GameObject("Player2PurgePointsIcon");
+            iconObject.transform.SetParent(parent, worldPositionStays: false);
+            iconRoot = iconObject;
+
+            RectTransform iconRect = iconObject.AddComponent<RectTransform>();
+            iconRect.anchorMin = new Vector2(0f, 0f);
+            iconRect.anchorMax = new Vector2(0f, 0f);
+            iconRect.pivot = new Vector2(0f, 0f);
+            iconRect.sizeDelta = new Vector2(iconSprite.rect.width, iconSprite.rect.height);
+            iconRect.anchoredPosition = IconAnchoredPosition;
+
+            Image icon = iconObject.AddComponent<Image>();
+            icon.sprite = iconSprite;
+            icon.color = iconColor;
+            icon.SetNativeSize();
+            iconRect.localScale = Vector3.one * IconScale;
+        }
+        else
+        {
+            DashParryDebugLog.Log("Player2PurgePoints.EnsureCreated: no coin/tears icon sprite found next to the real currency text.");
+        }
+
+        GameObject textObject = new GameObject("Player2PurgePointsText");
+        textObject.transform.SetParent(parent, worldPositionStays: false);
+        textRoot = textObject;
+
+        RectTransform rect = textObject.AddComponent<RectTransform>();
+        rect.anchorMin = new Vector2(0f, 0f);
+        rect.anchorMax = new Vector2(0f, 0f);
+        rect.pivot = new Vector2(0f, 0f);
+        rect.sizeDelta = new Vector2(220f, 60f);
+        rect.anchoredPosition = AnchoredPosition;
+        rect.localScale = Vector3.one * TextScale;
+
+        label = textObject.AddComponent<Text>();
+        if (originalText != null && originalText.font != null)
+        {
+            label.font = originalText.font;
+            label.fontSize = originalText.fontSize;
+            label.fontStyle = originalText.fontStyle;
+            label.color = originalText.color;
+            label.material = originalText.font.material;
+            label.alignment = originalText.alignment;
+        }
+        else
+        {
+            label.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            label.fontSize = 28;
+            label.color = Color.white;
+            label.alignment = TextAnchor.MiddleLeft;
+        }
+        label.text = "0";
+
+        DashParryDebugLog.Log(
+            $"Player2PurgePoints.EnsureCreated: custom text created, foundRealFont={(originalText != null && originalText.font != null)}, foundIcon={iconSprite != null}");
+    }
+
+    // Called every frame from Player2Input.Tick() - just a number display, no animation/inlining
+    // risk to worry about, unlike everything else this session.
+    internal static void Tick()
+    {
+        if (label == null)
+        {
+            return;
+        }
+        Penitent p2 = CoopLocal.Player2;
+        if (p2 == null)
+        {
+            return;
+        }
+        label.text = Mathf.FloorToInt(p2.Stats.Purge.Current).ToString();
+    }
+}
+
+// Round 40: temporary dev tool, NOT meant to ship long-term - every position value in
+// Player2HealthBar/Player2FervourBar/Player2PurgePoints so far has been a guess, since this
+// environment can't screenshot the live HUD to check placement. Lets the user interactively
+// reposition each cloned widget in-game instead: arrow keys nudge whichever one is currently
+// selected, "+" (Keypad or the plain top-row key, either works) cycles Life -> Fervour ->
+// Currency -> Life, an on-screen label shows which one is selected, and every move is logged as
+// "[HudTuner] <Target> position now: (x, y)" - once a widget looks right, copy that line's
+// coordinates into the matching AnchoredPosition field above (Player2HealthBar.AnchoredPosition
+// etc.) to make it permanent, and this whole class can be deleted afterwards. Caveat: arrow keys
+// may double as P1's own alternate movement binding in Rewired (same keyboard-map overlap this
+// file's history is full of) - fine for a one-off tuning session, just don't expect to also
+// actively play P1 with arrows at the same time as tuning.
+internal static class Player2HudPositionTuner
+{
+    private enum Target
+    {
+        Life,
+        Fervour,
+        Currency,
+        CurrencyIcon,
+    }
+
+    private const float MoveStep = 1f;
+
+    // Round 44: "." grows, "-" shrinks the currently selected widget by 5% per press - lets the
+    // user compare sizes live instead of guessing a fixed scale blind.
+    private const float ScaleStep = 0.05f;
+
+    private static Target current = Target.Life;
+    private static Text label;
+
+    internal static void Tick()
+    {
+        if (Input.GetKeyDown(KeyCode.KeypadPlus) || Input.GetKeyDown(KeyCode.Equals))
+        {
+            current = current == Target.CurrencyIcon ? Target.Life : current + 1;
+            ShowLabel();
+        }
+
+        EnsureLabelShown();
+
+        if (Input.GetKeyDown(KeyCode.Period))
+        {
+            AdjustScale(1f + ScaleStep);
+        }
+        if (Input.GetKeyDown(KeyCode.Minus) || Input.GetKeyDown(KeyCode.KeypadMinus))
+        {
+            AdjustScale(1f - ScaleStep);
+        }
+
+        RectTransform rect = GetTargetRect();
+        if (rect == null)
+        {
+            return;
+        }
+
+        Vector2 move = Vector2.zero;
+        if (Input.GetKeyDown(KeyCode.UpArrow))
+        {
+            move.y += MoveStep;
+        }
+        if (Input.GetKeyDown(KeyCode.DownArrow))
+        {
+            move.y -= MoveStep;
+        }
+        if (Input.GetKeyDown(KeyCode.LeftArrow))
+        {
+            move.x -= MoveStep;
+        }
+        if (Input.GetKeyDown(KeyCode.RightArrow))
+        {
+            move.x += MoveStep;
+        }
+        if (move == Vector2.zero)
+        {
+            return;
+        }
+
+        rect.anchoredPosition += move;
+        SaveAndLog(rect.anchoredPosition);
+    }
+
+    private static void AdjustScale(float factor)
+    {
+        RectTransform rect = GetTargetRect();
+        if (rect == null)
+        {
+            return;
+        }
+        rect.localScale *= factor;
+        float newScale;
+        switch (current)
+        {
+            case Target.Life:
+                Player2HealthBar.Scale *= factor;
+                newScale = Player2HealthBar.Scale;
+                break;
+            case Target.Fervour:
+                Player2FervourBar.Scale *= factor;
+                newScale = Player2FervourBar.Scale;
+                break;
+            case Target.CurrencyIcon:
+                Player2PurgePoints.IconScale *= factor;
+                newScale = Player2PurgePoints.IconScale;
+                break;
+            default:
+                Player2PurgePoints.TextScale *= factor;
+                newScale = Player2PurgePoints.TextScale;
+                break;
+        }
+        if (Main.CoopLocal != null)
+        {
+            Blasphemous.ModdingAPI.ModLog.Info($"[HudTuner] {current} scale now: {newScale:F3}", Main.CoopLocal);
+        }
+    }
+
+    private static RectTransform GetTargetRect()
+    {
+        switch (current)
+        {
+            case Target.Life:
+                return Player2HealthBar.CloneRect;
+            case Target.Fervour:
+                return Player2FervourBar.CloneRect;
+            case Target.CurrencyIcon:
+                return Player2PurgePoints.IconRect;
+            default:
+                return Player2PurgePoints.CloneRect;
+        }
+    }
+
+    private static void SaveAndLog(Vector2 position)
+    {
+        switch (current)
+        {
+            case Target.Life:
+                Player2HealthBar.AnchoredPosition = position;
+                break;
+            case Target.Fervour:
+                Player2FervourBar.AnchoredPosition = position;
+                break;
+            case Target.CurrencyIcon:
+                Player2PurgePoints.IconAnchoredPosition = position;
+                break;
+            default:
+                Player2PurgePoints.AnchoredPosition = position;
+                break;
+        }
+        if (Main.CoopLocal != null)
+        {
+            Blasphemous.ModdingAPI.ModLog.Info($"[HudTuner] {current} position now: ({position.x:F0}, {position.y:F0})", Main.CoopLocal);
+        }
+    }
+
+    private static void EnsureLabelShown()
+    {
+        if (label != null)
+        {
+            return;
+        }
+
+        GameObject canvasObject = new GameObject("HudTunerLabelCanvas");
+        UnityEngine.Object.DontDestroyOnLoad(canvasObject);
+        Canvas canvas = canvasObject.AddComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvas.sortingOrder = short.MaxValue;
+
+        GameObject textObject = new GameObject("HudTunerLabel");
+        textObject.transform.SetParent(canvasObject.transform, worldPositionStays: false);
+        RectTransform rect = textObject.AddComponent<RectTransform>();
+        rect.anchorMin = new Vector2(0.5f, 1f);
+        rect.anchorMax = new Vector2(0.5f, 1f);
+        rect.pivot = new Vector2(0.5f, 1f);
+        rect.anchoredPosition = new Vector2(0f, -16f);
+        rect.sizeDelta = new Vector2(500f, 40f);
+
+        label = textObject.AddComponent<Text>();
+        label.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+        label.fontSize = 22;
+        label.alignment = TextAnchor.UpperCenter;
+        label.color = Color.yellow;
+        ShowLabel();
+    }
+
+    private static void ShowLabel()
+    {
+        if (label == null)
+        {
+            return;
+        }
+        label.text = $"HUD Tuner: {current} Mode  (arrows = move, + = switch, . / - = scale)";
+    }
+}
+
 // Parry.ParryInput is a private computed property (`base.Rewired.GetButtonDown(38)`) checked
 // at the top of Parry.OnUpdate() - same shared-Rewired-Player-0 problem as Dash's direction
 // read, but here the *entire* surrounding cast/gating logic (grounded check, ready-to-cast,
@@ -2406,8 +4062,516 @@ internal static class Parry_ParryInput_Patch
             return true;
         }
 
-        __result = Input.GetKeyDown(Player2Keys.Parry);
+        __result = Player2Input.ParryDown;
         return false;
+    }
+}
+
+// Healing has its own separate, *un-gated* input path - Ability_UpdateInput_Patch above only
+// disables the generic Ability.UpdateInput() dispatcher for P2, but Healing.LateUpdate() calls
+// its own GetHealingInput() every frame for every instance regardless, which (like Parry's
+// ParryInput before it was patched) reads straight off the shared Rewired Player 0
+// (Rewired.GetButtonDown(23) in the decompiled vanilla method) *and* hardcodes
+// Core.Logic.Penitent (always P1) for its "not already performing another action" gate - the
+// same wrong-owner bug already fixed elsewhere in this file for other abilities, just not yet
+// for this one. Net effect before this patch: P2's own Healing reacted to whatever the shared
+// Player 0 read for that button, gated on *P1's* controller state instead of P2's own.
+// Reimplemented the same way ParryInput was: P2's own gamepad heal button (see
+// Player2Pad/Player2Input - the exact button is an unconfirmed guess, verify against
+// RawButtonScanLog's log output), gated on P2's own PlatformCharacterController instead of the
+// hardcoded one. P1's own instance keeps running the untouched original.
+[HarmonyPatch(typeof(Healing), "GetHealingInput")]
+internal static class Healing_GetHealingInput_Patch
+{
+    private static bool Prefix(Healing __instance, ref bool __result)
+    {
+        Penitent owner = __instance.GetComponentInParent<Penitent>();
+        if (owner == null || owner != CoopLocal.Player2)
+        {
+            return true;
+        }
+
+        // The vanilla method's own second gate - !GetActionState((eControllerActions)16) - is
+        // deliberately NOT enforced here. It's untested against P2's own controller state (only
+        // ever checked, in vanilla, against the hardcoded Core.Logic.Penitent/P1), and the user
+        // reported Heal not firing for P2 at all - this gate being permanently true for P2 for
+        // some unrelated reason is the prime suspect, so it's dropped rather than risk it silently
+        // blocking every press again. Still logged (once per press) so this can be confirmed.
+        bool healPressed = Player2Input.HealDown;
+        if (healPressed && Main.CoopLocal != null)
+        {
+            bool vanillaGateWasBlocking = owner.PlatformCharacterController.GetActionState((eControllerActions)16);
+            Blasphemous.ModdingAPI.ModLog.Info(
+                $"[Healing] P2 heal button pressed - vanilla's own action-16 gate is currently " +
+                $"{(vanillaGateWasBlocking ? "TRUE (would have blocked this press)" : "false (harmless)")}.",
+                Main.CoopLocal);
+        }
+        __result = healPressed;
+        return false;
+    }
+}
+
+// Round 36: the user reported P2 getting stuck with a lingering healing-aura sprite and unable
+// to Parry after drinking a flask - a real bug, and the exact same "_penitent falls back to P1"
+// family already fixed throughout this file for Dash/AirDash/RunAfterDash, just not yet for this
+// one. HealingBehaviour (an Animator StateMachineBehaviour, one instance per Animator, so P2's
+// clone genuinely has its own) resolves its `_penitent` field lazily on first OnStateEnter -
+// `if (_penitent == null) _penitent = Core.Logic.Penitent;` - hardcoded to P1 regardless of whose
+// Animator is actually entering the healing state. OnStateEnter then caches
+// `HealingAbility = _penitent.GetComponentInChildren<Healing>()` from that (wrong, P1's own)
+// Penitent, so when the healing animation naturally finishes and OnStateExit fires
+// `HealingAbility.StopHeal()`, it's stopping *P1's* Healing (usually a harmless no-op, since P1
+// probably isn't healing) instead of P2's own - P2's IsHealing/aura/Invulnerable never get reset
+// by StopHeal, which is exactly the "stuck healing state, aura won't go away, can't Parry"
+// (Ability.StopCast() - which clears whatever cast-lock blocks Parry - lives inside StopHeal(),
+// so skipping it for P2 skips that cleanup too) symptom reported. Fixed the same way as the
+// existing Dash/AirDash patches: pre-set `_penitent` correctly (via the Animator parameter
+// OnStateEnter already receives) before the original method's own null-check ever runs, so it
+// sees an already-correct value and never overwrites it with P1.
+[HarmonyPatch(typeof(HealingBehaviour), "OnStateEnter")]
+internal static class HealingBehaviour_OnStateEnter_Patch
+{
+    private static void Prefix(Animator animator, ref Penitent ____penitent)
+    {
+        Penitent owner = animator.GetComponentInParent<Penitent>();
+        if (owner != null)
+        {
+            ____penitent = owner;
+        }
+    }
+}
+
+// Round 37: the user reported dash+attack (the "lunge"/estoque combo) leaving P2 unable to Dash
+// or Heal again afterward. LungeAttackBehaviour has the exact same bug shape as HealingBehaviour
+// above, just caching a different field: OnStateEnter does
+// `if (_lungeAttack == null) _lungeAttack = Core.Logic.Penitent.GetComponentInChildren<LungeAttack>();`
+// - hardcoded to P1 - then OnStateExit calls `_lungeAttack.StopCast()` on whatever that resolved
+// to. For P2's own Animator entering this state, that's P1's LungeAttack, not P2's - so P2's own
+// LungeAttack ability's cast-lock (Ability.StopCast(), which also lives inside StopHeal() for
+// Healing - same family) never gets cleared, leaving P2 stuck exactly as reported. Same fix as
+// HealingBehaviour, just targeting the ability-typed field instead of a Penitent-typed one.
+[HarmonyPatch(typeof(LungeAttackBehaviour), "OnStateEnter")]
+internal static class LungeAttackBehaviour_OnStateEnter_Patch
+{
+    private static void Prefix(Animator animator, ref LungeAttack ____lungeAttack)
+    {
+        Penitent owner = animator.GetComponentInParent<Penitent>();
+        if (owner == null)
+        {
+            return;
+        }
+        LungeAttack ownAbility = owner.GetComponentInChildren<LungeAttack>();
+        if (ownAbility != null)
+        {
+            ____lungeAttack = ownAbility;
+        }
+    }
+}
+
+// Round 37: an exhaustive scan of every Player AnimationBehaviour (StateMachineBehaviour) class
+// in the game found the exact same "_penitent starts null, defaults to Core.Logic.Penitent
+// (always P1) on first use" bug in roughly fifty separate classes - the same pattern already
+// individually fixed, one reported symptom at a time, for Dash/AirDash/RunAfterDash/Attack/
+// Crouch*/Ladder*/CliffLede*/Hurt*/Falling/Idle/Move/RunStart/Healing/LungeAttack (their own
+// patches are scattered throughout this file). Rather than keep adding one narrowly-scoped patch
+// per newly-reported symptom, this single patch covers every *remaining* class at once via
+// Harmony's TargetMethods() - the exact same fix (pre-set `_penitent` from the Animator parameter
+// every one of these methods already receives, before the original's own null-check runs and
+// overwrites it with P1), just applied wholesale instead of piecemeal. This is what actually
+// fixes the reported "P2 does a charged attack whenever P1 does" - StartChargingAttackBehaviour
+// is in this list, and was the real cause (its OnStateEnter calls `_penitent.ChargedAttack.Cast()`
+// - resolving to P1's ChargedAttack instead of P2's own when it's P2's Animator entering the
+// state - a wrong-owner Cast() call, not a shared-input-read bug like Healing's was). The rest
+// (air/ground attack variants, jump/fall/landing, death, a few Prayer-cutscene states, range
+// attack) weren't specifically reported broken, but share the identical bug shape, so they're
+// fixed proactively here rather than waiting for each to surface as its own bug report.
+[HarmonyPatch]
+internal static class ManyPlayerAnimationBehaviours_PenitentOwnerFix_Patch
+{
+    private static readonly Type[] TargetTypes =
+    {
+        typeof(AirAttackBehaviour), typeof(AirUpwardAttackBehaviour), typeof(ChargedAttackBehaviour),
+        typeof(ChargedAttackEffectBehaviour), typeof(ChargingAttackBehaviour), typeof(FinishingComboStarterBehaviour),
+        typeof(GroundUpwardAttackBehaviour), typeof(StartChargingAttackBehaviour),
+        typeof(PlayerDeathAnimationBehaviour), typeof(PlayerDeathFallBehaviour), typeof(PlayerDeathSpikeBehaviour),
+        typeof(FallingOverBehaviour), typeof(GroundingOverBehaviour),
+        typeof(JumpBehaviour), typeof(JumpForwardBehaviour), typeof(JumpOffBehaviour),
+        typeof(LandingBehaviour), typeof(LandingRunningBehaviour),
+        typeof(AuraTransformBehaviour), typeof(HighWillsRespawnBehaviour), typeof(PR202TeleportBehaviour),
+        typeof(GroundRangeAttackBehaviour), typeof(MidAirRangeAttackBehaviour),
+        typeof(AirAttackSubStateBehaviour), typeof(ChargeAttackSubStateBehaviour), typeof(CliffLedeSubStateBehaviour),
+        typeof(CrouchSubStateBehaviour), typeof(DashSubStateBehaviour),
+    };
+
+    // StateMachineBehaviour declares two OnStateEnter overloads (with and without a trailing
+    // AnimatorControllerPlayable parameter) - AccessTools.Method(type, "OnStateEnter") alone is
+    // ambiguous between them and throws at patch time (confirmed live: it took down this entire
+    // patch, silently skipping all ~24 fixes below it). Parameter types must be given explicitly
+    // to pick the plain 3-parameter overload every one of these classes actually overrides.
+    private static readonly Type[] OnStateEnterParams = { typeof(Animator), typeof(AnimatorStateInfo), typeof(int) };
+
+    private static IEnumerable<MethodBase> TargetMethods()
+    {
+        foreach (Type type in TargetTypes)
+        {
+            MethodInfo method = AccessTools.Method(type, "OnStateEnter", OnStateEnterParams);
+            if (method != null)
+            {
+                yield return method;
+            }
+        }
+    }
+
+    private static void Prefix(Animator animator, ref Penitent ____penitent)
+    {
+        Penitent owner = animator.GetComponentInParent<Penitent>();
+        if (owner != null)
+        {
+            ____penitent = owner;
+        }
+    }
+}
+
+// Round 45: found a real, previously-unknown side effect of the batch patch above, from a
+// NullReferenceException that fired 10 times in one live P2 test session (upward attacks
+// specifically). GroundUpwardAttackBehaviour.OnStateEnter's real body is
+// `if (_penitent == null) { _penitent = Core.Logic.Penitent; ...also compute _defaultAttackAreaOffset/
+// _defaultAttackAreaSize/_penitentSword/_swordAnimatorInyector... }` - the batch Prefix above
+// pre-sets ____penitent to the correct owner *before* vanilla's own null-check runs, which fixes
+// the owner but has a side effect for this specific class: since ____penitent is never null by
+// the time vanilla checks, that whole init block - including the three fields OnStateUpdate/
+// OnStateExit actually depend on - never runs for P2 at all, leaving them permanently null and
+// crashing the moment OnStateUpdate reaches `_swordAnimatorInyector.PlayAttackDesiredTime(...)`.
+// This is a real gap in the batch-patch technique itself: it silently breaks any class that
+// bundles *other* cached-once state inside the same guard as `_penitent`, not just this one - a
+// full audit of the other ~23 classes for the same shape is still open (only this one has actually
+// been proven broken via a live crash log). Fixed with a Postfix that recomputes the three skipped
+// fields directly from the correct P2 owner, mirroring vanilla's own logic exactly.
+[HarmonyPatch(typeof(GroundUpwardAttackBehaviour), "OnStateEnter")]
+internal static class GroundUpwardAttackBehaviour_FixSkippedInit_P2_Patch
+{
+    private static readonly FieldInfo PenitentSwordField = AccessTools.Field(typeof(GroundUpwardAttackBehaviour), "_penitentSword");
+    private static readonly FieldInfo SwordAnimatorInyectorField = AccessTools.Field(typeof(GroundUpwardAttackBehaviour), "_swordAnimatorInyector");
+    private static readonly FieldInfo DefaultAttackAreaOffsetField = AccessTools.Field(typeof(GroundUpwardAttackBehaviour), "_defaultAttackAreaOffset");
+    private static readonly FieldInfo DefaultAttackAreaSizeField = AccessTools.Field(typeof(GroundUpwardAttackBehaviour), "_defaultAttackAreaSize");
+
+    private static void Postfix(GroundUpwardAttackBehaviour __instance, Penitent ____penitent)
+    {
+        if (____penitent == null || ____penitent != CoopLocal.Player2)
+        {
+            return;
+        }
+        if (SwordAnimatorInyectorField.GetValue(__instance) != null)
+        {
+            return;
+        }
+        Vector2 offset = new Vector2(____penitent.AttackArea.WeaponCollider.offset.x, ____penitent.AttackArea.WeaponCollider.offset.y);
+        Vector2 size = new Vector2(____penitent.AttackArea.WeaponCollider.bounds.size.x, ____penitent.AttackArea.WeaponCollider.bounds.size.y);
+        DefaultAttackAreaOffsetField.SetValue(__instance, offset);
+        DefaultAttackAreaSizeField.SetValue(__instance, size);
+        PenitentSword sword = (PenitentSword)____penitent.PenitentAttack.CurrentPenitentWeapon;
+        PenitentSwordField.SetValue(__instance, sword);
+        SwordAnimatorInyectorField.SetValue(__instance, sword.SlashAnimator);
+    }
+}
+
+// PrayerUse (the "activate equipped prayer" ability, distinct from Healing above) has no
+// dedicated input method of its own the way Healing does - it relies entirely on the base
+// Ability's generic UpdateInput() dispatcher, which Ability_UpdateInput_Patch (further down this
+// file) disables outright for P2 (see that patch's own comment - "abilities we haven't
+// explicitly wired for P2 yet simply won't be castable"). So P2's own PrayerUse currently never
+// casts at all. Wired here the same way Dash/Parry/Healing were: a dedicated per-instance check
+// reading P2's own input instead of the disabled generic path - Postfixed onto OnUpdate() (runs
+// every frame per-instance already) rather than UpdateInput() itself, since that stays
+// intentionally disabled for P2 by the patch further down. P1's own instance is untouched - its
+// PrayerUse still casts through the normal generic dispatcher exactly as before.
+[HarmonyPatch(typeof(PrayerUse), "OnUpdate")]
+internal static class PrayerUse_P2Input_Patch
+{
+    private static readonly FieldInfo CastInformationField = AccessTools.Field(typeof(Ability), "castInformation");
+
+    // Round 39 follow-up: __instance.CanUsePrayer compiles fine against the NuGet reference
+    // assembly (which marks it public) but the REAL shipped Assembly-CSharp.dll has the getter as
+    // non-public - calling it directly threw a runtime MethodAccessException ("get_CanUsePrayer is
+    // inaccessible"), confirmed via LogOutput.log. AccessTools.Property + PropertyInfo.GetValue
+    // bypasses the compile-time accessibility check, same trick already relied on throughout this
+    // file for private fields.
+    private static readonly PropertyInfo CanUsePrayerProperty = AccessTools.Property(typeof(PrayerUse), "CanUsePrayer");
+
+    // Round 38: static analysis of Ability.Cast()/PrayerUse.OnCastStart()/StartUsingPrayer() all
+    // came back correctly per-instance (EntityOwner/_penitent-based throughout, no hardcoded
+    // Core.Logic.Penitent found anywhere in that chain) - yet the user reports the prayer effect
+    // visibly originating from P1 and consuming *neither* player's Fervour when triggered from
+    // P2. Since nothing in the code this patch can see explains that, logging Cast()'s own
+    // castInformation field (a string Ability.Cast() itself sets to exactly why it
+    // succeeded/failed - "SUCCESSFULLY EXECUTED", "ALREADY CASTING", "ABILITY NOT READY",
+    // "CONDITION NOT MET", "ENTITY DEAD", "ABILITIES DISABLED", "INVALID OWNER" - see its
+    // decompiled source) plus P2's own Fervour before/after, to find out directly which of those
+    // it actually is rather than guessing further blind. The specific prayer effect classes
+    // (multishotPrayer/lightBeamPrayer/shieldPrayer/cherubPrayer/etc, all boss-attack classes
+    // reused for player prayers) haven't been individually audited for their own owner/position
+    // logic yet - if castInformation comes back "SUCCESSFULLY EXECUTED" with Fervour genuinely
+    // dropping on P2, the bug is in one of *those* classes instead, not in PrayerUse itself.
+    private static void Postfix(PrayerUse __instance)
+    {
+        Penitent owner = __instance.GetComponentInParent<Penitent>();
+        if (owner == null || owner != CoopLocal.Player2)
+        {
+            return;
+        }
+        if (Player2Input.PrayerActivateDown)
+        {
+            // Round 39: PrayerUse.get_CanUsePrayer (non-virtual, decompiled from the real shipped
+            // Assembly-CSharp.dll) is the property that actually checks fervourNeeded against the
+            // per-instance _penitent.Stats.Fervour.Current before P1 is allowed to cast - it was
+            // never being consulted here, so P2's Cast() fired unconditionally regardless of
+            // P2's own Fervour, and with no floor P2's Fervour could go arbitrarily negative.
+            // Gating on it here mirrors P1's real logic exactly ("misma logica que rezo P1").
+            bool canUsePrayer = (bool)CanUsePrayerProperty.GetValue(__instance, null);
+            if (!canUsePrayer)
+            {
+                return;
+            }
+            float fervourBefore = owner.Stats.Fervour.Current;
+            __instance.Cast();
+            string info = (string)CastInformationField.GetValue(__instance);
+            if (Main.CoopLocal != null)
+            {
+                Blasphemous.ModdingAPI.ModLog.Info(
+                    $"[PrayerUse] P2 Cast() -> castInformation='{info}', P2 Fervour {fervourBefore:F1} -> {owner.Stats.Fervour.Current:F1}, " +
+                    $"equippedPrayer={(__instance.GetEquippedPrayer() != null ? __instance.GetEquippedPrayer().name : "null")}",
+                    Main.CoopLocal);
+            }
+        }
+        if (Player2Input.PrayerActivateUp)
+        {
+            __instance.StopCast();
+        }
+    }
+}
+
+// Round 43: found the actual cause of "el origen del rezo es en P1" - PrayerUse itself
+// (Cast()/OnCastStart()/StartUsingPrayer()) is genuinely per-instance and correctly casts from
+// whichever Penitent owns it (confirmed since Fervour drains correctly from P2's own pool). But
+// StartUsingPrayer() ends by calling `prayer.Use()` on the equipped Prayer *item* - a single
+// object shared game-wide (there's only one "equipped prayer" inventory entry, not one per
+// Penitent) - which does `SendMessage("OnUseInventoryObject")`. The specific prayer-power effect
+// classes that receive that message (decompiled via ICSharpCode.Decompiler from the real
+// Assembly-CSharp.dll) each independently hardcode `_owner = Core.Logic.Penitent;` as their own
+// first line - the exact same "wrong owner" bug class found ~50 times already this session in
+// AnimationBehaviours, just living in a completely different part of the codebase
+// (Framework.Inventory's ObjectEffect system) that a per-Penitent-component scan would never
+// reach. Since the shared Prayer item has no way to know who actually triggered it, this patch
+// tracks the real caster itself: a Prefix on PrayerUse's own (already correctly per-instance)
+// StartUsingPrayer() records `_penitent` into a static field *before* prayer.Use() fires the
+// SendMessage chain - by the time OnApplyEffect() runs (synchronously, same call stack), the
+// tracker reliably holds the real caster.
+internal static class PrayerCasterTracker
+{
+    internal static Penitent LastCaster;
+}
+
+[HarmonyPatch(typeof(PrayerUse), "StartUsingPrayer")]
+internal static class PrayerUse_StartUsingPrayer_TrackCaster_Patch
+{
+    private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(PrayerUse), "_penitent");
+
+    private static void Prefix(PrayerUse __instance)
+    {
+        PrayerCasterTracker.LastCaster = (Penitent)PenitentField.GetValue(__instance);
+    }
+}
+
+// PrayerAlliedCherubEffect/PrayerShieldEffect both derive from ObjectEffect_Stat and end their
+// OnApplyEffect/OnRemoveEffect with `base.OnApplyEffect()`/`base.OnRemoveEffect()` - a generic
+// stat-bonus applier that *also* hardcodes Core.Logic.Penitent internally. Reflection can't safely
+// invoke "just the base implementation" here (MethodInfo.Invoke on a virtual method always
+// re-dispatches to the most-derived override via the CLR's normal vtable lookup, regardless of
+// which declaring type's MethodInfo was used to look it up - invoking it from inside this very
+// Prefix would recurse into itself). Rather than risk a broken reimplementation of
+// ObjectEffect_Stat's full logic (PenitencePE02 special-casing, RawBonus tracking, etc) blind,
+// this patch fixes only the part the user actually reported - the visible cherub/shield spawn
+// itself - and deliberately skips (via `return false`) the inherited stat-bonus call, a known,
+// narrow, documented gap rather than an attempted full fix.
+[HarmonyPatch(typeof(Framework.Inventory.PrayerAlliedCherubEffect), "OnApplyEffect")]
+internal static class PrayerAlliedCherubEffect_OnApplyEffect_P2_Patch
+{
+    private static bool Prefix(Framework.Inventory.PrayerAlliedCherubEffect __instance, ref bool __result)
+    {
+        Penitent caster = PrayerCasterTracker.LastCaster;
+        if (caster == null || caster != CoopLocal.Player2)
+        {
+            return true;
+        }
+        PrayerUse prayerUse = caster.GetComponentInChildren<PrayerUse>();
+        AlliedCherubPrayer cherubPrayer = prayerUse != null ? prayerUse.cherubPrayer : null;
+        if (cherubPrayer != null)
+        {
+            cherubPrayer.InstantiateCherubs();
+        }
+        __result = true;
+        return false;
+    }
+}
+
+[HarmonyPatch(typeof(Framework.Inventory.PrayerAlliedCherubEffect), "OnRemoveEffect")]
+internal static class PrayerAlliedCherubEffect_OnRemoveEffect_P2_Patch
+{
+    private static bool Prefix(Framework.Inventory.PrayerAlliedCherubEffect __instance)
+    {
+        Penitent caster = PrayerCasterTracker.LastCaster;
+        if (caster == null || caster != CoopLocal.Player2)
+        {
+            return true;
+        }
+        PrayerUse prayerUse = caster.GetComponentInChildren<PrayerUse>();
+        AlliedCherubPrayer cherubPrayer = prayerUse != null ? prayerUse.cherubPrayer : null;
+        if (cherubPrayer != null)
+        {
+            cherubPrayer.DisposeCherubs();
+        }
+        return false;
+    }
+}
+
+[HarmonyPatch(typeof(Framework.Inventory.PrayerShieldEffect), "OnApplyEffect")]
+internal static class PrayerShieldEffect_OnApplyEffect_P2_Patch
+{
+    private static bool Prefix(Framework.Inventory.PrayerShieldEffect __instance, ref bool __result)
+    {
+        Penitent caster = PrayerCasterTracker.LastCaster;
+        if (caster == null || caster != CoopLocal.Player2)
+        {
+            return true;
+        }
+        PrayerUse prayerUse = caster.GetComponentInChildren<PrayerUse>();
+        ShieldSystemPrayer shieldPrayer = prayerUse != null ? prayerUse.shieldPrayer : null;
+        if (shieldPrayer != null)
+        {
+            shieldPrayer.InstantiateShield();
+        }
+        __result = true;
+        return false;
+    }
+}
+
+[HarmonyPatch(typeof(Framework.Inventory.PrayerShieldEffect), "OnRemoveEffect")]
+internal static class PrayerShieldEffect_OnRemoveEffect_P2_Patch
+{
+    private static bool Prefix(Framework.Inventory.PrayerShieldEffect __instance)
+    {
+        Penitent caster = PrayerCasterTracker.LastCaster;
+        if (caster == null || caster != CoopLocal.Player2)
+        {
+            return true;
+        }
+        PrayerUse prayerUse = caster.GetComponentInChildren<PrayerUse>();
+        ShieldSystemPrayer shieldPrayer = prayerUse != null ? prayerUse.shieldPrayer : null;
+        if (shieldPrayer != null)
+        {
+            shieldPrayer.DisposeShield();
+        }
+        return false;
+    }
+}
+
+// PenitentLightBeamEffect derives straight from ObjectEffect (not ObjectEffect_Stat) - its
+// OnApplyEffect is fully self-contained with no base-call recursion risk, so this is a complete
+// reimplementation rather than a partial one.
+[HarmonyPatch(typeof(Tools.Items.PenitentLightBeamEffect), "OnApplyEffect")]
+internal static class PenitentLightBeamEffect_OnApplyEffect_P2_Patch
+{
+    private static readonly FieldInfo OwnerField = AccessTools.Field(typeof(Tools.Items.PenitentLightBeamEffect), "_owner");
+    private static readonly FieldInfo AreaSummonAttackField = AccessTools.Field(typeof(Tools.Items.PenitentLightBeamEffect), "_areaSummonAttack");
+    private static readonly FieldInfo DamageAmountField = AccessTools.Field(typeof(Tools.Items.PenitentLightBeamEffect), "DamageAmount");
+    private static readonly MethodInfo PushPlayerColorMethod = AccessTools.Method(typeof(Tools.Items.PenitentLightBeamEffect), "PushPlayerColor");
+    private static readonly MethodInfo PopPlayerColorMethod = AccessTools.Method(typeof(Tools.Items.PenitentLightBeamEffect), "PopPlayerColor");
+
+    private static bool Prefix(Tools.Items.PenitentLightBeamEffect __instance, ref bool __result)
+    {
+        Penitent caster = PrayerCasterTracker.LastCaster;
+        if (caster == null || caster != CoopLocal.Player2)
+        {
+            return true;
+        }
+        OwnerField.SetValue(__instance, caster);
+        PrayerUse prayerUse = caster.GetComponentInChildren<PrayerUse>();
+        Gameplay.GameControllers.Bosses.Quirce.Attack.BossAreaSummonAttack areaSummonAttack =
+            prayerUse != null ? prayerUse.lightBeamPrayer : null;
+        if (areaSummonAttack == null)
+        {
+            __result = false;
+            return false;
+        }
+        AreaSummonAttackField.SetValue(__instance, areaSummonAttack);
+        if (Core.Logic.CameraManager != null && Core.Logic.CameraManager.ProCamera2DShake != null)
+        {
+            Core.Logic.CameraManager.ProCamera2DShake.ShakeUsingPreset("SimpleHit");
+        }
+        Vector3 position = areaSummonAttack.transform.position;
+        float strengthFinal = caster.Stats.PrayerStrengthMultiplier.Final;
+        GameObject spawned = areaSummonAttack.SummonAreaOnPoint(position, 0f, strengthFinal);
+        int damageAmount = (int)DamageAmountField.GetValue(__instance);
+        Gameplay.GameControllers.Bosses.Quirce.Attack.BossSpawnedAreaAttack spawnedAttack =
+            spawned.GetComponent<Gameplay.GameControllers.Bosses.Quirce.Attack.BossSpawnedAreaAttack>();
+        if (spawnedAttack != null)
+        {
+            spawnedAttack.SetDamage(damageAmount);
+        }
+        __instance.StartCoroutine(VerticalBeamCoroutine(__instance));
+        __result = true;
+        return false;
+    }
+
+    private static System.Collections.IEnumerator VerticalBeamCoroutine(Tools.Items.PenitentLightBeamEffect instance)
+    {
+        yield return new WaitForSeconds(0.4f);
+        PushPlayerColorMethod.Invoke(instance, null);
+        yield return new WaitForSeconds(0.8f);
+        PopPlayerColorMethod.Invoke(instance, null);
+    }
+}
+
+// Interactable (level props: doors, levers, item pickups, NPC dialogue triggers) is a per-OBJECT
+// input check, not per-Penitent like the Ability classes above - InteractionTriggered reads
+// button 8 off the shared Rewired Player 0 directly, plus hardcodes Core.Logic.Penitent (always
+// P1) for its own "not currently jumping/grabbing a cliff ledge" gates, then returns
+// !OverlappedInteractor as its final result. OverlappedInteractor is NOT "a player is in range"
+// (that's the separate PlayerInRange property, set correctly for both P1 and P2 via a generic
+// CompareTag("Penitent") check in OnEntityEnter/Exit - no owner bug there) - it's only ever
+// written by the narrow Execution/GuiltDropCollectibleItem subsystems (finishers/guilt drops),
+// meaning it's false for every ordinary door/lever/chest, and vanilla's own logic *requires* it
+// to be false to succeed. (Round 36 fix: an earlier version of this patch had that inverted -
+// checking `!OverlappedInteractor` as if it were a required-true gate - which meant this Postfix
+// bailed out on almost every ordinary interactable and Interact silently never worked for P2.)
+// PlayerInRange itself doesn't need rechecking here since Door/Lever/etc.'s own OnUpdate() (the
+// caller) already ANDs InteractionTriggered together with its own PlayerInRange check.
+[HarmonyPatch(typeof(Tools.Level.Interactable), "get_InteractionTriggered")]
+internal static class Interactable_InteractionTriggered_Patch
+{
+    private static readonly FieldInfo InteractableWhileJumpingField =
+        AccessTools.Field(typeof(Tools.Level.Interactable), "interactableWhileJumping");
+
+    private static void Postfix(Tools.Level.Interactable __instance, ref bool __result)
+    {
+        if (__result || CoopLocal.Player2 == null || !Player2Input.InteractDown)
+        {
+            return;
+        }
+        if (__instance.OverlappedInteractor || Core.Input.InputBlocked)
+        {
+            return;
+        }
+        bool interactableWhileJumping = (bool)InteractableWhileJumpingField.GetValue(__instance);
+        if (CoopLocal.Player2.IsJumping && !interactableWhileJumping)
+        {
+            return;
+        }
+        if (CoopLocal.Player2.IsGrabbingCliffLede)
+        {
+            return;
+        }
+        __result = true;
     }
 }
 
@@ -3048,5 +5212,638 @@ internal static class Penitent_OnEntityDead_OwnerFilter_Patch
             return false;
         }
         return true;
+    }
+}
+
+// Forces P2 to always wear the "True Apostasy" ("Verdadera Apostasia") skin, independent of
+// whatever skin P1 has selected from the Extras menu. ColorPaletteSwapper.SetMaterial() (on
+// the same GameObject as the character's own SpriteRenderer, so it's genuinely per-instance)
+// reads Core.ColorPaletteManager's single *global* current-skin id and writes the matching
+// texture into the "_PaletteTex" slot on this instance's own material - since that id isn't
+// per-character, P1 and P2 would otherwise always end up wearing the exact same skin. This
+// Postfix runs after the original (harmless - it only overwrites the texture a second time)
+// and, only for P2's own instance, re-applies the True Apostasy palette instead. Runs on every
+// call rather than just the initial Start() one, so P2 stays forced even if SetMaterial() is
+// ever invoked again later (menu skin change, respawn, etc).
+[HarmonyPatch(typeof(ColorPaletteSwapper), "SetMaterial")]
+internal static class ColorPaletteSwapper_ForcePlayer2TrueApostasy_Patch
+{
+    // Round 36: "PAL_Penitent_ALT2" (a community modding doc's id) was confirmed WRONG - the
+    // [ColorPalette] log dump of this game's real ids came back as: PENITENT_DEFAULT,
+    // PENITENT_ENDING_A, PENITENT_ENDING_B, PENITENT_OSSUARY, PENITENT_BACKER, PENITENT_DELUXE,
+    // PENITENT_ALMS, PENITENT_PE01/02/03, PENITENT_BOSSRUSH(_S), PENITENT_DEMAKE,
+    // PENITENT_ENDING_C, PENITENT_SIERPES, PENITENT_ISIDORA, PENITENT_GAMEBOY, PENITENT_KONAMI -
+    // no "ALT2" anywhere, so the ids are clearly named per-ending, not per "ALT" slot like the
+    // community doc assumed. Per external research (blasphemous.wiki.gg/wiki/Skins), True
+    // Apostasy unlocks from completing Ending B ("The Path of the Unworthy") - or from Ending A
+    // specifically on a first playthrough, a secondary special case - so PENITENT_ENDING_B is the
+    // best-effort match for the *general* unlock path. Still not visually confirmed - if this
+    // renders the wrong (but validly-existing, so no fallback/log fires) palette, it's most likely
+    // actually PENITENT_ENDING_A instead; there's no way to tell which without a screenshot.
+    private const string TrueApostasyPaletteId = "PENITENT_ENDING_B";
+
+    private static bool resolveAttempted;
+    private static string resolvedPaletteId;
+
+    private static string ResolveTrueApostasyPaletteId()
+    {
+        if (resolveAttempted)
+        {
+            return resolvedPaletteId;
+        }
+        resolveAttempted = true;
+
+        List<string> allIds = Core.ColorPaletteManager.GetAllColorPalettesId();
+        if (allIds == null)
+        {
+            return null;
+        }
+
+        if (Main.CoopLocal != null)
+        {
+            Blasphemous.ModdingAPI.ModLog.Info(
+                $"[ColorPalette] all known palette ids: {string.Join(", ", allIds.ToArray())}", Main.CoopLocal);
+        }
+
+        if (allIds.Contains(TrueApostasyPaletteId))
+        {
+            resolvedPaletteId = TrueApostasyPaletteId;
+            return resolvedPaletteId;
+        }
+
+        if (Main.CoopLocal != null)
+        {
+            Blasphemous.ModdingAPI.ModLog.Info(
+                $"[ColorPalette] could not find '{TrueApostasyPaletteId}' in the list above - " +
+                "P2's skin will NOT be forced. Pick the right id from that list.",
+                Main.CoopLocal);
+        }
+        return null;
+    }
+
+    private static void Postfix(ColorPaletteSwapper __instance)
+    {
+        Penitent owner = __instance.GetComponentInParent<Penitent>();
+        if (owner == null || owner != CoopLocal.Player2)
+        {
+            return;
+        }
+
+        string paletteId = ResolveTrueApostasyPaletteId();
+        if (paletteId == null)
+        {
+            return;
+        }
+
+        Sprite paletteSprite = Core.ColorPaletteManager.GetColorPaletteById(paletteId);
+        if (paletteSprite == null)
+        {
+            return;
+        }
+
+        SpriteRenderer spriteRenderer = __instance.GetComponent<SpriteRenderer>();
+        if (spriteRenderer == null)
+        {
+            return;
+        }
+
+        Texture2D paletteTexture = paletteSprite.texture;
+        spriteRenderer.material.SetTexture("_PaletteTex", paletteTexture);
+        if (__instance.extraMaterial != null)
+        {
+            __instance.extraMaterial.SetTexture("_PaletteTex", paletteTexture);
+        }
+    }
+}
+
+// Round 41: user reported P2 spawning with less max life and no damage/flask upgrades than P1 -
+// this is architectural, not a per-instance-owner bug like almost everything else this session:
+// CoopLocal.OnPlayerSpawn creates P2 via Object.Instantiate(Resources.Load<Penitent>("Core/Penitent"),
+// ...), a completely fresh copy of the base prefab with none of P1's collected Rosary Beads/Mea
+// Culpa/flask upgrades/etc ever applied.
+//
+// Decompiled Gameplay.GameControllers.Entities.EntityStats (real C# via ICSharpCode.Decompiler, not
+// raw IL) to find the right generic API: every single stat - Life, Strength, DamageMultiplier,
+// FlaskHealth, BeadSlots, CriticalChance, all of it - is a Framework.FrameworkCore.Attributes.Logic.
+// Attribute with a `PermanetBonus` float (publicly gettable, privately settable - raised over time by
+// Upgrade()/SetPermanentBonus(), i.e. exactly "story-earned progression", as opposed to temporary
+// RawBonus/FinalBonus buffs from equipped relics/active effects which are deliberately NOT copied
+// here). EntityStats.GetByType(StatsTypes) + SetPermanentBonus(float) - the *same* generic API the
+// game's own GetCurrentPersistentState/SetCurrentPersistentState use for save/load - lets one loop
+// over every EntityStats.StatsTypes enum value cover the whole stat surface at once, no per-stat
+// special-casing needed. All of GetByType/PermanetBonus/SetPermanentBonus/SetToCurrentMax were
+// confirmed public directly in the decompiled *real* Assembly-CSharp.dll (not just the NuGet
+// reference stub) - unlike PrayerUse.CanUsePrayer earlier this round, there's no reflection
+// workaround needed to call them directly.
+//
+// The user's explicit ask - clone once, "y ya luego esta copia de todo esto no se vuelva a hacer sin
+// importar que" (never re-copy after that, no matter what) - can't be a simple did-this-run-before
+// flag: CoopLocal.OnPlayerSpawn destroys and recreates P2 from the bare prefab on *every* respawn
+// (level load, teleport, death), so P2's own EntityStats object (with all its PermanetBonus values)
+// is thrown away and rebuilt from scratch far more often than "once per game". A flag alone would
+// mean the correct stats get applied exactly once ever and then every later respawn reverts P2 to
+// the weak prefab defaults again - worse than doing nothing. Instead this persists the actual
+// baseline values (not just a yes/no marker) to a small per-save-slot text file under
+// Application.persistentDataPath: the FIRST spawn for a given save slot (Framework.Managers.
+// PersistentManager.GetAutomaticSlot(), the same public static int the game's own save system keys
+// its files by) clones P1's current stats onto P2 and writes that snapshot to disk; every later
+// spawn - same session or a future one, respawn or fresh launch - restores P2's *own* saved
+// baseline onto the fresh instance instead of touching P1 again, so P2 keeps its starting power
+// forever after that first sync without perpetually re-mirroring P1's own ongoing progress.
+internal static class Player2StatsSync
+{
+    private static string MarkerDirectory =>
+        System.IO.Path.Combine(Application.persistentDataPath, "CoopLocalMod");
+
+    private static string SnapshotPath(int slot) =>
+        System.IO.Path.Combine(MarkerDirectory, $"p2_stats_slot{slot}.txt");
+
+    // Round 43/45: Purge (currency), Life, Fervour and Flask all need their *Current* value
+    // persisted separately from the PermanetBonus loop - PermanetBonus only covers max-capacity
+    // upgrades, not the live value itself, and (round 45) forcing these to max on every single
+    // respawn turned out to be actively wrong: SpawnManager.OnPlayerSpawn fires on *ordinary room
+    // transitions* too, not just death/checkpoint respawns, so P2 was silently getting fully
+    // healed and refilled on every room change ("todo de P2 se resetea al cambiar de sala") while
+    // a *real* Prie Dieu rest - which should heal P2 - did nothing at all (PrieDieu's own heal
+    // logic never routes through OnPlayerSpawn). Keys deliberately don't match any real
+    // EntityStats.StatsTypes enum name, so ApplySnapshot's normal per-stat loop skips over them.
+    private const string PurgeCurrentKey = "__PurgeCurrent__";
+    private const string LifeCurrentKey = "__LifeCurrent__";
+    private const string FervourCurrentKey = "__FervourCurrent__";
+    private const string FlaskCurrentKey = "__FlaskCurrent__";
+
+    // Round 42: the first-ever sync (previous round) ran synchronously inside CoopLocal's
+    // OnPlayerSpawn handler and captured every one of P1's stats as PermanetBonus=0 - confirmed by
+    // reading the actual saved snapshot file, which was all zeros despite the user testing on a
+    // save with real progression. Root cause: SpawnManager.OnPlayerSpawn fires as soon as P1's
+    // Penitent object exists, but the save file's own EntityStats.SetCurrentPersistentState (which
+    // populates the *real* PermanetBonus values from disk) evidently hasn't necessarily run yet at
+    // that exact moment - reading p1.Stats synchronously in the same frame can race it. Delaying a
+    // handful of frames via a coroutine (hosted on p2, since Penitent is a real MonoBehaviour) before
+    // reading P1's stats avoids the race without needing to detect it - correctly delays even into a
+    // second/third frame if needed, cheap and imperceptible since this only ever runs once per save
+    // slot. The synchronous version below now runs from PerformSync, not directly from
+    // OnPlayerSpawn - always go through EnsureSynced.
+    // Round 46: the 5-frame delay only exists to dodge the race described above, which only
+    // matters for the genuinely-first-ever sync (reading P1's live stats before the save file has
+    // necessarily finished restoring them). Every *later* respawn goes through ApplySnapshot,
+    // which never reads p1 at all - so routing it through the same delayed coroutine was pure
+    // unnecessary lag, and on an ordinary room transition (which can involve a real loading pause,
+    // during which yield-return-null-based frame counting can take a perceptible chunk of wall-
+    // clock time to advance 5 times) that lag was long enough for the user to see P2's HUD
+    // genuinely show fresh/base Life/Fervour/Purge for a moment before snapping to the restored
+    // values - read by the user as "todo de P2 se resetea al cambiar de sala". Checking file
+    // existence synchronously here and restoring immediately (no coroutine, no delay at all) for
+    // the common case removes that window entirely; the delay now only ever applies to the
+    // once-per-save first-time sync.
+    internal static void EnsureSynced(Penitent p1, Penitent p2)
+    {
+        if (p1 == null || p2 == null)
+        {
+            return;
+        }
+        int slot = PersistentManager.GetAutomaticSlot();
+        if (slot < 0)
+        {
+            return;
+        }
+        string path = SnapshotPath(slot);
+        if (System.IO.File.Exists(path))
+        {
+            ApplySnapshot(path, p2, (EntityStats.StatsTypes[])Enum.GetValues(typeof(EntityStats.StatsTypes)));
+            return;
+        }
+        p2.StartCoroutine(DelayedFirstSync(p1, p2));
+    }
+
+    private static System.Collections.IEnumerator DelayedFirstSync(Penitent p1, Penitent p2)
+    {
+        for (int i = 0; i < 5; i++)
+        {
+            yield return null;
+        }
+        if (p1 == null || p2 == null)
+        {
+            yield break;
+        }
+        PerformFirstSync(p1, p2);
+    }
+
+    private static void PerformFirstSync(Penitent p1, Penitent p2)
+    {
+        int slot = PersistentManager.GetAutomaticSlot();
+        if (slot < 0)
+        {
+            // No save slot active yet - shouldn't normally happen once P1 exists, but skip rather
+            // than write a marker under a meaningless bucket.
+            return;
+        }
+
+        EntityStats.StatsTypes[] allTypes = (EntityStats.StatsTypes[])Enum.GetValues(typeof(EntityStats.StatsTypes));
+        string path = SnapshotPath(slot);
+
+        if (System.IO.File.Exists(path))
+        {
+            // Another spawn's own sync (e.g. a very fast second room change) already wrote the
+            // baseline while this one was mid-delay - just restore it instead of double-syncing.
+            ApplySnapshot(path, p2, allTypes);
+            return;
+        }
+
+        foreach (EntityStats.StatsTypes type in allTypes)
+        {
+            Framework.FrameworkCore.Attributes.Logic.Attribute p1Attr = p1.Stats.GetByType(type);
+            Framework.FrameworkCore.Attributes.Logic.Attribute p2Attr = p2.Stats.GetByType(type);
+            if (p1Attr == null || p2Attr == null)
+            {
+                continue;
+            }
+            p2Attr.SetPermanentBonus(p1Attr.PermanetBonus);
+        }
+        // First-ever sync only: full heal makes sense as a fresh starting point (and lets the
+        // user test prayers immediately) - every *later* respawn restores the persisted current
+        // values instead (see ApplySnapshot), it does not force max again.
+        p2.Stats.Life.SetToCurrentMax();
+        p2.Stats.Flask.SetToCurrentMax();
+        p2.Stats.Fervour.SetToCurrentMax();
+        // Round 43: the user explicitly asked for P1's current currency to be copied too - P2
+        // previously always started at 0 since Purge.Current isn't part of the PermanetBonus
+        // loop above (see PurgeCurrentKey's own comment).
+        p2.Stats.Purge.Current = p1.Stats.Purge.Current;
+
+        SaveSnapshot(path, p2, allTypes);
+
+        if (Main.CoopLocal != null)
+        {
+            Blasphemous.ModdingAPI.ModLog.Info(
+                $"[P2StatsSync] first-ever sync for save slot {slot}: cloned P1's progression onto P2 and saved a baseline. " +
+                $"P2.Life.Final={p2.Stats.Life.Final:F0}, P2.Strength.Final={p2.Stats.Strength.Final:F1}, P2.Flask.Final={p2.Stats.Flask.Final:F0}",
+                Main.CoopLocal);
+        }
+    }
+
+    private static void SaveSnapshot(string path, Penitent p2, EntityStats.StatsTypes[] allTypes)
+    {
+        try
+        {
+            System.IO.Directory.CreateDirectory(MarkerDirectory);
+            List<string> lines = new List<string>();
+            foreach (EntityStats.StatsTypes type in allTypes)
+            {
+                Framework.FrameworkCore.Attributes.Logic.Attribute attr = p2.Stats.GetByType(type);
+                if (attr == null)
+                {
+                    continue;
+                }
+                lines.Add($"{type}={attr.PermanetBonus.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+            }
+            lines.Add($"{PurgeCurrentKey}={p2.Stats.Purge.Current.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+            lines.Add($"{LifeCurrentKey}={p2.Stats.Life.Current.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+            lines.Add($"{FervourCurrentKey}={p2.Stats.Fervour.Current.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+            lines.Add($"{FlaskCurrentKey}={p2.Stats.Flask.Current.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+            System.IO.File.WriteAllLines(path, lines.ToArray());
+        }
+        catch (Exception ex)
+        {
+            if (Main.CoopLocal != null)
+            {
+                Blasphemous.ModdingAPI.ModLog.Info($"[P2StatsSync] failed to save baseline: {ex.Message}", Main.CoopLocal);
+            }
+        }
+    }
+
+    // Round 43/45: P2's currency/life/fervour/flasks all change continuously during gameplay, but
+    // P2's whole EntityStats gets recreated from scratch on every respawn (same architectural
+    // issue the PermanetBonus snapshot exists to work around) - without this, all four would
+    // silently reset to a stale earlier value on every subsequent respawn. Called from
+    // CoopLocal.OnPlayerSpawn right before the outgoing P2 is destroyed, so the *next* spawn's
+    // ApplySnapshot picks up the freshest values rather than stale ones.
+    internal static void SaveCurrentVitals(Penitent outgoingP2)
+    {
+        if (outgoingP2 == null)
+        {
+            return;
+        }
+        int slot = PersistentManager.GetAutomaticSlot();
+        if (slot < 0)
+        {
+            return;
+        }
+        string path = SnapshotPath(slot);
+        if (!System.IO.File.Exists(path))
+        {
+            // No baseline yet for this slot - the upcoming first-ever sync will capture P1's
+            // current values directly, nothing to update here.
+            return;
+        }
+        try
+        {
+            List<string> lines = new List<string>(System.IO.File.ReadAllLines(path));
+            UpsertLine(lines, PurgeCurrentKey, outgoingP2.Stats.Purge.Current);
+            UpsertLine(lines, LifeCurrentKey, outgoingP2.Stats.Life.Current);
+            UpsertLine(lines, FervourCurrentKey, outgoingP2.Stats.Fervour.Current);
+            UpsertLine(lines, FlaskCurrentKey, outgoingP2.Stats.Flask.Current);
+            System.IO.File.WriteAllLines(path, lines.ToArray());
+        }
+        catch (Exception ex)
+        {
+            if (Main.CoopLocal != null)
+            {
+                Blasphemous.ModdingAPI.ModLog.Info($"[P2StatsSync] failed to save vitals before respawn: {ex.Message}", Main.CoopLocal);
+            }
+        }
+    }
+
+    // Round 45: PrieDieu.ShallowActivationLogic (the real "resting at a shrine" heal, patched
+    // separately below) calls this to give P2 the same treatment P1 gets - full life/flasks, and
+    // Fervour only if the same Alms upgrade condition P1's own heal checks is met. Persists
+    // immediately so the healed values survive the very next respawn correctly.
+    internal static void HealAtPrieDieu(Penitent p2, bool healFervour)
+    {
+        if (p2 == null)
+        {
+            return;
+        }
+        p2.Stats.Life.SetToCurrentMax();
+        p2.Stats.Flask.SetToCurrentMax();
+        if (healFervour)
+        {
+            p2.Stats.Fervour.SetToCurrentMax();
+        }
+        SaveCurrentVitals(p2);
+        if (Main.CoopLocal != null)
+        {
+            Blasphemous.ModdingAPI.ModLog.Info(
+                $"[P2StatsSync] healed P2 at Prie Dieu (Life/Flask to max, Fervour healed={healFervour}).",
+                Main.CoopLocal);
+        }
+    }
+
+    private static void UpsertLine(List<string> lines, string key, float value)
+    {
+        string newLine = $"{key}={value.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+        int existingIndex = lines.FindIndex(l => l.StartsWith(key + "=", StringComparison.Ordinal));
+        if (existingIndex >= 0)
+        {
+            lines[existingIndex] = newLine;
+        }
+        else
+        {
+            lines.Add(newLine);
+        }
+    }
+
+    private static void ApplySnapshot(string path, Penitent p2, EntityStats.StatsTypes[] allTypes)
+    {
+        try
+        {
+            string[] lines = System.IO.File.ReadAllLines(path);
+            int applied = 0;
+            foreach (string line in lines)
+            {
+                int eq = line.IndexOf('=');
+                if (eq <= 0)
+                {
+                    continue;
+                }
+                string key = line.Substring(0, eq);
+                string valueText = line.Substring(eq + 1);
+                float value;
+                if (!float.TryParse(valueText, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out value))
+                {
+                    continue;
+                }
+                if (key == PurgeCurrentKey)
+                {
+                    p2.Stats.Purge.Current = value;
+                    applied++;
+                    continue;
+                }
+                if (key == LifeCurrentKey)
+                {
+                    p2.Stats.Life.Current = value;
+                    applied++;
+                    continue;
+                }
+                if (key == FervourCurrentKey)
+                {
+                    p2.Stats.Fervour.Current = value;
+                    applied++;
+                    continue;
+                }
+                if (key == FlaskCurrentKey)
+                {
+                    p2.Stats.Flask.Current = value;
+                    applied++;
+                    continue;
+                }
+                if (!Enum.IsDefined(typeof(EntityStats.StatsTypes), key))
+                {
+                    continue;
+                }
+                EntityStats.StatsTypes type = (EntityStats.StatsTypes)Enum.Parse(typeof(EntityStats.StatsTypes), key);
+                Framework.FrameworkCore.Attributes.Logic.Attribute attr = p2.Stats.GetByType(type);
+                if (attr == null)
+                {
+                    continue;
+                }
+                attr.SetPermanentBonus(value);
+                applied++;
+            }
+            // Round 45: no longer forces Life/Flask to max here - that was the actual cause of
+            // "todo de P2 se resetea al cambiar de sala" (every ordinary room transition fires
+            // OnPlayerSpawn, not just death/checkpoint respawns). Those two are restored from the
+            // snapshot above instead; a real heal only happens via PrieDieu.ShallowActivationLogic's
+            // own Postfix (HealAtPrieDieu) or the first-ever sync.
+            //
+            // Round 46: Fervour is a deliberate exception, per explicit user request - always
+            // force it to max on spawn so prayers can be tested immediately, overriding whatever
+            // FervourCurrentKey just restored above. Remove this line (and the matching one in
+            // PerformFirstSync) if/when the user wants Fervour to persist like Life/Flask do.
+            p2.Stats.Fervour.SetToCurrentMax();
+
+            if (Main.CoopLocal != null)
+            {
+                Blasphemous.ModdingAPI.ModLog.Info(
+                    $"[P2StatsSync] restored P2's saved baseline ({applied} stats) for save slot. " +
+                    $"Life={p2.Stats.Life.Current:F0}/{p2.Stats.Life.Final:F0} Fervour={p2.Stats.Fervour.Current:F0}/{p2.Stats.Fervour.CurrentMax:F0} " +
+                    $"Flask={p2.Stats.Flask.Current:F0}/{p2.Stats.Flask.Final:F0} Purge={p2.Stats.Purge.Current:F0}",
+                    Main.CoopLocal);
+            }
+        }
+        catch (Exception ex)
+        {
+            if (Main.CoopLocal != null)
+            {
+                Blasphemous.ModdingAPI.ModLog.Info($"[P2StatsSync] failed to restore baseline: {ex.Message}", Main.CoopLocal);
+            }
+        }
+    }
+}
+
+// Round 45: the real "rest at a shrine" heal - PrieDieu.ShallowActivationLogic (private, called
+// from both first-time and repeat-use activation coroutines) hardcodes Core.Logic.Penitent for
+// Life/Flask/Fervour healing, same as everywhere else this session, but this one matters for a
+// different reason than "wrong owner": P2 doesn't have its OWN PrieDieu component at all (P1's is
+// the only one, tied to the single shared shrine), so there's nothing to "fix the owner of" - P2
+// simply never got healed here. Postfix (not Prefix, since vanilla's own P1 heal should still run
+// normally) adds the same treatment for P2, gating Fervour on the identical
+// Core.Alms.GetPrieDieuLevel() > 1 condition P1's own heal checks.
+[HarmonyPatch(typeof(Tools.Level.Interactables.PrieDieu), "ShallowActivationLogic")]
+internal static class PrieDieu_ShallowActivationLogic_HealPlayer2_Patch
+{
+    private static void Postfix()
+    {
+        Penitent p2 = CoopLocal.Player2;
+        if (p2 == null)
+        {
+            return;
+        }
+        bool healFervour = Core.Alms.GetPrieDieuLevel() > 1;
+        Player2StatsSync.HealAtPrieDieu(p2, healFervour);
+    }
+}
+
+// Round 44: user reported P2 getting "stuck" to walls (cliff-ledge grab) whenever *P1* presses
+// attack, and jumping off ladders whenever *P1* presses jump - two separate bugs in two separate
+// ability classes, both previously untouched since neither is an AnimationBehaviour (the ~50-class
+// batch scan from earlier this session only covered StateMachineBehaviour subclasses).
+//
+// GrabCliffLede.Start() does `_penitent = Core.Logic.Penitent;` - the exact same "wrong owner"
+// hardcode found dozens of times already, just in a per-Penitent MonoBehaviour component instead
+// of an AnimationBehaviour. Every method in the class (Update/OnTriggerStay2D/grabCliffLede/etc)
+// reads P1's IsFalling/IsGrounded/animator state through this one field, so P2's own wall-cling
+// eligibility was being decided by P1's movement state instead of P2's own.
+//
+// Round 47 correction: originally "fixed" here with a Prefix (removed - it never actually did
+// anything). Turns out this exact bug, on this exact method, was *already* fixed much earlier
+// this session by GrabCliffLede_Start_Patch (search this file - a Postfix using
+// GetComponentInParent<Penitent>()), whose own comment explicitly explains why a Prefix can't
+// work here: Start()'s real assignment has no null-guard at all (`_penitent = Core.Logic.Penitent;`
+// unconditionally, every single call, not "only if null" like the AnimationBehaviour family), so
+// any Prefix pre-setting the field just gets silently overwritten by vanilla's own body a moment
+// later - only a Postfix (running *after* vanilla overwrites it) can actually stick. The Prefix
+// added here was therefore dead code the whole time - confirmed harmless (the pre-existing Postfix
+// still corrected the field correctly afterward either way) but misleading, so removed. The
+// diagnostic Postfix below (added the same round as the dead Prefix) is unaffected by any of this
+// and remains accurate - its own log lines already prove the owner resolves to P2 correctly.
+//
+// Round 45: no log data existed yet to confirm what was/wasn't working here (unlike GrabLadder,
+// which already had its own debug logger from earlier in the session), so this diagnostic was
+// added rather than guessing blind. Mirrors GrabLadder_OnUpdate_DebugLogger_Patch's own approach -
+// logs P2's own grab-eligibility state (the exact fields OnTriggerStay2D's condition checks)
+// every time it changes. This is what actually found the real cause (see CoopLocal.cs's
+// SetLayerRecursively / LevelManager.OnLevelLoaded re-sync, round 46/47) - _grabbedCliffLede
+// stayed null across thousands of airborne frames, which OnTriggerEnter2D only ever sets from
+// pure Unity physics-layer filtering, no ownership logic involved.
+[HarmonyPatch(typeof(GrabCliffLede), "Update")]
+internal static class GrabCliffLede_Update_DebugLogger_Patch
+{
+    private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(GrabCliffLede), "_penitent");
+    private static readonly FieldInfo GrabbedCliffLedeField = AccessTools.Field(typeof(GrabCliffLede), "_grabbedCliffLede");
+    private static readonly FieldInfo IsGrabbedCliffLedeField = AccessTools.Field(typeof(GrabCliffLede), "_isGrabbedCliffLede");
+    private static readonly FieldInfo IsAirAttackingField = AccessTools.Field(typeof(GrabCliffLede), "_isAirAttacking");
+    private static readonly FieldInfo RemainCooldownField = AccessTools.Field(typeof(GrabCliffLede), "remainCooldown");
+    private static string lastLoggedState;
+
+    private static void Postfix(GrabCliffLede __instance)
+    {
+        Penitent owner = (Penitent)PenitentField.GetValue(__instance);
+        if (owner == null || owner != CoopLocal.Player2)
+        {
+            return;
+        }
+        Collider2D grabbedCliffLede = (Collider2D)GrabbedCliffLedeField.GetValue(__instance);
+        bool isGrabbed = (bool)IsGrabbedCliffLedeField.GetValue(__instance);
+        bool isAirAttacking = (bool)IsAirAttackingField.GetValue(__instance);
+        float remainCooldown = (float)RemainCooldownField.GetValue(__instance);
+        string state = $"grabbedCliffLede={(grabbedCliffLede != null ? grabbedCliffLede.name : "null")} isGrabbed={isGrabbed} " +
+            $"isAirAttacking={isAirAttacking} remainCooldown={remainCooldown:F2} IsGrabbingCliffLede={owner.IsGrabbingCliffLede} " +
+            $"IsJumpingOff={owner.IsJumpingOff} IsDashing={owner.IsDashing} IsFalling={owner.AnimatorInyector.IsFalling} " +
+            $"IsGrounded={owner.Status.IsGrounded} canClimbCliffLede={owner.canClimbCliffLede}";
+        if (state != lastLoggedState)
+        {
+            lastLoggedState = state;
+            DashParryDebugLog.Log($"P2 GrabCliffLede.Update: {state} (frame {Time.frameCount})");
+        }
+    }
+}
+
+// GrabLadder itself correctly resolves its owner (`_penitent = (Penitent)base.EntityOwner;` in
+// OnStart() - a Trait, not affected by the Start()-hardcode bug above). The actual bug here is
+// different: OnUpdate()'s ladder-dismount trigger reads
+// `_penitent.PlatformCharacterInput.Rewired.GetButtonDown(65)` - a *direct* read of the single
+// shared Rewired Player 0 (the same class of cross-talk bug fixed for Dash/Parry/Heal/Interact/
+// PrayerActivate earlier this session, just never applied here since GrabLadder is a Trait, not
+// an Ability, so it was never covered by Ability_UpdateInput_Patch's blanket P2-disable). Whoever
+// is physically pressing whatever key Rewired action 65 maps to (in practice, P1's jump) trips
+// this check for *both* P1's and P2's GrabLadder instances identically, since both read the exact
+// same shared Rewired.Player object - explaining "el salto tambien lo ocasiona P1, debe de
+// hacerlo P2". Fixed via a full OnUpdate() reimplementation for P2's instance only (mirroring the
+// real decompiled body exactly) with just that one condition redirected to Player2Input.JumpDown -
+// every other line (StepOnLadder computation, animator bools, top/bottom repositioning) was
+// already correct per-instance and is reproduced unchanged, not guessed.
+[HarmonyPatch(typeof(GrabLadder), "OnUpdate")]
+internal static class GrabLadder_OnUpdate_P2_Patch
+{
+    // IsBottomLadderRepositioning/IsTopLadderReposition/StartGoingDown/CurrentLadderCollider are
+    // all public properties on GrabLadder - called directly below, no reflection needed. Only the
+    // private serialized field and the two private static readonly hash ints need it.
+    private static readonly FieldInfo LadderWidthFactorField = AccessTools.Field(typeof(GrabLadder), "ladderWidthFactor");
+    private static readonly FieldInfo StepOnLadderHashField = AccessTools.Field(typeof(GrabLadder), "StepOnLadderHash");
+    private static readonly FieldInfo IsCollidingLadderHashField = AccessTools.Field(typeof(GrabLadder), "IsCollidingLadderHash");
+    private static readonly MethodInfo TakeOffLadderMethod = AccessTools.Method(typeof(GrabLadder), "TakeOffLadder");
+
+    private static bool Prefix(GrabLadder __instance, ref Penitent ____penitent)
+    {
+        if (____penitent == null || ____penitent != CoopLocal.Player2)
+        {
+            return true;
+        }
+        Penitent penitent = ____penitent;
+
+        if (__instance.IsBottomLadderRepositioning)
+        {
+            __instance.IsBottomLadderRepositioning = false;
+        }
+
+        bool startGoingDown = penitent.StepOnLadder && penitent.PlatformCharacterInput.isJoystickDown
+            && !penitent.PlatformCharacterController.IsClimbing && penitent.Status.IsGrounded;
+        __instance.StartGoingDown = startGoingDown;
+
+        bool closeToTop = false;
+        Collider2D currentLadderCollider = __instance.CurrentLadderCollider;
+        if (currentLadderCollider != null)
+        {
+            float distance = __instance.DistanceToTopLadder(penitent.transform.position);
+            float widthFactor = (float)LadderWidthFactorField.GetValue(__instance);
+            closeToTop = distance < currentLadderCollider.bounds.size.x * widthFactor;
+        }
+
+        if (startGoingDown && !__instance.IsTopLadderReposition)
+        {
+            __instance.IsTopLadderReposition = true;
+            __instance.TopLadderReposition();
+        }
+
+        bool stepOnLadderValue = penitent.StepOnLadder && closeToTop && penitent.CanClimbLadder;
+        Animator animator = penitent.Animator;
+        animator.SetBool((int)StepOnLadderHashField.GetValue(__instance), stepOnLadderValue);
+        animator.SetBool((int)IsCollidingLadderHashField.GetValue(__instance), penitent.IsOnLadder);
+
+        if (!penitent.StepOnLadder)
+        {
+            __instance.IsTopLadderReposition = false;
+        }
+
+        bool isTakingOffLadder = animator.GetCurrentAnimatorStateInfo(0).IsName("grab_ladder_to_go_down")
+            || animator.GetCurrentAnimatorStateInfo(0).IsName("release_ladder_to_floor_up");
+        // The one line that actually differs from vanilla: P2's own edge-triggered jump instead of
+        // the shared Rewired Player 0 read.
+        if (Player2Input.JumpDown && !isTakingOffLadder && !Core.Input.InputBlocked)
+        {
+            TakeOffLadderMethod.Invoke(__instance, null);
+        }
+        return false;
     }
 }
