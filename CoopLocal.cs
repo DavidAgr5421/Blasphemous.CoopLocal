@@ -34,6 +34,12 @@ public class CoopLocal : BlasMod
     {
         SpawnManager.OnPlayerSpawn += OnPlayerSpawn;
         LevelManager.OnLevelLoaded += OnLevelLoaded;
+
+        // Round 52 - debug tool: F10 camera-target cycler (Coop/P1 only/P2 only). Its own
+        // driver MonoBehaviour just needs to exist once, independent of P1/P2's own lifecycle -
+        // see Camera/Camera.cs for the actual toggle logic.
+        CameraTargetDebugToggle.EnsureCreated();
+        CameraTargetModeIndicator.Show(CameraTargetDebugToggle.Mode);
     }
 
     protected override void OnDispose()
@@ -52,13 +58,32 @@ public class CoopLocal : BlasMod
     // has genuinely finished loading (LevelManager.OnLevelLoaded, the real "level fully ready"
     // signal, not just "P1 object exists") costs nothing if the first copy was already correct,
     // and fixes it if it wasn't.
+    //
+    // Round 54: this used to be SetLayerRecursively(Player2.transform, Core.Logic.Penitent
+    // .gameObject.layer) - a single *root* layer stamped onto P2's *entire* hierarchy, including
+    // children that are deliberately on a different layer than the root in the source prefab (P1's
+    // own "Attack Area" child lives on "Water", not P1's own root "Penitent" layer - confirmed via
+    // Combat/Damage.cs's own overlap diagnostic, comparing a real P1 hit's log line against a
+    // "phantom" P2 one side by side). Stamping every child to the root layer silently moved P2's
+    // Attack Area onto the same layer as its own real Body/DamageArea collider - so
+    // ContactDamage.OnTriggerEnter2D (which resolves a touch via whichever collider entered,
+    // GetComponentInParent<IDamageable>() - see Combat/ContactDamage.cs) started treating P2's
+    // offensive weapon-reach hitbox brushing an enemy as a genuine body touch, applying real
+    // contact damage while P2's actual body/DamageArea was nowhere near it - the root cause of the
+    // "P2 takes damage from an enemy it's not really touching" reports from rondas 50/53 (that
+    // whole earlier investigation, including its diagnostics, is now superseded by this - see
+    // ronda 54 below). Fixed by copying every node's layer individually, matching P1's live
+    // hierarchy child-for-child (same "Core/Penitent" prefab structure for both, so child order is
+    // stable) instead of a single blanket value - this also transparently fixes any other child
+    // that's deliberately off the root layer (P1's own "#Abilities" collider is on "Default", also
+    // confirmed via the same log comparison) without needing to special-case any of them by name.
     private void OnLevelLoaded(Level oldLevel, Level newLevel)
     {
         if (Player2 == null || Core.Logic == null || Core.Logic.Penitent == null)
         {
             return;
         }
-        SetLayerRecursively(Player2.transform, Core.Logic.Penitent.gameObject.layer);
+        CopyLayersRecursively(Core.Logic.Penitent.transform, Player2.transform);
     }
 
     // Fired by the game every time P1 spawns/respawns: level load, teleport, death respawn, etc.
@@ -112,7 +137,11 @@ public class CoopLocal : BlasMod
         // just the root - copies P1's real layer (and every child's layer) onto every one of P2's
         // own objects so P2 gets the exact same collision-matrix treatment P1 does for anything
         // layer-filtered (cliff-lede triggers being the concrete case proven broken so far).
-        SetLayerRecursively(Player2.transform, p1.gameObject.layer);
+        // Round 54: per-node copy now, not a single blanket root value - see CopyLayersRecursively
+        // and the comment on OnLevelLoaded above for why (P1's own children aren't all on the same
+        // layer as P1's own root, e.g. "Attack Area" is on "Water" - a blanket stamp silently wiped
+        // that out for P2 and caused real contact-damage cross-talk).
+        CopyLayersRecursively(p1.transform, Player2.transform);
 
         // P2's input mode (keyboard/gamepad) and the P1/gamepad exclusivity that goes with it
         // are handled every frame by Player2Input.Tick() (see GamePatches.cs, called from
@@ -167,7 +196,7 @@ public class CoopLocal : BlasMod
         // surgical way to separate P1 and P2 specifically instead of an entire layer.
 
         AddNameLabel(p1, "Pan-chan", WineRed, outlineColor: Color.white);
-        AddNameLabel(Player2, "Baby", new Color(0.35f, 0.85f, 0.35f));
+        AddNameLabel(Player2, "Baby", new Color(0.35f, 0.85f, 0.35f), outlineColor: Color.black);
 
         // Snapshot both players' clean (non-mud) movement stats now, before either could
         // possibly have touched a MudAreaEffect - see GamePatches for why this is needed.
@@ -196,11 +225,11 @@ public class CoopLocal : BlasMod
         // after all three exist rather than from inside Health's own EnsureCreated.
         Player2HealthBar.BringToFront();
 
-        // Stopgap while the cloned HUD bar (above) is still visually broken (see Modding/NOTES.md,
-        // ronda 30) - simple in-world life/Fervour bars floating over P2's own head, built from a
-        // single runtime-generated white pixel sprite (no game assets needed) instead of depending
-        // on anything from PlayerHealth/PlayerFervour's UI hierarchy.
-        Player2StatusBars.EnsureCreated(Player2);
+        // Ronda 48 - debug visual: a translucent overlay tracking P2's real damage hitbox
+        // (PenitentDamageArea's own BoxCollider2D, resized live by ResizeDamageArea() while
+        // crouching/dashing/etc) so it's visible in-game exactly where a hit will actually land,
+        // instead of guessing from the sprite.
+        Player2HitboxVisualizer.EnsureCreated(Player2);
 
         ModLog.Info(
             $"P2 spawned at {spawnPosition} (p1 was at {p1.transform.position}, offset={P2SpawnOffset}, " +
@@ -208,12 +237,22 @@ public class CoopLocal : BlasMod
             this);
     }
 
-    private static void SetLayerRecursively(Transform root, int layer)
+    // Round 54: replaces the old SetLayerRecursively(Transform, int) - a single layer value
+    // stamped onto every node - with a per-node copy from P1's own live hierarchy onto P2's,
+    // matched by child index (both are instances of the same "Core/Penitent" prefab structure, so
+    // child order is stable between them). This is what actually makes P2's per-child layers
+    // (Attack Area, #Abilities, etc.) match P1's real ones instead of collapsing them all onto
+    // whatever the root happens to be - see the comments on OnLevelLoaded/OnPlayerSpawn above for
+    // the concrete bug this fixes. Defensively caps at the shorter of the two child counts in case
+    // the two hierarchies ever briefly diverge (shouldn't happen for two instances of the same
+    // prefab, but costs nothing to guard against).
+    private static void CopyLayersRecursively(Transform source, Transform target)
     {
-        root.gameObject.layer = layer;
-        for (int i = 0; i < root.childCount; i++)
+        target.gameObject.layer = source.gameObject.layer;
+        int childCount = Mathf.Min(source.childCount, target.childCount);
+        for (int i = 0; i < childCount; i++)
         {
-            SetLayerRecursively(root.GetChild(i), layer);
+            CopyLayersRecursively(source.GetChild(i), target.GetChild(i));
         }
     }
 
@@ -234,10 +273,10 @@ public class CoopLocal : BlasMod
 
         if (outlineColor.HasValue)
         {
-            // Legacy TextMesh has no built-in outline/glow support (that needs a custom
-            // shader/material) - faked with 8 duplicate copies of the same text, offset by a tiny
-            // amount in a ring around the real text and drawn one sorting order behind it. Classic
-            // "poor man's outline" trick, no new assets required.
+            // No outline: faked with 8 duplicate copies of the same text, offset by a tiny
+            // amount in a ring around the real text and drawn one sorting order behind it.
+            // Classic "poor man's outline" trick - kept as-is so the new TMP labels look
+            // identical to the old legacy ones, just with the game's actual font.
             const float offset = 0.045f;
             Vector3[] outlineOffsets =
             {
@@ -258,15 +297,66 @@ public class CoopLocal : BlasMod
         CreateLabelTextMesh(labelObject, label, color, sortingOrder: 100);
     }
 
+    // The game's real Latin TMP font (the same one the in-game UI text uses; asset name captured
+    // in the Round-50 journal note). It is a serialized runtime asset - not loadable by path - so
+    // it can only be found by scanning the loaded resources once and reusing it for all labels.
+    private const string GameFontName = "MajesticExtended_FullLatin";
+    private static TMPro.TMP_FontAsset gameFont;
+
+    // Target world-space height of the label text. The legacy TextMesh label it replaces rendered
+    // about this tall. TMP fontSize is in font units, not world units - so we build a mesh at a
+    // base size, measure its real world height, then rescale fontSize so the text lands at
+    // LabelTargetHeight. The rect stays at localScale (1,1,1), so KeepLocalTransform and the
+    // outline offset ring stay exactly as before.
+    private const float LabelTargetHeight = 0.4f;
+    private const float LabelBaseFontSize = 4f;
+
     private static void CreateLabelTextMesh(GameObject target, string label, Color color, int sortingOrder)
     {
-        TextMesh textMesh = target.AddComponent<TextMesh>();
+        // Adding a RectTransform upgrades the object's existing Transform in place, which can
+        // reset its localPosition - re-apply it afterwards so the label stays above the penitent.
+        Vector3 localPosition = target.transform.localPosition;
+
+        // TMPro.TextMeshPro extends TMP_Text: TMP_Text lazily grabs a RectTransform and
+        // LoadDefaultSettings writes m_rectTransform.sizeDelta, so a RectTransform must exist on
+        // the object before the component is added (same pattern as Player2ModeIndicator).
+        if (target.GetComponent<RectTransform>() == null)
+        {
+            target.AddComponent<RectTransform>();
+        }
+        target.transform.localPosition = localPosition;
+
+        TMPro.TextMeshPro textMesh = target.AddComponent<TMPro.TextMeshPro>();
         textMesh.text = label;
-        textMesh.characterSize = 0.08f;
-        textMesh.fontSize = 48;
-        textMesh.anchor = TextAnchor.LowerCenter;
-        textMesh.alignment = TextAlignment.Center;
         textMesh.color = color;
+        textMesh.alignment = TMPro.TextAlignmentOptions.Center;
+        textMesh.enableAutoSizing = false;
+        textMesh.fontSize = LabelBaseFontSize;
+
+        if (gameFont == null)
+        {
+            gameFont = System.Array.Find(Resources.FindObjectsOfTypeAll<TMPro.TMP_FontAsset>(),
+                f => f != null && f.name == GameFontName);
+        }
+
+        if (gameFont != null)
+        {
+            textMesh.font = gameFont;
+        }
+
+        // Build at the base fontSize, measure the rendered mesh's real height, then rescale the
+        // fontSize so the label lands at the same world height the old legacy label had.
+        textMesh.ForceMeshUpdate();
+        MeshFilter meshFilter = target.GetComponent<MeshFilter>();
+        if (meshFilter != null)
+        {
+            float measuredHeight = meshFilter.mesh.bounds.size.y;
+            if (measuredHeight > 0.001f)
+            {
+                textMesh.fontSize = LabelBaseFontSize * (LabelTargetHeight / measuredHeight);
+                textMesh.ForceMeshUpdate();
+            }
+        }
 
         MeshRenderer meshRenderer = target.GetComponent<MeshRenderer>();
         if (meshRenderer != null)
@@ -289,103 +379,75 @@ internal class KeepLocalTransform : MonoBehaviour
     }
 }
 
-// Simple floating life/Fervour bars above P2's head - a stopgap for as long as the cloned HUD bar
-// (Player2HealthBar, GamePatches.cs) stays visually broken. Deliberately doesn't reuse any of
-// PlayerHealth/PlayerFervour's UI Image/RectTransform machinery (that's exactly what's been buggy)
-// - instead builds two bars from a single runtime-generated 1x1 white pixel Sprite, with its pivot
-// pinned to the left edge so scaling a bar's own transform.localScale.x grows/shrinks it from a
-// fixed left anchor, the same trick a screen-space fill bar gets from Image.fillMethod, without
-// needing Canvas/UI at all.
-internal class Player2StatusBars : MonoBehaviour
+
+// Debug-only: a translucent red rectangle that tracks P2's real damage-taking collider
+// (PenitentDamageArea's own BoxCollider2D) every frame, so a hit landing on P2 can be visually
+// confirmed against the collider itself rather than the sprite (which is usually bigger than the
+// actual hitbox). Parented directly to the DamageArea's own transform - not P2's root - and driven
+// from that same collider's offset/size every frame, so it automatically follows
+// PenitentDamageArea.ResizeDamageArea()'s own crouch/dash/jump-forward-triggered resizes without
+// needing to know about any of those cases itself.
+internal class Player2HitboxVisualizer : MonoBehaviour
 {
-    private const string ChildName = "CoopLocalStatusBars";
-    private const float BarWidth = 1.3f;
-    private const float BarHeight = 0.12f;
-    private static readonly Vector3 LifeBarLocalPosition = new Vector3(0f, 2.05f, 0f);
-    private static readonly Vector3 FervourBarLocalPosition = new Vector3(0f, 1.88f, 0f);
+    private const string ChildName = "CoopLocalHitboxVisualizer";
 
-    private static Sprite barSprite;
+    private static Sprite overlaySprite;
 
-    private SpriteRenderer lifeFill;
-    private SpriteRenderer fervourFill;
+    private BoxCollider2D targetCollider;
 
     internal static void EnsureCreated(Penitent p2)
     {
-        if (p2.transform.Find(ChildName) != null)
+        if (p2.DamageArea == null)
+        {
+            return;
+        }
+        Transform damageAreaTransform = p2.DamageArea.transform;
+        if (damageAreaTransform.Find(ChildName) != null)
         {
             return;
         }
 
-        GameObject root = new GameObject(ChildName);
-        root.transform.SetParent(p2.transform, worldPositionStays: false);
-        root.AddComponent<KeepLocalTransform>();
+        BoxCollider2D collider = p2.DamageArea.GetComponent<BoxCollider2D>();
+        if (collider == null)
+        {
+            return;
+        }
 
-        Player2StatusBars bars = root.AddComponent<Player2StatusBars>();
-        // Wine-red life bar, gold Fervour bar - matches the game's own Fervour color convention,
-        // and pairs with P1's own wine-red name label without the two being literally the same tag.
-        bars.lifeFill = CreateBar(root.transform, LifeBarLocalPosition, new Color(0.75f, 0.12f, 0.12f));
-        bars.fervourFill = CreateBar(root.transform, FervourBarLocalPosition, new Color(0.95f, 0.78f, 0.2f));
+        GameObject overlayObject = new GameObject(ChildName);
+        overlayObject.transform.SetParent(damageAreaTransform, worldPositionStays: false);
+
+        SpriteRenderer renderer = overlayObject.AddComponent<SpriteRenderer>();
+        renderer.sprite = GetOverlaySprite();
+        renderer.color = new Color(1f, 0f, 0f, 0.35f);
+        renderer.sortingLayerName = "Player";
+        renderer.sortingOrder = 1000;
+
+        Player2HitboxVisualizer visualizer = overlayObject.AddComponent<Player2HitboxVisualizer>();
+        visualizer.targetCollider = collider;
     }
 
-    private static SpriteRenderer CreateBar(Transform parent, Vector3 localPosition, Color fillColor)
+    // Center pivot (0.5, 0.5) here, unlike Player2StatusBars' left-pivot sprite - a BoxCollider2D's
+    // own offset is already its center, so a center-pivoted sprite can copy that offset directly
+    // as localPosition without any extra math.
+    private static Sprite GetOverlaySprite()
     {
-        GameObject background = new GameObject("Background");
-        background.transform.SetParent(parent, worldPositionStays: false);
-        background.transform.localPosition = localPosition;
-        background.transform.localScale = new Vector3(BarWidth, BarHeight, 1f);
-        SpriteRenderer backgroundRenderer = background.AddComponent<SpriteRenderer>();
-        backgroundRenderer.sprite = GetBarSprite();
-        backgroundRenderer.color = new Color(0f, 0f, 0f, 0.6f);
-        backgroundRenderer.sortingLayerName = "Player";
-        backgroundRenderer.sortingOrder = 99;
-
-        GameObject fill = new GameObject("Fill");
-        fill.transform.SetParent(parent, worldPositionStays: false);
-        fill.transform.localPosition = localPosition;
-        fill.transform.localScale = new Vector3(BarWidth, BarHeight, 1f);
-        SpriteRenderer fillRenderer = fill.AddComponent<SpriteRenderer>();
-        fillRenderer.sprite = GetBarSprite();
-        fillRenderer.color = fillColor;
-        fillRenderer.sortingLayerName = "Player";
-        fillRenderer.sortingOrder = 100;
-
-        return fillRenderer;
-    }
-
-    // Pivot at (0, 0.5) - left-center - means the GameObject's own position is already the bar's
-    // left edge, so scaling transform.localScale.x shrinks/grows the sprite towards/away from that
-    // fixed left anchor instead of from the center, without needing any position offset math.
-    private static Sprite GetBarSprite()
-    {
-        if (barSprite == null)
+        if (overlaySprite == null)
         {
             Texture2D texture = new Texture2D(1, 1);
             texture.SetPixel(0, 0, Color.white);
             texture.Apply();
-            barSprite = Sprite.Create(texture, new Rect(0f, 0f, 1f, 1f), new Vector2(0f, 0.5f), 1f);
+            overlaySprite = Sprite.Create(texture, new Rect(0f, 0f, 1f, 1f), new Vector2(0.5f, 0.5f), 1f);
         }
-        return barSprite;
+        return overlaySprite;
     }
 
-    private void Update()
+    private void LateUpdate()
     {
-        Penitent p2 = CoopLocal.Player2;
-        if (p2 == null)
+        if (targetCollider == null)
         {
             return;
         }
-        SetFillRatio(lifeFill, p2.Stats.Life.Final > 0f ? p2.Stats.Life.Current / p2.Stats.Life.Final : 0f);
-        SetFillRatio(fervourFill, p2.Stats.Fervour.CurrentMaxWithoutFactor > 0f
-            ? p2.Stats.Fervour.Current / p2.Stats.Fervour.CurrentMaxWithoutFactor
-            : 0f);
-    }
-
-    private static void SetFillRatio(SpriteRenderer fill, float ratio)
-    {
-        if (fill == null)
-        {
-            return;
-        }
-        fill.transform.localScale = new Vector3(BarWidth * Mathf.Clamp01(ratio), BarHeight, 1f);
+        transform.localPosition = targetCollider.offset;
+        transform.localScale = new Vector3(targetCollider.size.x, targetCollider.size.y, 1f);
     }
 }

@@ -231,3 +231,82 @@ internal static class AnimatorInyector_Crouch_LadderGuard_Patch
 }
 
 
+
+// GrabLadder itself correctly resolves its owner (`_penitent = (Penitent)base.EntityOwner;` in
+// OnStart() - a Trait, not affected by the Start()-hardcode bug above). The actual bug here is
+// different: OnUpdate()'s ladder-dismount trigger reads
+// `_penitent.PlatformCharacterInput.Rewired.GetButtonDown(65)` - a *direct* read of the single
+// shared Rewired Player 0 (the same class of cross-talk bug fixed for Dash/Parry/Heal/Interact/
+// PrayerActivate earlier this session, just never applied here since GrabLadder is a Trait, not
+// an Ability, so it was never covered by Ability_UpdateInput_Patch's blanket P2-disable). Whoever
+// is physically pressing whatever key Rewired action 65 maps to (in practice, P1's jump) trips
+// this check for *both* P1's and P2's GrabLadder instances identically, since both read the exact
+// same shared Rewired.Player object - explaining "el salto tambien lo ocasiona P1, debe de
+// hacerlo P2". Fixed via a full OnUpdate() reimplementation for P2's instance only (mirroring the
+// real decompiled body exactly) with just that one condition redirected to Player2Input.JumpDown -
+// every other line (StepOnLadder computation, animator bools, top/bottom repositioning) was
+// already correct per-instance and is reproduced unchanged, not guessed.
+[HarmonyPatch(typeof(GrabLadder), "OnUpdate")]
+internal static class GrabLadder_OnUpdate_P2_Patch
+{
+    // IsBottomLadderRepositioning/IsTopLadderReposition/StartGoingDown/CurrentLadderCollider are
+    // all public properties on GrabLadder - called directly below, no reflection needed. Only the
+    // private serialized field and the two private static readonly hash ints need it.
+    private static readonly FieldInfo LadderWidthFactorField = AccessTools.Field(typeof(GrabLadder), "ladderWidthFactor");
+    private static readonly FieldInfo StepOnLadderHashField = AccessTools.Field(typeof(GrabLadder), "StepOnLadderHash");
+    private static readonly FieldInfo IsCollidingLadderHashField = AccessTools.Field(typeof(GrabLadder), "IsCollidingLadderHash");
+    private static readonly MethodInfo TakeOffLadderMethod = AccessTools.Method(typeof(GrabLadder), "TakeOffLadder");
+
+    private static bool Prefix(GrabLadder __instance, ref Penitent ____penitent)
+    {
+        if (____penitent == null || ____penitent != CoopLocal.Player2)
+        {
+            return true;
+        }
+        Penitent penitent = ____penitent;
+
+        if (__instance.IsBottomLadderRepositioning)
+        {
+            __instance.IsBottomLadderRepositioning = false;
+        }
+
+        bool startGoingDown = penitent.StepOnLadder && penitent.PlatformCharacterInput.isJoystickDown
+            && !penitent.PlatformCharacterController.IsClimbing && penitent.Status.IsGrounded;
+        __instance.StartGoingDown = startGoingDown;
+
+        bool closeToTop = false;
+        Collider2D currentLadderCollider = __instance.CurrentLadderCollider;
+        if (currentLadderCollider != null)
+        {
+            float distance = __instance.DistanceToTopLadder(penitent.transform.position);
+            float widthFactor = (float)LadderWidthFactorField.GetValue(__instance);
+            closeToTop = distance < currentLadderCollider.bounds.size.x * widthFactor;
+        }
+
+        if (startGoingDown && !__instance.IsTopLadderReposition)
+        {
+            __instance.IsTopLadderReposition = true;
+            __instance.TopLadderReposition();
+        }
+
+        bool stepOnLadderValue = penitent.StepOnLadder && closeToTop && penitent.CanClimbLadder;
+        Animator animator = penitent.Animator;
+        animator.SetBool((int)StepOnLadderHashField.GetValue(__instance), stepOnLadderValue);
+        animator.SetBool((int)IsCollidingLadderHashField.GetValue(__instance), penitent.IsOnLadder);
+
+        if (!penitent.StepOnLadder)
+        {
+            __instance.IsTopLadderReposition = false;
+        }
+
+        bool isTakingOffLadder = animator.GetCurrentAnimatorStateInfo(0).IsName("grab_ladder_to_go_down")
+            || animator.GetCurrentAnimatorStateInfo(0).IsName("release_ladder_to_floor_up");
+        // The one line that actually differs from vanilla: P2's own edge-triggered jump instead of
+        // the shared Rewired Player 0 read.
+        if (Player2Input.JumpDown && !isTakingOffLadder && !Core.Input.InputBlocked)
+        {
+            TakeOffLadderMethod.Invoke(__instance, null);
+        }
+        return false;
+    }
+}

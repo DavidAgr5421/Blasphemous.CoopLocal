@@ -138,11 +138,82 @@ internal static class PenitentDamageArea_TakeDamage_DebugLog_Patch
         float distanceToOther = (owner != null && other != null) ? Vector3.Distance(owner.transform.position, other.transform.position) : -1f;
         string attackerPos = hit.AttackingEntity != null ? hit.AttackingEntity.transform.position.ToString("F1") : "?";
 
+        string ownerAnim = "(none)";
+        if (owner != null && owner.Animator != null)
+        {
+            AnimatorClipInfo[] clips = owner.Animator.GetCurrentAnimatorClipInfo(0);
+            ownerAnim = clips.Length > 0 ? clips[0].clip.name : "(none)";
+        }
+
+        Collider2D selfCollider = __instance.DamageAreaCollider;
+        string selfBounds = selfCollider != null ? BoundsShort(selfCollider.bounds) : "?";
+
+        // The decisive part for the "P2 takes damage while attacking, far from the enemy" report:
+        // whether any *enabled trigger* collider belonging to the attacker actually overlaps the
+        // owner's own DamageArea collider (a genuine body hit), and separately whether it overlaps
+        // ANY enabled owner collider (catches the classic Unity gotcha where the damage was
+        // triggered by the enemy's ContactDamage trigger overlapping the player's *sword* collider
+        // instead of the body - GetComponentInParent<IDamageable>() then resolves the sword's
+        // parent Penitent as the target, no proximity check at all on the body itself). The layer
+        // names and [MASK] tag (attacker ContactDamage's DamageableLayers includes that layer)
+        // make that callable as "this is / isn't a legit trigger" from the log alone.
+        List<string> attackerTriggers = new List<string>();
+        List<string> overlaps = new List<string>();
+        int bodyOverlaps = 0;
+        if (hit.AttackingEntity != null)
+        {
+            ContactDamage[] attackerContact = hit.AttackingEntity.GetComponentsInChildren<ContactDamage>(true);
+            Collider2D[] attackerColliders = hit.AttackingEntity.GetComponentsInChildren<Collider2D>(true);
+            foreach (Collider2D attackerCollider in attackerColliders)
+            {
+                if (attackerCollider == null || !attackerCollider.enabled || !attackerCollider.isTrigger)
+                {
+                    continue;
+                }
+                attackerTriggers.Add($"{attackerCollider.gameObject.name}/{attackerCollider.GetType().Name} {BoundsShort(attackerCollider.bounds)} layer={LayerMask.LayerToName(attackerCollider.gameObject.layer)}");
+                if (selfCollider != null && attackerCollider.bounds.Intersects(selfCollider.bounds))
+                {
+                    bodyOverlaps++;
+                    overlaps.Add($"body <-> {attackerCollider.gameObject.name}");
+                }
+                if (owner != null)
+                {
+                    Collider2D[] ownerColliders = owner.GetComponentsInChildren<Collider2D>(false);
+                    foreach (Collider2D ownerCollider in ownerColliders)
+                    {
+                        if (ownerCollider == null || !ownerCollider.enabled || !attackerCollider.bounds.Intersects(ownerCollider.bounds))
+                        {
+                            continue;
+                        }
+                        int layer = ownerCollider.gameObject.layer;
+                        bool maskHit = false;
+                        foreach (ContactDamage contactDamage in attackerContact)
+                        {
+                            if (contactDamage != null && (contactDamage.DamageableLayers.value & (1 << layer)) != 0)
+                            {
+                                maskHit = true;
+                                break;
+                            }
+                        }
+                        overlaps.Add($"{ownerCollider.gameObject.name}/{ownerCollider.GetType().Name} layer={LayerMask.LayerToName(layer)}{(maskHit ? "[MASK]" : "")} <-> {attackerCollider.gameObject.name}");
+                    }
+                }
+            }
+        }
+
         DashParryDebugLog.Log(
             $"PenitentDamageArea.TakeDamage APPLIED on {ownerLabel} (instance={__instance.GetInstanceID()}) from attacker='{attackerName}' " +
             $"damageType={hit.DamageType} lifeBefore={lifeBefore:F1} lifeAfter={lifeAfter:F1} " +
             $"unattacableBefore={unattacableBefore} invulnerableBefore={invulnerableBefore} isHurtBefore={isHurtBefore} | {ownerLabel}Pos={ownerPos} " +
             $"{otherLabel}Pos={otherPos} distanceToOther={distanceToOther:F1} attackerPos={attackerPos} (frame {Time.frameCount})");
+        DashParryDebugLog.Log(
+            $"{ownerLabel} anim=\"{ownerAnim}\" selfCollider={selfBounds} attackerTriggers=[{string.Join("; ", attackerTriggers.ToArray())}] " +
+            $"bodyOverlap={bodyOverlaps} overlaps=[{string.Join("; ", overlaps.ToArray())}] (frame {Time.frameCount})");
+    }
+
+    private static string BoundsShort(Bounds bounds)
+    {
+        return $"min=({bounds.min.x:F1},{bounds.min.y:F1},{bounds.min.z:F1}) max=({bounds.max.x:F1},{bounds.max.y:F1},{bounds.max.z:F1})";
     }
 }
 
@@ -165,6 +236,54 @@ internal static class PenitentDamageArea_RaiseDamageEvent_HudFix_Patch
         {
             logicManager.PlayerCurrentLife = p1.Stats.Life.Current;
         }
+    }
+}
+
+// Round 50: diagnostic for the "P2's hitbox doesn't seem to resize for crouch/dash/jump-forward,
+// and sometimes takes contact damage with no real overlap" report. Static reading of
+// ResizeDamageArea() and every flag it reads (IsCrouched, Dash.CrouchAfterDash, IsDashing,
+// LungeAttack.Casting, AnimatorInyector.IsJumpingForward, IsFallingForwardResized) traced each one
+// back to a writer that's already confirmed correctly per-instance for P2 - no family-1/2/3 bug
+// found in the resize path itself this way. Rather than keep guessing, this logs those five inputs
+// plus the actual resulting collider offset/size, edge-triggered (only when the composed state
+// string actually changes for that instance) - same discipline as the raw-input loggers in
+// Movement/Movement.cs. Two outcomes settle this: if the collider offset/size never actually
+// changes for P2 across a crouch/dash/jump-forward, the bug is upstream of what was audited (one
+// of these getters lies, or ResizeDamageArea itself isn't running for P2 at all); if it changes
+// correctly and the "no real overlap" damage still happens, that points back at
+// ContactDamageOverlapTracker / an enemy-specific contact-damage path instead (Combat/ContactDamage.cs).
+[HarmonyPatch(typeof(PenitentDamageArea), "ResizeDamageArea")]
+internal static class PenitentDamageArea_ResizeDamageArea_DebugLog_Patch
+{
+    private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(PenitentDamageArea), "_penitent");
+    private static readonly FieldInfo DamageAreaResizedField = AccessTools.Field(typeof(PenitentDamageArea), "_damageAreaResized");
+
+    private static readonly Dictionary<PenitentDamageArea, string> lastLogged = new Dictionary<PenitentDamageArea, string>();
+
+    private static void Postfix(PenitentDamageArea __instance)
+    {
+        Penitent owner = PenitentField.GetValue(__instance) as Penitent;
+        if (owner == null)
+        {
+            return;
+        }
+
+        BoxCollider2D collider = __instance.DamageAreaCollider as BoxCollider2D;
+        bool resized = (bool)DamageAreaResizedField.GetValue(__instance);
+
+        string state =
+            $"IsCrouched={owner.IsCrouched} CrouchAfterDash={owner.Dash.CrouchAfterDash} IsDashing={owner.IsDashing} " +
+            $"LungeCasting={owner.LungeAttack.Casting} IsJumpingForward={owner.AnimatorInyector.IsJumpingForward} " +
+            $"IsFallingForwardResized={__instance.IsFallingForwardResized} damageAreaResized={resized} " +
+            $"colliderOffset={(collider != null ? collider.offset.ToString("F2") : "?")} " +
+            $"colliderSize={(collider != null ? collider.size.ToString("F2") : "?")}";
+
+        if (lastLogged.TryGetValue(__instance, out string last) && last == state)
+        {
+            return;
+        }
+        lastLogged[__instance] = state;
+        DashParryDebugLog.Log($"{DashParryDebugLog.Label(owner)} PenitentDamageArea.ResizeDamageArea -> {state} (frame {Time.frameCount})");
     }
 }
 

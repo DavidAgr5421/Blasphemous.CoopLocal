@@ -136,6 +136,7 @@ internal static class PlatformCharacterInput_Update_Patch
     private static bool lastLoggedRawJumpKey;
     private static bool lastLoggedLeft;
     private static bool lastLoggedRight;
+    private static string lastLoggedVerticalActionState;
 
     // Diagnostic for the user's own finding: pressing P2's real crouch or jump button makes P1
     // stop dashing even while P1's own dash button stays physically held down. DashBehaviour
@@ -269,9 +270,34 @@ internal static class PlatformCharacterInput_Update_Patch
         bool canMove = !crouch;
 
         PlatformCharacterController controller = ____penitent.PlatformCharacterController;
+
+        // Round 48 - "P2 can't climb ladders unless P1 also holds up/down": this Postfix has only
+        // ever overridden Left/Right/Jump. The vanilla PlatformCharacterInput.Update() body (which
+        // always runs first, unconditionally, before this Postfix - Harmony can't skip it for a
+        // Postfix-only patch) ALSO calls SetActionState(Up/Down, ...) itself, computed from the
+        // shared Rewired vertical axis - and since nothing here ever overwrote those two afterward,
+        // P2's own controller kept whatever Up/Down state P1's real input just set. That wouldn't
+        // matter for the animator-driven crouch/attack-up reads (isJoystickDown/isJoystickUp,
+        // already fixed below) - but CreativeSpore.SmartColliders.PlatformCharacterController.
+        // DoClimbing() (the third-party asset that actually moves the character along a ladder
+        // while climbing) reads these exact GetActionState(Up/Down) flags directly, completely
+        // independent of anything in Gameplay.* this mod had audited before. Logged here (only
+        // when either the vanilla-set value or our own value changes) so the cross-talk is visible
+        // directly in BepInEx/LogOutput.log instead of just inferred from reading decompiled code.
+        bool vanillaUp = controller.GetActionState(eControllerActions.Up);
+        bool vanillaDown = controller.GetActionState(eControllerActions.Down);
+        string verticalActionState = $"vanillaUp={vanillaUp} vanillaDown={vanillaDown} -> P2 own up={attackUp} down={crouch}";
+        if (verticalActionState != lastLoggedVerticalActionState)
+        {
+            lastLoggedVerticalActionState = verticalActionState;
+            DashParryDebugLog.Log($"P2 ladder Up/Down action state: {verticalActionState} (frame {Time.frameCount})");
+        }
+
         controller.SetActionState(eControllerActions.Left, canMove && left);
         controller.SetActionState(eControllerActions.Right, canMove && right);
         controller.SetActionState(eControllerActions.Jump, jump);
+        controller.SetActionState(eControllerActions.Up, attackUp);
+        controller.SetActionState(eControllerActions.Down, crouch);
 
         PlatformCharacterInput input = ____penitent.PlatformCharacterInput;
         input.ReachAxisThreshold = left || right;

@@ -193,4 +193,95 @@ internal static class Penitent_OnEntityDead_OwnerFilter_Patch
     }
 }
 
+// Round 53: found while investigating a report of P2's Attack Area (the offensive weapon hitbox -
+// not PenitentDamageArea, the separate one that receives damage) apparently overlapping enemies
+// from several units away while not attacking. ChargedAttackBehaviour.OnStateUpdate sets both
+// _penitent.AttackArea's size AND offset every frame while charging (a much bigger box,
+// (5.25, 3.26), than the resting hitbox) - but OnStateExit only restores the *offset*
+// (_penitent.AttackArea.SetOffset(defaultAttackAreaOffset)), never the size. Confirmed real by
+// reading the full method body, not by elimination - this is a plain vanilla gap, not a
+// P1/P2-owner-resolution bug (_penitent is already correctly resolved here via the batch patch in
+// Abilities/AbilityInputFixes.cs). In solo play this is usually invisible because
+// PenitentAttack.OnUpdate()'s own continuous safety net (see that class) resets AttackArea back to
+// its true default size/offset every frame the player is grounded and isn't in one of several
+// specific attack states - a set that stops including "just released a charged attack" the instant
+// ReleaseChargedAttack goes false, which happens in this same OnStateExit - so the gap should
+// normally self-heal within a frame or two. Not confirmed yet whether this fully explains the
+// reported P2 case (the log evidence shows the same oversized-overlap pattern in states unrelated
+// to charging too, e.g. plain Player_Run) - fixed anyway since it's a real, confirmed, safe gap
+// regardless: sources the true default size directly from PenitentAttack's own
+// _defaultWeaponColliderSize (computed once in PenitentAttack.OnStart(), the same value the safety
+// net itself restores) rather than re-deriving it independently, so it can never drift from what
+// the safety net considers "default".
+[HarmonyPatch(typeof(ChargedAttackBehaviour), "OnStateExit")]
+internal static class ChargedAttackBehaviour_OnStateExit_ResetSize_Patch
+{
+    private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(ChargedAttackBehaviour), "_penitent");
+    private static readonly FieldInfo DefaultSizeField = AccessTools.Field(typeof(PenitentAttack), "_defaultWeaponColliderSize");
+
+    private static void Postfix(ChargedAttackBehaviour __instance)
+    {
+        Penitent owner = PenitentField.GetValue(__instance) as Penitent;
+        if (owner == null || owner.PenitentAttack == null || owner.AttackArea == null)
+        {
+            return;
+        }
+        object defaultSize = DefaultSizeField.GetValue(owner.PenitentAttack);
+        if (defaultSize is Vector2 size)
+        {
+            owner.AttackArea.SetSize(size);
+        }
+    }
+}
+
+// Round 53 diagnostic (same investigation as above): logs every real SetSize/SetOffset call on
+// any Penitent's AttackArea, edge-triggered per instance (only when the value actually changes),
+// tagged by owner and frame. Lets the next repro's log directly compare P1's vs P2's actual
+// resting/default AttackArea size against each other, and against known non-default constants
+// (ChargedAttackBehaviour's charging size (5.25, 3.26), GroundUpwardAttackBehaviour/
+// AirUpwardAttackBehaviour's own configured sizes) - settles whether P2's "default" (captured once
+// in PenitentAttack.OnStart() from WeaponCollider.bounds/.offset at that moment) was ever actually
+// wrong from the start, versus getting stuck away from a correct default some other way.
+[HarmonyPatch(typeof(AttackArea), nameof(AttackArea.SetSize))]
+internal static class AttackArea_SetSize_DebugLog_Patch
+{
+    private static readonly Dictionary<AttackArea, Vector2> lastLogged = new Dictionary<AttackArea, Vector2>();
+
+    private static void Postfix(AttackArea __instance, Vector2 size)
+    {
+        Penitent owner = __instance.GetComponentInParent<Penitent>();
+        if (owner == null)
+        {
+            return;
+        }
+        if (lastLogged.TryGetValue(__instance, out Vector2 last) && last == size)
+        {
+            return;
+        }
+        lastLogged[__instance] = size;
+        DashParryDebugLog.Log($"{DashParryDebugLog.Label(owner)} AttackArea.SetSize -> {size} (frame {Time.frameCount})");
+    }
+}
+
+[HarmonyPatch(typeof(AttackArea), nameof(AttackArea.SetOffset))]
+internal static class AttackArea_SetOffset_DebugLog_Patch
+{
+    private static readonly Dictionary<AttackArea, Vector2> lastLogged = new Dictionary<AttackArea, Vector2>();
+
+    private static void Postfix(AttackArea __instance, Vector2 offset)
+    {
+        Penitent owner = __instance.GetComponentInParent<Penitent>();
+        if (owner == null)
+        {
+            return;
+        }
+        if (lastLogged.TryGetValue(__instance, out Vector2 last) && last == offset)
+        {
+            return;
+        }
+        lastLogged[__instance] = offset;
+        DashParryDebugLog.Log($"{DashParryDebugLog.Label(owner)} AttackArea.SetOffset -> {offset} (frame {Time.frameCount})");
+    }
+}
+
 

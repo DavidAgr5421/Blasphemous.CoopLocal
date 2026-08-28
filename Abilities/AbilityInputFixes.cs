@@ -275,4 +275,90 @@ internal static class GroundUpwardAttackBehaviour_FixSkippedInit_P2_Patch
     }
 }
 
+// Round 50: AirUpwardAttackBehaviour has the exact same bundled-init shape the batch patch above
+// is known to break (see round 45 comment) - `if (_penitent == null) { _penitent = ...;
+// _defaultAttackAreaOffset = ...; _defaultAttackAreaSize = ...; }` - but unlike
+// GroundUpwardAttackBehaviour's crash, the two fields skipped here are Vector2 *structs*, not an
+// object reference, so this doesn't throw - it silently leaves both at Vector2.zero for P2's own
+// instance forever. Effect: every time P2 exits an air upward attack, OnStateExit resets P2's own
+// AttackArea (the weapon/offense hitbox that damages enemies - not PenitentDamageArea, the
+// separate hitbox that receives damage) to offset=(0,0)/size=(0,0) instead of the real default
+// attack shape, until the next full state re-entry briefly restores the correct in-attack size.
+// No exception anywhere is why this went unnoticed - likely the real cause of the still-open NOTES
+// item "el spam de ataque de P2 contra el aire se siente menos fluido, sin causa confirmada".
+// Same fix shape as the round-45 patch above; tracked with a HashSet instead of reusing a bundled
+// reference field as the "already initialized" sentinel, since this class has no such field to
+// check (both skipped fields are structs).
+[HarmonyPatch(typeof(AirUpwardAttackBehaviour), "OnStateEnter")]
+internal static class AirUpwardAttackBehaviour_FixSkippedInit_P2_Patch
+{
+    private static readonly FieldInfo DefaultAttackAreaOffsetField = AccessTools.Field(typeof(AirUpwardAttackBehaviour), "_defaultAttackAreaOffset");
+    private static readonly FieldInfo DefaultAttackAreaSizeField = AccessTools.Field(typeof(AirUpwardAttackBehaviour), "_defaultAttackAreaSize");
+
+    private static readonly HashSet<AirUpwardAttackBehaviour> initialized = new HashSet<AirUpwardAttackBehaviour>();
+
+    private static void Postfix(AirUpwardAttackBehaviour __instance, Penitent ____penitent)
+    {
+        if (____penitent == null || ____penitent != CoopLocal.Player2 || !initialized.Add(__instance))
+        {
+            return;
+        }
+        Vector2 offset = new Vector2(____penitent.AttackArea.WeaponCollider.offset.x, ____penitent.AttackArea.WeaponCollider.offset.y);
+        Vector2 size = new Vector2(____penitent.AttackArea.WeaponCollider.bounds.size.x, ____penitent.AttackArea.WeaponCollider.bounds.size.y);
+        DefaultAttackAreaOffsetField.SetValue(__instance, offset);
+        DefaultAttackAreaSizeField.SetValue(__instance, size);
+    }
+}
+
+// Round 50: FallingOverBehaviour and GroundingOverBehaviour (Gameplay.GameControllers
+// .AnimationBehaviours.Player.Hurt) are both in the batch patch's TargetTypes and both bundle a
+// *reference-type* field inside their own "if (_penitent == null)" guard - same trap as
+// AttackBehaviour/HurtSubStateBehaviour (Combat/CombatOwnerFixes.cs), just not audited until now
+// since neither had a batch-patch-side fix. Unlike the Vector2 case above, these throw a real
+// NullReferenceException for P2 the first time the skipped field is dereferenced:
+// FallingOverBehaviour caches `_throwBack = _penitent.GetComponentInChildren<ThrowBack>()`, read
+// every OnStateUpdate while in this hurt sub-state (plausibly on most heavy/throwback hits);
+// GroundingOverBehaviour caches `_damageCollider = _penitent.DamageArea.DamageAreaCollider`, only
+// dereferenced near the end of a fall-death sequence (Status.Dead && normalizedTime >= 0.9) to
+// disable P2's own DamageArea collider - so a fall-death for P2 would silently skip disabling it.
+// Same "recompute the skipped field once, guarded by the field itself still being null" shape as
+// the two patches above.
+[HarmonyPatch(typeof(FallingOverBehaviour), "OnStateEnter")]
+internal static class FallingOverBehaviour_FixSkippedInit_P2_Patch
+{
+    private static readonly FieldInfo ThrowBackField = AccessTools.Field(typeof(FallingOverBehaviour), "_throwBack");
+
+    private static void Postfix(FallingOverBehaviour __instance, Penitent ____penitent)
+    {
+        if (____penitent == null || ____penitent != CoopLocal.Player2)
+        {
+            return;
+        }
+        if (ThrowBackField.GetValue(__instance) != null)
+        {
+            return;
+        }
+        ThrowBackField.SetValue(__instance, ____penitent.GetComponentInChildren<ThrowBack>());
+    }
+}
+
+[HarmonyPatch(typeof(GroundingOverBehaviour), "OnStateEnter")]
+internal static class GroundingOverBehaviour_FixSkippedInit_P2_Patch
+{
+    private static readonly FieldInfo DamageColliderField = AccessTools.Field(typeof(GroundingOverBehaviour), "_damageCollider");
+
+    private static void Postfix(GroundingOverBehaviour __instance, Penitent ____penitent)
+    {
+        if (____penitent == null || ____penitent != CoopLocal.Player2)
+        {
+            return;
+        }
+        if (DamageColliderField.GetValue(__instance) != null)
+        {
+            return;
+        }
+        DamageColliderField.SetValue(__instance, ____penitent.DamageArea.DamageAreaCollider);
+    }
+}
+
 

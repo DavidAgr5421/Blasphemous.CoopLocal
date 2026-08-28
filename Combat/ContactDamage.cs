@@ -125,21 +125,76 @@ internal static class ContactDamageOverlapTracker
     }
 }
 
+// Round 50: these two used to be Postfixes, which is the actual cause of ronda 34's still-open
+// "occasionally the tracker says nobody is touching" gap - confirmed via a fresh log showing the
+// tracker miss a touch that the game's own geometry (this file's own overlap diagnostic in
+// Combat/Damage.cs) proved was real at that exact instant (BellGhost/UndergroundSwimmer, both
+// hitting through this same generic ContactDamage path via a child component literally named
+// "#Traits" - not just Fool). The actual race isn't cross-frame timing between an enemy's OnUpdate
+// poll and the trigger event (the ronda 34 hypothesis) - it's *intra-call*: vanilla
+// ContactDamage.OnTriggerEnter2D, for enemies like BellGhost/UndergroundSwimmer, calls
+// EntityContactDamage(componentInParent) -> EntityAttack.ContactAttack(...) *synchronously, from
+// within its own method body*, the very first time a given collider enters. A Postfix on
+// OnTriggerEnter2D only runs once that entire outer call (including this nested ContactAttack call
+// and the redirect Prefix it triggers) has already returned - so on the very frame a collider first
+// enters, the redirect Prefix always sees the tracker as if that collider had never entered at all,
+// no matter who it actually belongs to. (Fool's own hardcoded call, by contrast, fires later from a
+// completely separate FoolAttack.OnUpdate() poll, decoupled in time from the triggering
+// OnTriggerEnter2D call - which is why that specific case already worked correctly per ronda 32.)
+// Fixed by making both a Prefix instead, so the tracker reflects the real, current collider before
+// vanilla's own body - and anything nested inside it - ever runs. Each mirrors vanilla's own
+// DamageableLayers gate exactly (the same condition OnTriggerEnter2D/OnTriggerExit2D checks before
+// touching IsTargetOverlapped) so only colliders vanilla itself would actually treat as relevant
+// ever get tracked - this is still positive, real-time data about the exact collider that just
+// triggered the event, not an elimination guess, so it doesn't reintroduce the ladder-unblock
+// mistake from BlockerOverrideHelper's own history.
 [HarmonyPatch(typeof(ContactDamage), "OnTriggerEnter2D")]
 internal static class ContactDamage_OnTriggerEnter2D_Track_Patch
 {
-    private static void Postfix(ContactDamage __instance, Collider2D other)
+    private static void Prefix(ContactDamage __instance, Collider2D other)
     {
+        if (other == null || (__instance.DamageableLayers.value & (1 << other.gameObject.layer)) <= 0)
+        {
+            return;
+        }
         ContactDamageOverlapTracker.Add(__instance, other);
+        LogTouch("ENTER", __instance, other);
+    }
+
+    // Round 53 diagnostic: tagged real ENTER/EXIT timing for whichever Penitent collider actually
+    // triggered this event (which collider - Body/Feet/Attack Area/DamageArea's own - not just
+    // "someone"), to compare directly against PenitentDamageArea_TakeDamage_DebugLog_Patch's own
+    // frame numbers (Combat/Damage.cs) - settles whether a "damage applied with zero overlap in
+    // the diagnostic's own snapshot" case (see that patch's comment) is a real stale-tracking gap
+    // (an EXIT logged well before the matching TakeDamage) or just an artifact of TakeDamage's own
+    // side effects (knockback, animation-driven movement) already having moved the player by the
+    // time that Postfix samples position/overlap, a frame or two after contact actually happened.
+    // Only logs colliders that actually belong to a Penitent - skips every other DamageableLayers
+    // hit (destructibles, other entities) to avoid drowning the log in unrelated noise.
+    internal static void LogTouch(string kind, ContactDamage source, Collider2D other)
+    {
+        Penitent owner = other.GetComponentInParent<Penitent>();
+        if (owner == null)
+        {
+            return;
+        }
+        DashParryDebugLog.Log(
+            $"ContactDamage {kind}: {DashParryDebugLog.Label(owner)}'s '{other.gameObject.name}' <-> " +
+            $"{source.gameObject.name} (owner={(source.EntityOwner != null ? source.EntityOwner.name : "?")}) (frame {Time.frameCount})");
     }
 }
 
 [HarmonyPatch(typeof(ContactDamage), "OnTriggerExit2D")]
 internal static class ContactDamage_OnTriggerExit2D_Track_Patch
 {
-    private static void Postfix(ContactDamage __instance, Collider2D other)
+    private static void Prefix(ContactDamage __instance, Collider2D other)
     {
+        if (other == null || (__instance.DamageableLayers.value & (1 << other.gameObject.layer)) <= 0)
+        {
+            return;
+        }
         ContactDamageOverlapTracker.Remove(__instance, other);
+        ContactDamage_OnTriggerEnter2D_Track_Patch.LogTouch("EXIT", __instance, other);
     }
 }
 

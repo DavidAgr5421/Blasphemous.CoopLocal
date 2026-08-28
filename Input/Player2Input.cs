@@ -125,6 +125,7 @@ internal static class Player2Pad
     internal static bool JumpHeld => ButtonHeld("A Button", "A");
     internal static bool AttackDown => ButtonDown("X Button", "X");
     internal static bool AttackUp => ButtonUp("X Button", "X");
+    internal static bool AttackHeld => ButtonHeld("X Button", "X");
     internal static bool ParryDown => ButtonDown("Left Bumper", "LB", "L1", "Left Shoulder");
     internal static bool HealDown => ButtonDown("Right Bumper", "RB", "R1", "Right Shoulder");
     internal static bool InteractDown => ButtonDown("Y Button", "Y");
@@ -385,6 +386,10 @@ internal static class Player2Input
     private static bool previousJumpHeld;
     internal static bool AttackDown => Mode == Player2InputMode.Gamepad ? Player2Pad.AttackDown : Input.GetKeyDown(Player2Keys.Attack);
     internal static bool AttackUp => Mode == Player2InputMode.Gamepad ? Player2Pad.AttackUp : Input.GetKeyUp(Player2Keys.Attack);
+    // Continuous "is the attack button currently held" - added for WallJump (see
+    // Abilities/WallJump.cs), which checks this every frame rather than watching for a fresh
+    // press, unlike every other Attack read in this mod so far.
+    internal static bool AttackHeld => Mode == Player2InputMode.Gamepad ? Player2Pad.AttackHeld : Input.GetKey(Player2Keys.Attack);
     internal static bool DashDown => Mode == Player2InputMode.Gamepad ? Player2Pad.DashDown : Input.GetKeyDown(Player2Keys.Dash);
     internal static bool ParryDown => Mode == Player2InputMode.Gamepad ? Player2Pad.ParryDown : Input.GetKeyDown(Player2Keys.Parry);
     internal static bool HealDown => Mode == Player2InputMode.Gamepad ? Player2Pad.HealDown : Input.GetKeyDown(Player2Keys.Heal);
@@ -432,7 +437,11 @@ internal static class Player2Input
             RawButtonScanLog.Tick();
         }
 
-        Player2HudPositionTuner.Tick();
+        // Ronda 49: ocultado a pedido del usuario - el tuner interactivo usa flechas/./-/+, las
+        // mismas teclas con historial de solaparse con P1. La clase sigue intacta en
+        // HUD/HudPositionTuner.cs por si se necesita retomar el ajuste manual del HUD más adelante;
+        // solo se dejó de invocar su Tick().
+        // Player2HudPositionTuner.Tick();
         Player2PurgePoints.Tick();
 
         // Opening the shared inventory/prayer menu isn't per-player state (there's only one
@@ -536,7 +545,15 @@ internal static class Player2Input
 // itself isn't tied to a spawned player either.
 internal static class Player2ModeIndicator
 {
-    private static Text label;
+    // Round 50: confirmed via a one-shot dump of every font asset loaded in memory
+    // (Resources.FindObjectsOfTypeAll<TMP_FontAsset>()) that the game's real Latin-alphabet TMP
+    // font is "MajesticExtended_FullLatin" - the other names found were either locale-specific
+    // font swaps (Russian/Chinese/Korean/Japanese) or TMP's own LiberationSans SDF fallback. It's
+    // a serialized asset reference, not something loadable by path/code, so it has to be found
+    // this way rather than referenced directly.
+    private const string GameFontName = "MajesticExtended_FullLatin";
+
+    private static TMPro.TextMeshProUGUI label;
 
     internal static void Show(Player2InputMode mode)
     {
@@ -569,10 +586,16 @@ internal static class Player2ModeIndicator
         rect.anchoredPosition = new Vector2(-16f, -16f);
         rect.sizeDelta = new Vector2(320f, 40f);
 
-        label = textObject.AddComponent<Text>();
-        label.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+        label = textObject.AddComponent<TMPro.TextMeshProUGUI>();
+        TMPro.TMP_FontAsset gameFont = Array.Find(
+            Resources.FindObjectsOfTypeAll<TMPro.TMP_FontAsset>(),
+            f => f.name == GameFontName);
+        if (gameFont != null)
+        {
+            label.font = gameFont;
+        }
         label.fontSize = 22;
-        label.alignment = TextAnchor.UpperRight;
+        label.alignment = TMPro.TextAlignmentOptions.TopRight;
         label.color = Color.white;
         label.text = "";
     }
