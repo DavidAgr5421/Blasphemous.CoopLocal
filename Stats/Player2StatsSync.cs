@@ -93,6 +93,30 @@ internal static class Player2StatsSync
     private const string FlaskCurrentKey = "__FlaskCurrent__";
     private const string FlaskHealthCurrentKey = "__FlaskHealthCurrent__";
 
+    // Round 57: called by Player2UpgradeCredit.cs's 7 Harmony patches right after crediting P2 with
+    // a permanent-upgrade action (Life/Strength/BeadSlots/FlaskHealth/Fervour/MeaCulpa/Flask), so
+    // the bonus survives the next respawn's ApplySnapshot instead of only living in the in-memory
+    // EntityStats that gets thrown away on every scene transition. Deliberately just calls the
+    // existing SaveSnapshot below instead of re-serializing PermanetBonus by hand - SaveSnapshot
+    // also writes the Current-value keys (Life/Fervour/Flask/Purge), so reusing it avoids silently
+    // dropping those on every upgrade pickup.
+    internal static void PersistPermanentBonus(Penitent p2)
+    {
+        if (p2 == null) return;
+        int slot = PersistentManager.GetAutomaticSlot();
+        if (slot < 0) return;
+
+        EntityStats.StatsTypes[] allTypes = (EntityStats.StatsTypes[])Enum.GetValues(typeof(EntityStats.StatsTypes));
+        SaveSnapshot(SnapshotPath(slot), p2, allTypes);
+
+        if (Main.CoopLocal != null)
+        {
+            Blasphemous.ModdingAPI.ModLog.Info(
+                $"[P2StatsSync] persisted P2's PermanentBonus after upgrade (slot {slot}).",
+                Main.CoopLocal);
+        }
+    }
+
     // Round 42: the first-ever sync (previous round) ran synchronously inside CoopLocal's
     // OnPlayerSpawn handler and captured every one of P1's stats as PermanetBonus=0 - confirmed by
     // reading the actual saved snapshot file, which was all zeros despite the user testing on a
@@ -289,7 +313,7 @@ internal static class Player2StatsSync
         }
     }
 
-    // Round 45: PrieDieu.ShallowActivationLogic (the real "resting at a shrine" heal, patched
+// Round 45: PrieDieu.ShallowActivationLogic (the real "resting at a shrine" heal, patched
     // separately below) calls this to give P2 the same treatment P1 gets - full life/flasks, and
     // Fervour only if the same Alms upgrade condition P1's own heal checks is met. Persists
     // immediately so the healed values survive the very next respawn correctly.

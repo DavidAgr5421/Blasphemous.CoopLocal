@@ -31,6 +31,7 @@ using Gameplay.UI.Others.UIGameLogic;
 using HarmonyLib;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Reflection.Emit;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -293,4 +294,232 @@ internal static class PenitentLightBeamEffect_OnApplyEffect_P2_Patch
     }
 }
 
+// Round 62 - bug reportado #4, primera mitad ("la animacion de rezo de P2 solo se activa cuando P1
+// activa SU rezo, pero no cuando P2 activa el propio"). Root cause real, confirmado contra el
+// decompilado de PrayerUse.OnUpdate() (NO es el mismo mecanismo que "el efecto termina aplicandose
+// sobre P1" de mas abajo - son dos bugs de familia distinta reportados juntos en el mismo issue):
+//
+//   protected override void OnUpdate() {
+//       base.OnUpdate();
+//       if (base.Rewired.GetButtonTimedPressDown(25, 0f) && !Core.Input.InputBlocked) {
+//           ...
+//           if (CanUsePrayer) { base.EntityOwner.Animator.Play(_animAuraTransform); }
+//       }
+//       ...
+//   }
+//
+// `base.Rewired` es `Ability.Rewired`, asignado en Ability.Start() a `ReInput.players.GetPlayer(0)`
+// - el mismo objeto compartido para TODOS los Penitent, P1 y P2 incluidos. Familia 2 clasica: el
+// boton de activar-rezo (accion Rewired id 25, timed-press con umbral 0 = equivalente a un
+// GetButtonDown puro) se lee directo del Player 0 fisico en vez de por Player2Input, asi que la
+// animacion "AuraTransform" de P2 solo se dispara cuando P1 presiona su propio rezo (Q), nunca
+// cuando P2 presiona el suyo. La otra mitad de OnUpdate() (bloque `if (base.IsUsingAbility)`, el
+// temporizador de audio/finalizacion del cast) ya es correcta por-instancia (timeToLaunchEvent/
+// timeCasting/timeToEnd son campos de instancia, no estaticos) y el CAST real de P2 ya funciona
+// desde la Ronda 39 (PrayerUse_P2Input_Patch, Postfix separado mas arriba en este archivo, que
+// llama __instance.Cast() leyendo Player2Input.PrayerActivateDown) - pero ese Postfix nunca tocaba
+// la animacion, que solo vive dentro del bloque vanilla de arriba.
+//
+// Mismo patron ya usado en Abilities/RangedAndVerticalAttackFixes.cs (VerticalAttack) y
+// Movement/LadderMechanics.cs (DoClimbing): Transpiler puntual que retarga unicamente la llamada a
+// Player.GetButtonTimedPressDown(int,float) a un wrapper estatico, dejando el resto del metodo
+// (incluida la logica de audio/temporizador de mas abajo) completamente intacta para P1 y P2 por
+// igual - mucho mas seguro que reimplementar el metodo entero (que toca un EventInstance de FMOD y
+// varios campos privados sin guion bajo propio).
+[HarmonyPatch(typeof(PrayerUse), "OnUpdate")]
+internal static class PrayerUse_OnUpdate_P2_AuraTransform_Patch
+{
+    private static readonly MethodInfo RewiredGetButtonTimedPressDownMethod =
+        AccessTools.Method(typeof(Rewired.Player), "GetButtonTimedPressDown", new[] { typeof(int), typeof(float) });
+
+    private static readonly MethodInfo ReplacementMethod =
+        AccessTools.Method(typeof(PrayerUse_OnUpdate_P2_AuraTransform_Patch), nameof(GetButtonTimedPressDownForPrayerUse));
+
+    // Set by our own Prefix immediately before the (transpiled) method body runs, in the same
+    // call - safe, same rationale as every other companion-Prefix-plus-Transpiler pair in this mod
+    // (Unity's single-threaded Update() loop never interleaves two PrayerUse.OnUpdate() calls).
+    private static PrayerUse currentInstance;
+
+    private static void Prefix(PrayerUse __instance)
+    {
+        currentInstance = __instance;
+    }
+
+    private static bool GetButtonTimedPressDownForPrayerUse(Rewired.Player player, int actionId, float time)
+    {
+        PrayerUse self = currentInstance;
+        Penitent owner = self != null ? self.EntityOwner as Penitent : null;
+        if (owner == null || owner != CoopLocal.Player2)
+        {
+            // P1 - untouched vanilla behavior.
+            return player.GetButtonTimedPressDown(actionId, time);
+        }
+        // time is always 0f at this call site (see PrayerUse.OnUpdate decompiled source) - a
+        // timed-press with zero required hold time is just a plain press-edge, which is exactly
+        // what Player2Input.PrayerActivateDown already tracks.
+        return Player2Input.PrayerActivateDown;
+    }
+
+    private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+    {
+        bool patched = false;
+        foreach (CodeInstruction instruction in instructions)
+        {
+            if (!patched && instruction.opcode == OpCodes.Callvirt &&
+                instruction.operand is MethodInfo method && method == RewiredGetButtonTimedPressDownMethod)
+            {
+                instruction.opcode = OpCodes.Call;
+                instruction.operand = ReplacementMethod;
+                patched = true;
+            }
+            yield return instruction;
+        }
+        if (!patched)
+        {
+            DashParryDebugLog.Log("[DashParryDebug] PrayerUse.OnUpdate transpiler did NOT find Player.GetButtonTimedPressDown(int,float) - P2 AuraTransform animation fix NOT applied!");
+        }
+    }
+}
+
+// Round 62 - bug reportado #4, segunda mitad ("el efecto de rezo termina aplicandose sobre P1, no
+// sobre P2"), continuacion de la Ronda 43. Esa ronda encontro y arreglo 3 de los 8 tipos de
+// Prayer reales (PrayerAlliedCherubEffect/PrayerShieldEffect/PenitentLightBeamEffect, los unicos
+// con clases dedicadas que el comentario de esa ronda alcanzo a auditar) - los 5 restantes
+// (Tools.Items.PenitentCrawlerOrbsEffect/PenitentDivineLightEffect/PenitentFlamePillarsEffect/
+// PenitentMultishotEffect/StuntPrayerEffect, todos referenciados por PrayerUse.crawlerBallsPrayer/
+// divineLightPrayer/flamePillarsPrayer/multishotPrayer/stuntPrayer) resultaron tener exactamente
+// el mismo bug confirmado linea por linea contra el decompilado: los 5 derivan directo de
+// ObjectEffect (no ObjectEffect_Stat) y hardcodean `_owner = Core.Logic.Penitent;` como primera
+// linea de su propio OnApplyEffect() self-contained - misma familia 3 (PrayerCasterTracker.
+// LastCaster, ya trackeado desde PrayerUse.StartUsingPrayer() de la Ronda 43, reutilizado tal
+// cual sin cambios). Diferencia importante frente a PenitentLightBeamEffect: los 5 terminan con
+// `return base.OnApplyEffect();`, y ObjectEffect.OnApplyEffect() base es trivial (`return false;`)
+// - el resultado sombreado en cada Prefix es por lo tanto `false`, NO `true` como en
+// PenitentLightBeamEffect (esa clase nunca llama a base, retorna true ella misma) - verificado
+// contra el decompilado de ObjectEffect antes de copiar el patron, no asumido por semejanza.
+[HarmonyPatch(typeof(Tools.Items.PenitentCrawlerOrbsEffect), "OnApplyEffect")]
+internal static class PenitentCrawlerOrbsEffect_OnApplyEffect_P2_Patch
+{
+    private static bool Prefix(Tools.Items.PenitentCrawlerOrbsEffect __instance, ref bool __result)
+    {
+        Penitent caster = PrayerCasterTracker.LastCaster;
+        if (caster == null || caster != CoopLocal.Player2)
+        {
+            return true;
+        }
+        Gameplay.GameControllers.Bosses.CommonAttacks.BossStraightProjectileAttack crawlerOrbs =
+            caster.GetComponentInChildren<PrayerUse>().crawlerBallsPrayer;
+        Core.Logic.CameraManager.ProCamera2DShake.ShakeUsingPreset("SimpleHit");
+        float final = caster.Stats.PrayerStrengthMultiplier.Final;
+        Gameplay.GameControllers.Enemies.Projectiles.StraightProjectile straightProjectile =
+            crawlerOrbs.Shoot(Vector2.right, Vector2.right * 0.01f, final);
+        straightProjectile.GetComponent<Gameplay.GameControllers.Enemies.BellGhost.ProjectileWeapon>().SetDamage(__instance.DamageAmount);
+        straightProjectile = crawlerOrbs.Shoot(Vector2.left, Vector2.left * 0.01f, final);
+        straightProjectile.GetComponent<Gameplay.GameControllers.Enemies.BellGhost.ProjectileWeapon>().SetDamage(__instance.DamageAmount);
+        __result = false;
+        return false;
+    }
+}
+
+[HarmonyPatch(typeof(Tools.Items.PenitentDivineLightEffect), "OnApplyEffect")]
+internal static class PenitentDivineLightEffect_OnApplyEffect_P2_Patch
+{
+    private static bool Prefix(Tools.Items.PenitentDivineLightEffect __instance, ref bool __result)
+    {
+        Penitent caster = PrayerCasterTracker.LastCaster;
+        if (caster == null || caster != CoopLocal.Player2)
+        {
+            return true;
+        }
+        Gameplay.GameControllers.Bosses.Quirce.Attack.BossAreaSummonAttack areaSummonAttack =
+            caster.GetComponentInChildren<PrayerUse>().divineLightPrayer;
+        areaSummonAttack.SetDamageStrength(caster.Stats.PrayerStrengthMultiplier.Final);
+        areaSummonAttack.SummonAreas(Vector2.right);
+        areaSummonAttack.SummonAreas(Vector2.left);
+        Core.Logic.CameraManager.ProCamera2DShake.ShakeUsingPreset("SimpleHit");
+        __result = false;
+        return false;
+    }
+}
+
+[HarmonyPatch(typeof(Tools.Items.PenitentFlamePillarsEffect), "OnApplyEffect")]
+internal static class PenitentFlamePillarsEffect_OnApplyEffect_P2_Patch
+{
+    private static bool Prefix(Tools.Items.PenitentFlamePillarsEffect __instance, ref bool __result)
+    {
+        Penitent caster = PrayerCasterTracker.LastCaster;
+        if (caster == null || caster != CoopLocal.Player2)
+        {
+            return true;
+        }
+        Gameplay.GameControllers.Bosses.Quirce.Attack.BossAreaSummonAttack areaSummonAttack =
+            caster.GetComponentInChildren<PrayerUse>().flamePillarsPrayer;
+        Core.Logic.CameraManager.ProCamera2DShake.ShakeUsingPreset("SimpleHit");
+        Vector2 vector = Vector2.right * ((caster.Status.Orientation == EntityOrientation.Right) ? 1 : -1);
+        areaSummonAttack.totalAreas = 8;
+        areaSummonAttack.SummonAreas(vector);
+        __result = false;
+        return false;
+    }
+}
+
+[HarmonyPatch(typeof(Tools.Items.PenitentMultishotEffect), "OnApplyEffect")]
+internal static class PenitentMultishotEffect_OnApplyEffect_P2_Patch
+{
+    private static bool Prefix(Tools.Items.PenitentMultishotEffect __instance, ref bool __result)
+    {
+        Penitent caster = PrayerCasterTracker.LastCaster;
+        if (caster == null || caster != CoopLocal.Player2)
+        {
+            return true;
+        }
+        __instance.StartCoroutine(MultiShotCoroutine(__instance, caster));
+        __result = false;
+        return false;
+    }
+
+    private static float CalculateDamageStrength(float prayerStrMult)
+    {
+        return 1f + 0.35f * (prayerStrMult - 1f);
+    }
+
+    private static System.Collections.IEnumerator MultiShotCoroutine(Tools.Items.PenitentMultishotEffect instance, Penitent caster)
+    {
+        Gameplay.GameControllers.Bosses.Quirce.Attack.BossInstantProjectileAttack instantProjectileAttack =
+            caster.GetComponentInChildren<PrayerUse>().multishotPrayer;
+        instantProjectileAttack.SetDamageStrength(CalculateDamageStrength(caster.Stats.PrayerStrengthMultiplier.Final));
+        instantProjectileAttack.SetDamage(instance.DamageAmount);
+        Vector2 dir = Vector2.right * ((caster.Status.Orientation == EntityOrientation.Right) ? 1 : -1);
+        instantProjectileAttack.transform.localPosition = dir;
+        Vector3 projectilePosition = instantProjectileAttack.transform.position;
+        instantProjectileAttack.Shoot(projectilePosition, dir);
+        yield return new WaitForSeconds(0.15f);
+        float randomOff2 = UnityEngine.Random.Range(-1f, 1f) * 1f;
+        instantProjectileAttack.Shoot(projectilePosition + Vector3.up * randomOff2, dir);
+        yield return new WaitForSeconds(0.15f);
+        randomOff2 = UnityEngine.Random.Range(-1f, 1f) * 1f;
+        instantProjectileAttack.Shoot(projectilePosition + Vector3.up * randomOff2, dir);
+    }
+}
+
+[HarmonyPatch(typeof(Tools.Items.StuntPrayerEffect), "OnApplyEffect")]
+internal static class StuntPrayerEffect_OnApplyEffect_P2_Patch
+{
+    private static bool Prefix(Tools.Items.StuntPrayerEffect __instance, ref bool __result)
+    {
+        Penitent caster = PrayerCasterTracker.LastCaster;
+        if (caster == null || caster != CoopLocal.Player2)
+        {
+            return true;
+        }
+        Gameplay.GameControllers.Bosses.Quirce.Attack.BossAreaSummonAttack areaSummonAttack =
+            caster.GetComponentInChildren<PrayerUse>().stuntPrayer;
+        Core.Logic.CameraManager.ProCamera2DShake.ShakeUsingPreset("SimpleHit");
+        Vector3 position = areaSummonAttack.transform.position;
+        float final = caster.Stats.PrayerStrengthMultiplier.Final;
+        areaSummonAttack.SummonAreaOnPoint(position, 0f, final);
+        __result = false;
+        return false;
+    }
+}
 

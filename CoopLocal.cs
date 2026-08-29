@@ -37,6 +37,10 @@ public class CoopLocal : BlasMod
         // driver MonoBehaviour just needs to exist once, independent of P1/P2's own lifecycle -
         // see Camera/Camera.cs for the actual toggle logic.
         CameraTargetDebugToggle.EnsureCreated();
+
+        // Round 57 - panel de debug in-game para ver/ajustar PermanentBonus P1|P2 (F8).
+        // Ve Stats/PermanentStatsDebugPanel.cs para la arquitectura y keybindings.
+        PermanentStatsDebugPanel.EnsureCreated();
         CameraTargetModeIndicator.Show(CameraTargetDebugToggle.Mode);
     }
 
@@ -194,6 +198,7 @@ public class CoopLocal : BlasMod
         // upgrades, etc) onto P2, persisted so it never happens again after the first sync for
         // this save - see Player2StatsSync's own comment in GamePatches.cs for the full reasoning.
         Player2StatsSync.EnsureSynced(p1, Player2);
+        Player2SkillManager.EnsureLoadedForCurrentSlot();
 
         // P1 and P2 are now both on the same physics layer (see SetLayerRecursively above), each
         // with a real Rigidbody2D (Penitent.RigidBody) - so by default they're solid to each
