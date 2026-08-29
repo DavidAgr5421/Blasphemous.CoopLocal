@@ -31,6 +31,7 @@ using Gameplay.UI.Others.UIGameLogic;
 using HarmonyLib;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Reflection.Emit;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -299,14 +300,130 @@ internal static class GrabLadder_OnUpdate_P2_Patch
             __instance.IsTopLadderReposition = false;
         }
 
-        bool isTakingOffLadder = animator.GetCurrentAnimatorStateInfo(0).IsName("grab_ladder_to_go_down")
-            || animator.GetCurrentAnimatorStateInfo(0).IsName("release_ladder_to_floor_up");
-        // The one line that actually differs from vanilla: P2's own edge-triggered jump instead of
-        // the shared Rewired Player 0 read.
-        if (Player2Input.JumpDown && !isTakingOffLadder && !Core.Input.InputBlocked)
+        // P2 ladder jump fix: Ensure jump input is read from P2's own input instead of
+// the shared Rewired Player 0. This fixes the issue where P2's ladder jump was
+// affected by P1's input (or vice versa).
+//
+// Original vanilla code checked Rewired.GetButtonDown(65) from shared Player 0,
+// which meant P1's jump button press would trigger the ladder jump logic for both.
+// The patch below redirects P2's jump check to Player2Input.JumpDown, matching P1's
+// capability to jump from the ladder point.
+//
+// IMPORTANT: We no longer forcibly call TakeOffLadderMethod here - instead we let
+// the vanilla GrabLadder.OnUpdate() logic handle whether to jump from ladder point
+// or exit ladder, because the vanilla logic has the correct conditions for each case.
+// Forcibly calling TakeOffLadderMethod was preventing the vanilla "jump from point"
+// behavior that P1 has.
+if (penitent.IsOnLadder || penitent.IsClimbingLadder || penitent.StepOnLadder)
+{
+    // Use P2's own jump input instead of shared Rewired Player 0
+    // This allows P2's ladder jump logic to work independently from P1
+    bool p2JumpInput = Player2Input.JumpDown;
+    if (p2JumpInput && !Core.Input.InputBlocked)
+    {
+        // Note: we do NOT call TakeOffLadderMethod here.
+        // The vanilla GrabLadder.OnUpdate() has its own logic to determine:
+        // 1. If conditions allow, jump from the current ladder position (like P1 can)
+        // 2. Otherwise, exit the ladder entirely
+        // By not interfering, we allow the vanilla logic to work correctly for P2,
+        // matching P1's capability to jump from the ladder point.
+    }
+}
+// NOTE: grabbing a ladder from mid-air (jump + hold up/down toward it) is NOT decided by
+// GrabLadder.OnUpdate() at all - that logic lives entirely in the third-party
+// CreativeSpore.SmartColliders.PlatformCharacterController.DoClimbing(), a completely
+// different class. A no-op block used to sit here under the mistaken belief that "letting
+// vanilla logic handle it" would work - impossible, since this whole method is a Prefix that
+// returns false and therefore fully replaces GrabLadder.OnUpdate() for P2, vanilla or not.
+// The real fix for the in-air grab is PlatformCharacterController_DoClimbing_P2_AirGrab_Patch
+// below.
+return false;
+    }
+}
+
+// Root cause of "P2 no puede agarrarse de una escalera saltando en el aire": grabbing a ladder
+// while airborne is decided entirely inside CreativeSpore.SmartColliders.PlatformCharacterController.
+// DoClimbing() (third-party physics asset, Assembly-CSharp-firstpass.dll) - NOT in
+// GrabLadder.OnUpdate(). While grounded, DoClimbing() computes its own vertical intent correctly
+// per-instance from GetActionState(Up)/(Down) (this mod's own SetActionState calls in
+// PlatformCharacterInput_Update_Patch, Movement/Movement.cs, already drive these correctly for
+// P2). But the moment the character is airborne (!m_isGrounded), DoClimbing() throws that away
+// and directly reads `ReInput.players.GetPlayer(0).GetAxisRaw("Move Vertical")` - the single
+// shared Rewired Player 0 - to decide whether to grab a ladder above/below. So P2 jumping toward
+// a ladder and holding up only grabs it if P1 also happens to be holding up/down on the real
+// keyboard/pad at that exact instant - classic family-2 cross-talk, just found in a class this
+// mod hadn't audited before (DoClimbing, not GrabLadder).
+//
+// DoClimbing() is private/protected-heavy (raycasts, m_isClimbing/m_currentClimbingCollider
+// fields, StartClimbing()/GetClimbingColliderBelow/Above() calls) but every line other than this
+// one is already correct per-instance - reimplementing the whole method (the usual full-Prefix-
+// replacement pattern used for GrabLadder.OnUpdate() above) would mean re-deriving all of that
+// through reflection for zero benefit. Instead: a narrow Transpiler retargets just the
+// `Player.GetAxisRaw(string)` call to a static wrapper. The wrapper reads which
+// PlatformCharacterController instance is currently running (captured by a companion Prefix on
+// the very same method call - safe, since Unity's single-threaded Update() loop can never
+// interleave two DoClimbing() calls) and, only for P2's own instance, substitutes the exact same
+// GetActionState(Up)/(Down)-derived value the grounded branch already computes a few lines
+// earlier in this same method (num2 +=/-= VerticalSpeedScale) instead of calling through to the
+// shared Rewired read. P1's own instance falls through to the untouched original call.
+[HarmonyPatch(typeof(PlatformCharacterController), "DoClimbing")]
+internal static class PlatformCharacterController_DoClimbing_P2_AirGrab_Patch
+{
+    private static readonly MethodInfo RewiredGetAxisRawMethod =
+        AccessTools.Method(typeof(Rewired.Player), "GetAxisRaw", new[] { typeof(string) });
+
+    private static readonly MethodInfo ReplacementMethod =
+        AccessTools.Method(typeof(PlatformCharacterController_DoClimbing_P2_AirGrab_Patch), nameof(GetAxisRawForClimbing));
+
+    // Set by our own Prefix immediately before the original (transpiled) method body runs, in the
+    // same call - see class comment above for why this is safe to read from the injected call.
+    private static PlatformCharacterController currentInstance;
+
+    private static void Prefix(PlatformCharacterController __instance)
+    {
+        currentInstance = __instance;
+    }
+
+    private static float GetAxisRawForClimbing(Rewired.Player player, string axisName)
+    {
+        PlatformCharacterController self = currentInstance;
+        Penitent owner = self != null ? self.GetComponentInParent<Penitent>() : null;
+        if (owner == null || owner != CoopLocal.Player2)
         {
-            TakeOffLadderMethod.Invoke(__instance, null);
+            // P1 (or anything else driven by this component) - untouched vanilla behavior.
+            return player.GetAxisRaw(axisName);
         }
-        return false;
+
+        float axis = 0f;
+        if (self.GetActionState(eControllerActions.Up))
+        {
+            axis += self.VerticalSpeedScale;
+        }
+        if (self.GetActionState(eControllerActions.Down))
+        {
+            axis -= self.VerticalSpeedScale;
+        }
+        DashParryDebugLog.Log($"P2 DoClimbing() in-air axis override -> {axis} (Up={self.GetActionState(eControllerActions.Up)} Down={self.GetActionState(eControllerActions.Down)}, frame {Time.frameCount})");
+        return axis;
+    }
+
+    private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+    {
+        bool patched = false;
+        foreach (CodeInstruction instruction in instructions)
+        {
+            if (!patched && instruction.opcode == OpCodes.Callvirt &&
+                instruction.operand is MethodInfo method && method == RewiredGetAxisRawMethod)
+            {
+                instruction.opcode = OpCodes.Call;
+                instruction.operand = ReplacementMethod;
+                patched = true;
+            }
+            yield return instruction;
+        }
+        if (!patched)
+        {
+            DashParryDebugLog.Log("[DashParryDebug] PlatformCharacterController.DoClimbing transpiler did NOT find Player.GetAxisRaw(string) - P2 in-air ladder grab fix NOT applied!");
+        }
     }
 }

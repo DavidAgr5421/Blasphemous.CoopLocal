@@ -83,6 +83,82 @@ internal static class CrouchDownBehaviour_OnStateEnter_Patch
     }
 }
 
+// Round 57 - "P2 visually enters the falling/drop pose but stays physically stuck on the
+// platform". JumpOffBehaviour (StateMachineBehaviour on the "JumpOff" animator state - the
+// actual platform-drop-through pose, entered via AnimatorInyector.OnUpdate's own
+// `SpriteAnimator.SetTrigger(JumpOff)` call when _playerInput.IsJumpOff goes true - see
+// AnimatorInyector.cs ~line 492) has the exact same _penitent lazy-fallback bug as
+// FallingBehaviour/CrouchDownBehaviour above (decompiled JumpOffBehaviour.cs line 24-27:
+// `if (_penitent == null) { _penitent = Core.Logic.Penitent; }`), never patched until now.
+// Unlike those two, everything OnStateEnter does while wrongly bound lands on P1 instead of P2
+// every single time P2 tries to drop through a one-way platform:
+//   - _penitent.Status.Invulnerable = true
+//   - _penitent.Dash.enabled = false
+//   - _penitent.Dash.SetDashSkinCollision() - shrinks the *collision skin* (Size/Center on the
+//     SmartPlatformCollider, see Dash.cs line 293-297) to the smaller dash-sized hitbox. P2's own
+//     collider size never changes at all for its own drop attempt, while P1's does, at a moment
+//     P1 never asked for it.
+//   - _penitent.PlatformCharacterInput.ResetActions()/ResetInputs() - wipes P1's own action
+//     states/raw inputs.
+//   - _penitent.PlatformCharacterController.PlatformCharacterPhysics.Velocity = Vector3.zero -
+//     zeroes P1's velocity, not P2's.
+//   - Core.Input.SetBlocker("PLAYER_LOGIC", true) - the global blocker. "jump-off" was already
+//     named as one of the known-but-unaudited PLAYER_LOGIC users in PlayerLogicBlocker's own
+//     comment (Dash/DashAndInputBlockers.cs) - registered below the same way DashBehaviour's own
+//     lock is (JumpOffBehaviour_BlockerTracking_OnState{Enter,Exit}_Patch further down), so
+//     BlockerOverrideHelper can un-freeze the *other* player for the duration instead of both
+//     players losing input every time either one drops through a platform.
+// OnStateUpdate (startedJumpOff/jumpOffRoot/IsJumpingOff) and OnStateExit (Invulnerable=false,
+// DamageArea.EnableEnemyAttack(), Dash re-enable, Core.Input.SetBlocker(false), and the delayed
+// Enable2DPhysics() coroutine restoring the collision skin/2D collision) have the exact same
+// problem - _penitent is never reassigned once bound, so it stays wrong for the rest of the
+// session (every future drop attempt by P2 keeps toggling P1's own Status/Dash/collider instead).
+// Same fix as FallingBehaviour/CrouchDownBehaviour: force _penitent to the Animator's actual
+// owner before OnStateEnter runs. _rootMotion's own lazy-init a few lines later in the same
+// method (`if (_rootMotion == null) { _rootMotion = _penitent.GetComponentInChildren<...>(); }`)
+// is its own separate null-check, not nested inside _penitent's - no bundled-init trap here -
+// and reads off _penitent too, so fixing _penitent first here also fixes _rootMotion for free.
+[HarmonyPatch(typeof(JumpOffBehaviour), "OnStateEnter")]
+internal static class JumpOffBehaviour_OnStateEnter_Patch
+{
+    private static void Prefix(Animator animator, ref Penitent ____penitent)
+    {
+        Penitent owner = animator.GetComponentInParent<Penitent>();
+        if (owner != null)
+        {
+            ____penitent = owner;
+        }
+    }
+}
+
+// Mirrors DashBehaviour_BlockerTracking_OnState{Enter,Exit}_Patch (Dash/DashAndInputBlockers.cs) -
+// registers/clears the correctly-resolved owner's PLAYER_LOGIC lock with PlayerLogicBlocker so
+// BlockerOverrideHelper (already wrapping PlatformCharacterInput.Update() and
+// AnimatorInyector.Update() for every instance) can tell this lock apart from one genuinely
+// belonging to the other player and un-freeze that other player's own Update() call for its
+// duration - same treatment Dash already gets.
+[HarmonyPatch(typeof(JumpOffBehaviour), "OnStateEnter")]
+internal static class JumpOffBehaviour_BlockerTracking_OnStateEnter_Patch
+{
+    private static void Postfix(Animator animator)
+    {
+        Penitent owner = animator.GetComponentInParent<Penitent>();
+        PlayerLogicBlocker.SetBlocked(owner, true);
+        DashParryDebugLog.Log($"{DashParryDebugLog.Label(owner)} JUMP_OFF lock ON (frame {Time.frameCount})");
+    }
+}
+
+[HarmonyPatch(typeof(JumpOffBehaviour), "OnStateExit")]
+internal static class JumpOffBehaviour_BlockerTracking_OnStateExit_Patch
+{
+    private static void Postfix(Animator animator)
+    {
+        Penitent owner = animator.GetComponentInParent<Penitent>();
+        PlayerLogicBlocker.SetBlocked(owner, false);
+        DashParryDebugLog.Log($"{DashParryDebugLog.Label(owner)} JUMP_OFF lock OFF (frame {Time.frameCount})");
+    }
+}
+
 // PlatformCharacterInput.Update() reads all input (movement, jump, attack, dash, crouch...)
 // from Rewired Player 0, same as P1 - that's what makes P2 mirror P1's buttons instead of
 // having its own. Rather than replace the original method (its ladder/cliff/attack-gating
@@ -115,6 +191,62 @@ internal static class PlatformCharacterInput_Update_Patch
     private static readonly FieldInfo FVerAxisBackingField =
         AccessTools.Field(typeof(PlatformCharacterInput), "<FVerAxis>k__BackingField");
 
+    // Round 52: root cause of "P2 no puede bajar de plataformas de un solo sentido (drop-through)".
+    // NOT a SetActionState(Down/Jump) gap - those were already being overridden correctly below.
+    // The actual trigger for a platform drop lives entirely inside vanilla's own
+    // PlatformCharacterInput.Update() body (decompiled, same class, ~line 273): a one-shot edge
+    // check `if (Jump && !IsJumpOff && controller.IsGrounded && isJumpOffReady && !pressedJumpButton
+    // && !FloorChecker.IsOnFloorPlatform && !StepOnLadder && isJoystickDown && level != "D24Z01S01")`
+    // that calls `StartCoroutine(JumpOff())` - a private coroutine that waits `timeToJumpOff`
+    // seconds and then does `m_platformCtrl.SetActionState(eControllerActions.PlatformDropDown,
+    // true)`. CreativeSpore.SmartColliders.PlatformCharacterController.OnUpdate (the third-party
+    // physics asset, same family already found for ladders) only clears the one-way collision layer
+    // mask - the actual thing that lets the character fall through - when THAT specific action state
+    // (PlatformDropDown, distinct from Down/Jump) is true. This mod's Postfix here never touched
+    // PlatformDropDown at all - there was no override for it, explicit or otherwise.
+    // Worse: the `Jump` and `isJoystickDown` values that edge check reads are computed earlier in
+    // that SAME vanilla Update() call (`Jump = aKey` where aKey = Rewired.GetButton(6); isJoystickDown
+    // = IsJoystickDown() which reads Rewired.GetAxis(4) directly) - i.e. shared Player 0 - BEFORE this
+    // Postfix ever runs. Overriding isJoystickDown/Jump afterward (as already done below, correctly,
+    // for continuous state like SetActionState/AnimatorInyector reads) is too late for this one-shot
+    // decision: by the time the Postfix corrects those fields, vanilla's own edge check already fired
+    // (or, in practice, almost never fired, since P1's real jump+down buttons essentially never
+    // coincide with P2 pressing its own) using the wrong data for that frame. So P2's own StartCoroutine
+    // never ran, PlatformDropDown was never set, and P2 stayed physically stuck on the platform.
+    // Fix: reimplement the same edge-triggered gate + timer here, entirely from P2's own already-gated
+    // `jump`/`crouch` values and P2's own instance state (isJumpOffReady, FloorChecker, StepOnLadder,
+    // controller.IsGrounded - all public, all correctly per-instance already), driving the same public
+    // IsJumpOff property (backing field, same AccessTools trick as Jump/FVerAxis above) and firing
+    // onJumpOff so anything hooked to that event (audio/vfx) still plays for P2 too.
+    private static readonly FieldInfo IsJumpOffBackingField =
+        AccessTools.Field(typeof(PlatformCharacterInput), "<IsJumpOff>k__BackingField");
+
+    private static bool player2PressedJumpButton;
+    private static bool player2JumpOffPending;
+    private static float player2JumpOffTimer;
+
+    // Round 51: root cause of "P2 entra en carga de ataque cuando P1 mantiene su botón de
+    // ataque". IsAttackButtonHold (private-set auto-property) is computed inside vanilla's own
+    // AttackButtonHold()/ResetAttackButtonHold() private methods, called unconditionally at the
+    // top of Update() - both read `Rewired.GetButton(5)`/`GetButtonUp(5)` directly, the shared
+    // Player 0. Every PlatformCharacterInput instance in the game computes this from the SAME
+    // physical button, including P2's own - so P2's own IsAttackButtonHold goes true whenever P1
+    // holds the real attack button for timeInputAttackHold seconds, completely independent of P2's
+    // own input. AnimatorInyector.ChargeAttackTriggered() (correctly per-instance, reads P2's own
+    // _playerInput) then legitimately fires SetTrigger(ChargeAttack) on P2's real Animator - P2
+    // really does enter the charging state, it's not an owner-resolution bug at all (the existing
+    // ManyPlayerAnimationBehaviours_PenitentOwnerFix_Patch in Abilities/AbilityInputFixes.cs, which
+    // fixes StartChargingAttackBehaviour's `_penitent` field, was necessary but insufficient - it
+    // only fixes which ChargedAttack.Cast() gets called *after* P2 has already wrongly entered the
+    // state). Fixed the same way Attack/Dash are overridden below: reimplement the timed-hold gate
+    // here using Player2Input.AttackHeld (already mode/device-aware) instead of shared Rewired, and
+    // overwrite the backing field every frame after vanilla's own (wrong) computation has run.
+    private static readonly FieldInfo IsAttackButtonHoldBackingField =
+        AccessTools.Field(typeof(PlatformCharacterInput), "<IsAttackButtonHold>k__BackingField");
+
+    private static float player2AttackHoldTimer;
+    private static bool player2AttackButtonHold;
+
     // The original Update() also calls SetOrientation(horizontalAxis) using P1's shared
     // axis - harmless while P2 is actively pressing its own left/right (we override right
     // after), but when P2 is idle and P1 moves, that call still goes through unopposed and
@@ -137,6 +269,10 @@ internal static class PlatformCharacterInput_Update_Patch
     private static bool lastLoggedLeft;
     private static bool lastLoggedRight;
     private static string lastLoggedVerticalActionState;
+
+    // Round 58: edge-trigger flag for the jump-vs-drop-through race fix below (Jump action state
+    // suppression while crouch is held).
+    private static bool lastLoggedJumpSuppressedByCrouch;
 
     // Diagnostic for the user's own finding: pressing P2's real crouch or jump button makes P1
     // stop dashing even while P1's own dash button stays physically held down. DashBehaviour
@@ -295,11 +431,82 @@ internal static class PlatformCharacterInput_Update_Patch
 
         controller.SetActionState(eControllerActions.Left, canMove && left);
         controller.SetActionState(eControllerActions.Right, canMove && right);
-        controller.SetActionState(eControllerActions.Jump, jump);
+
+        // Round 58 - "P2 a veces salta en vez de bajar de la plataforma al soltar Down+Jump juntos".
+        // Vanilla's own Jump action-state assignment (decompiled PlatformCharacterInput.Update,
+        // ~line 296: `bool value = aKey && !BlockJump && !Blocked && (...) && !IsJoystickDown() &&
+        // ...`) NEVER sets the Jump action state true while isJoystickDown (Down held) is true -
+        // specifically so PlatformCharacterController.Update()'s own immediate jump-trigger block
+        // (decompiled PCC.cs ~line 421: `if (GetActionState(Jump) && m_jumpingTimer < 0f &&
+        // (IsGrounded || CanGhostJump)) { ...VSpeed = JumpingSpeed... }`, which is unconditional on
+        // crouch state) can never fire a normal jump while Down+Jump are held together - only the
+        // separate JumpOff gate below (which also requires crouch, same as vanilla's own copy) is
+        // allowed to act on that combo. This mod's own override used to do
+        // `SetActionState(Jump, jump)` unconditionally, with no crouch exclusion - so the instant P2
+        // pressed Jump while grounded, PCC.Update() could fire a normal jump the very same frame
+        // regardless of whether Down was also held, racing the JumpOff gate below (which only flips
+        // PlatformDropDown after a `timeToJumpOff` delay - by which point the normal jump had often
+        // already lifted P2 off the ground, so PCC.Update()'s own gate, which requires m_isGrounded,
+        // would no longer match). Which side won on any given attempt depended on incidental
+        // per-frame timing (leftover m_jumpingTimer from a previous jump, exact frame Down registered
+        // as held vs Jump) - hence the inconsistency. Fix: mirror vanilla's !IsJoystickDown()
+        // exclusion exactly - never set Jump true for P2 while crouch is also true.
+        bool jumpActionState = jump && !crouch;
+        if ((jump && crouch) != lastLoggedJumpSuppressedByCrouch)
+        {
+            lastLoggedJumpSuppressedByCrouch = jump && crouch;
+            DashParryDebugLog.Log(
+                $"P2 jump+crouch held together -> Jump action state suppressed (jumpActionState={jumpActionState}, " +
+                $"jump={jump}, crouch={crouch}, grounded={controller.IsGrounded}, frame {Time.frameCount})");
+        }
+        controller.SetActionState(eControllerActions.Jump, jumpActionState);
         controller.SetActionState(eControllerActions.Up, attackUp);
         controller.SetActionState(eControllerActions.Down, crouch);
 
         PlatformCharacterInput input = ____penitent.PlatformCharacterInput;
+
+        // Round 52 - platform drop-through. Reimplements vanilla's JumpOff edge-trigger/timer for
+        // P2 only (see comment on IsJumpOffBackingField above). Mirrors vanilla's own gate exactly,
+        // substituting P2's own gated `jump`/`crouch` for the shared-Rewired-derived Jump/isJoystickDown
+        // vanilla reads, and its own static timer/latch fields for vanilla's private
+        // pressedJumpButton/coroutine (which live on the same PlatformCharacterInput instance, but
+        // get fed wrong data for P2's instance by vanilla's own Update() body before this Postfix runs).
+        if (player2JumpOffPending)
+        {
+            player2JumpOffTimer -= Time.deltaTime;
+            if (player2JumpOffTimer <= 0f)
+            {
+                controller.SetActionState(eControllerActions.PlatformDropDown, true);
+                player2JumpOffPending = false;
+                IsJumpOffBackingField.SetValue(input, false);
+            }
+        }
+        if (____penitent.Status.IsHurt || ____penitent.Status.IsIdle)
+        {
+            IsJumpOffBackingField.SetValue(input, false);
+        }
+        bool player2IsJumpOff = (bool)IsJumpOffBackingField.GetValue(input);
+        if (jump && !player2IsJumpOff && controller.IsGrounded && ____penitent.isJumpOffReady &&
+            !player2PressedJumpButton && !____penitent.FloorChecker.IsOnFloorPlatform &&
+            !____penitent.StepOnLadder && crouch &&
+            !Core.LevelManager.currentLevel.LevelName.Equals("D24Z01S01"))
+        {
+            player2PressedJumpButton = true;
+            IsJumpOffBackingField.SetValue(input, true);
+            input.onJumpOff?.Invoke(____penitent.transform.position);
+            controller.SetActionState(eControllerActions.PlatformDropDown, false);
+            player2JumpOffPending = true;
+            player2JumpOffTimer = input.timeToJumpOff;
+            DashParryDebugLog.Log($"P2 platform drop-through triggered (timeToJumpOff={input.timeToJumpOff:F2}, frame {Time.frameCount})");
+        }
+        else if (!jump)
+        {
+            player2PressedJumpButton = false;
+        }
+        else
+        {
+            IsJumpOffBackingField.SetValue(input, false);
+        }
         input.ReachAxisThreshold = left || right;
         JumpBackingField.SetValue(input, jump);
 
@@ -330,6 +537,34 @@ internal static class PlatformCharacterInput_Update_Patch
         input.Attack = attack;
         input.Dash = dash;
 
+        // Round 51 - see comment on IsAttackButtonHoldBackingField above. Mirrors vanilla's own
+        // AttackButtonHold()/ResetAttackButtonHold() gate exactly (same timeInputAttackHold
+        // threshold, same dead/not-grounded reset), just fed from Player2Input.AttackHeld instead
+        // of the shared Rewired button. Also gated on `blocked` (PlayerLogicBlocker/dead), same
+        // rationale as every other raw read in this Postfix - P2 shouldn't charge-attack while its
+        // own dash/parry/ladder lock is active any more than P1 can while blocked.
+        bool attackHeldNow = !blocked && Player2Input.AttackHeld;
+        if (____penitent.Status.Dead || !____penitent.Status.IsGrounded)
+        {
+            player2AttackHoldTimer = 0f;
+            player2AttackButtonHold = false;
+        }
+        if (attackHeldNow)
+        {
+            player2AttackHoldTimer += Time.deltaTime;
+            if (player2AttackHoldTimer >= input.timeInputAttackHold && !player2AttackButtonHold)
+            {
+                player2AttackHoldTimer = 0f;
+                player2AttackButtonHold = true;
+            }
+        }
+        else
+        {
+            player2AttackHoldTimer = 0f;
+            player2AttackButtonHold = false;
+        }
+        IsAttackButtonHoldBackingField.SetValue(input, player2AttackButtonHold);
+
         if (left)
         {
             player2Facing = EntityOrientation.Left;
@@ -339,6 +574,67 @@ internal static class PlatformCharacterInput_Update_Patch
             player2Facing = EntityOrientation.Right;
         }
         ____penitent.SetOrientation(player2Facing);
+    }
+}
+
+// Round 57 diagnostic: directly observes CreativeSpore.SmartColliders.PlatformCharacterController
+// .Update()'s own drop-through gate (decompiled PCC.cs ~line 440:
+// `if (m_isGrounded && m_platformDropTimer <= 0f && GetActionState(PlatformDropDown)) { ... }`,
+// the only place that actually clears the SmartPlatformCollider's OneWayCollisionDown mask -
+// everything upstream of this, including the JumpOffBehaviour owner fix above, only gets P2's own
+// PlatformDropDown action-state flag set correctly; this is the one spot that turns that flag into
+// an actual physical pass-through). Edge-triggered on the gate's own boolean result, for P2's
+// PlatformCharacterController instance only, logging every field the gate reads plus the
+// SmartPlatformCollider's own LayerCollision/OneWayCollisionDown/EnableCollision2D state right at
+// that instant - so a re-test can confirm directly whether the gate ever evaluates true for P2 at
+// all (and if so, whether the collider mask actually changes), instead of just inferring it from
+// the trigger log further up this file.
+//
+// Round 58 fix: this was a Postfix originally, which is wrong. The gate's own body (PCC.cs line
+// 440-445), when it fires, immediately sets `m_platformDropTimer = PlatformDropTime` (0.1s, i.e.
+// > 0) as part of the SAME call that just used `m_platformDropTimer <= 0f` to decide to fire.
+// A Postfix reads the fields AFTER Update() already mutated them, so `platformDropTimer <= 0f` -
+// the very condition the gate just consumed - always reads back false immediately after a real
+// trigger, and the recomputed gateResult can never be observed as true. This is exactly what the
+// real log showed: "-> False" logged once near session start and never again, despite 10 confirmed
+// P2 drop-throughs afterward in the same log (the actual in-game trigger log
+// "P2 platform drop-through triggered" above fired correctly all 10 times - only this diagnostic's
+// own recomputation was blind). Fixed by moving this to a Prefix, so it reads m_isGrounded/
+// m_platformDropTimer/PlatformDropDown exactly as Update() itself is about to see them.
+[HarmonyPatch(typeof(PlatformCharacterController), "Update")]
+internal static class PlatformCharacterController_Update_DropThroughDebug_Patch
+{
+    private static readonly FieldInfo IsGroundedField = AccessTools.Field(typeof(PlatformCharacterController), "m_isGrounded");
+    private static readonly FieldInfo PlatformDropTimerField = AccessTools.Field(typeof(PlatformCharacterController), "m_platformDropTimer");
+
+    private static bool lastLoggedGateResult;
+    private static bool hasLoggedOnce;
+
+    private static void Prefix(PlatformCharacterController __instance)
+    {
+        Penitent owner = __instance.GetComponent<Penitent>();
+        if (owner == null || owner != CoopLocal.Player2)
+        {
+            return;
+        }
+
+        bool isGrounded = (bool)IsGroundedField.GetValue(__instance);
+        float platformDropTimer = (float)PlatformDropTimerField.GetValue(__instance);
+        bool dropFlag = __instance.GetActionState(eControllerActions.PlatformDropDown);
+        bool gateResult = isGrounded && platformDropTimer <= 0f && dropFlag;
+
+        if (!hasLoggedOnce || gateResult != lastLoggedGateResult)
+        {
+            hasLoggedOnce = true;
+            lastLoggedGateResult = gateResult;
+            SmartPlatformCollider collider = __instance.SmartPlatformCollider;
+            DashParryDebugLog.Log(
+                $"P2 PCC.Update() drop-through gate -> {gateResult} (m_isGrounded={isGrounded}, " +
+                $"m_platformDropTimer={platformDropTimer:F3}, PlatformDropDown flag={dropFlag}, " +
+                $"LayerCollision={collider.LayerCollision.value}, OneWayCollisionDown={collider.OneWayCollisionDown.value}, " +
+                $"EnableCollision2D={collider.EnableCollision2D}, colliderComponentEnabled={collider.enabled}, " +
+                $"frame {Time.frameCount})");
+        }
     }
 }
 

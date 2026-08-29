@@ -84,6 +84,17 @@ internal static class Player2HealthBar
         }
     }
 
+    // Round 56: see Player2HudFadeSync's own class comment - P2's clone has no equivalent to
+    // P1's "sits behind the vanilla load/fade overlay" occlusion, so it stays visible straight
+    // through a room-transition's fade to black unless something explicitly hides it.
+    // Round 57: was a plain SetActive pop - now an alpha fade via HudFade, matching the vanilla
+    // screen fade's own look/timing. `instant` is only used by Player2HudFadeSync.
+    // ApplyCurrentFadeState's defensive correction - see HudFade.SetVisible's own comment.
+    internal static void SetVisible(bool visible, bool instant = false)
+    {
+        HudFade.SetVisible(instanceRoot, visible, instant);
+    }
+
     // Cached on first use and never looked up again. Object.Destroy() only *marks* a GameObject
     // for destruction - the real removal happens at the end of the current frame - so calling
     // FindObjectOfType<PlayerHealth>() again right after destroying the previous clone (same
@@ -189,6 +200,12 @@ internal static class Player2HealthBar
         cloneObject.name = "PlayerHealth_P2";
         instanceRoot = cloneObject;
         Instance = cloneObject.GetComponentInChildren<PlayerHealth>();
+
+        // Round 57: start hidden (alpha 0, still active) instead of Instantiate's default
+        // fully-visible pop - Player2HudFadeSync.ApplyCurrentFadeState (called right after all
+        // three P2 HUD clones exist, from CoopLocal.OnPlayerSpawn) decides whether to fade this
+        // in immediately or leave it at 0 until the next screen-fade-in.
+        HudFade.PrepareHidden(instanceRoot);
 
         RectTransform originalRect = (originalParent != null ? originalParent : original.transform) as RectTransform;
         RectTransform rect = cloneObject.GetComponent<RectTransform>();

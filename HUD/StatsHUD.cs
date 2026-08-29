@@ -231,19 +231,19 @@ internal static class Player2PurgePoints
 
     // Round 45: final position, re-confirmed by the user via live Player2HudPositionTuner testing
     // (moved from the original bottom-left placement to sit with the rest of P2's HUD block).
-    internal static Vector2 AnchoredPosition = new Vector2(-157f, -4f);
+    internal static Vector2 AnchoredPosition = new Vector2(-170f, -8f);
 
     // Round 44: scale multipliers for the text/icon, adjustable live via Player2HudPositionTuner's
     // "." / "-" keys - these two never had a Scale field before since they were created at native
     // size (unlike Health/Fervour's cloned widgets, which always applied a fixed 0.65 shrink).
     // Round 45: final values, confirmed by the user via live testing.
-    internal static float TextScale = 0.945f;
-    internal static float IconScale = 0.855f;
+    internal static float TextScale = 1f;
+    internal static float IconScale = 1f;
 
     // Round 43: the coin/tears icon that sits behind the real HUD's currency text - independently
     // positionable from the text itself via Player2HudPositionTuner's new CurrencyIcon target.
     // Round 45: final position, re-confirmed by the user via live tuning.
-    internal static Vector2 IconAnchoredPosition = new Vector2(16f, -13f);
+    internal static Vector2 IconAnchoredPosition = new Vector2(5f, -21f);
 
     private static GameObject textRoot;
     private static GameObject iconRoot;
@@ -251,6 +251,17 @@ internal static class Player2PurgePoints
 
     internal static RectTransform CloneRect => textRoot != null ? textRoot.GetComponent<RectTransform>() : null;
     internal static RectTransform IconRect => iconRoot != null ? iconRoot.GetComponent<RectTransform>() : null;
+
+    // Round 56: see Player2HudFadeSync - same "clone doesn't hide with the vanilla fade" fix as
+    // Player2HealthBar.SetVisible. Two separate GameObjects here (text + icon), both toggled.
+    // Round 57: now an alpha fade via HudFade instead of a binary pop, one independent tween per
+    // GameObject (they're siblings, not parent/child, so each needs its own CanvasGroup) - see
+    // HealthHUD.cs's own SetVisible comment.
+    internal static void SetVisible(bool visible, bool instant = false)
+    {
+        HudFade.SetVisible(textRoot, visible, instant);
+        HudFade.SetVisible(iconRoot, visible, instant);
+    }
 
     internal static void EnsureCreated(Penitent p2)
     {
@@ -369,6 +380,12 @@ internal static class Player2PurgePoints
             label.alignment = TextAnchor.MiddleLeft;
         }
         label.text = "0";
+
+        // Round 57: start both roots hidden (alpha 0, still active) - see Player2HealthBar.
+        // EnsureCreated's own comment. PrepareHidden no-ops on a null root, so this is safe even
+        // when no icon sprite was found above.
+        HudFade.PrepareHidden(textRoot);
+        HudFade.PrepareHidden(iconRoot);
 
         DashParryDebugLog.Log(
             $"Player2PurgePoints.EnsureCreated: custom text created, foundRealFont={(originalText != null && originalText.font != null)}, foundIcon={iconSprite != null}");

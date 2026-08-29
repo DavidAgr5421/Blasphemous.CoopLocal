@@ -22,9 +22,6 @@ public class CoopLocal : BlasMod
     // two visually separate again within a frame or two once movement resumes.
     private static readonly Vector3 P2SpawnOffset = Vector3.zero;
 
-    // "Rojo vino tinto" (wine/burgundy red) for P1's name label - #722F37.
-    private static readonly Color WineRed = new Color(0.447f, 0.184f, 0.216f);
-
     // Exposed so GamePatches can tell P2's PlatformCharacterInput apart from P1's.
     internal static Penitent Player2 { get; private set; }
 
@@ -34,6 +31,7 @@ public class CoopLocal : BlasMod
     {
         SpawnManager.OnPlayerSpawn += OnPlayerSpawn;
         LevelManager.OnLevelLoaded += OnLevelLoaded;
+        Player2HudFadeSync.Initialize();
 
         // Round 52 - debug tool: F10 camera-target cycler (Coop/P1 only/P2 only). Its own
         // driver MonoBehaviour just needs to exist once, independent of P1/P2's own lifecycle -
@@ -46,6 +44,7 @@ public class CoopLocal : BlasMod
     {
         SpawnManager.OnPlayerSpawn -= OnPlayerSpawn;
         LevelManager.OnLevelLoaded -= OnLevelLoaded;
+        Player2HudFadeSync.Dispose();
     }
 
     // Round 47: the wall cliff-lede fix (SetLayerRecursively, round 46) copies P1's layer onto P2
@@ -124,6 +123,37 @@ public class CoopLocal : BlasMod
         Vector3 spawnPosition = p1.transform.position + P2SpawnOffset;
         Player2 = Object.Instantiate(p2Prefab, spawnPosition, Quaternion.identity);
 
+        // Round 55 (Player2StatsSync's own vitals-persistence bug): P2 was instantiated as a plain
+        // root object with no scene assignment, which Unity places into whatever scene is currently
+        // *active* - LevelManager.cs sets that to the current room's own scene right before firing
+        // this spawn (SceneManager.SetActiveScene(currentLevel.GetLogicScene().Scene)). Blasphemous
+        // gives (at least some) individual rooms their own scene, unloaded via SceneManager as part
+        // of a real room-to-room LevelManager.ChangeLevel transition (as opposed to the lighter
+        // same-scene reposition path some doors use) - and Unity destroys every non-DontDestroyOnLoad
+        // object living in a scene the instant that scene unloads, with no code of ours involved.
+        // That unload happens *before* the new room's own OnPlayerSpawn fires (old scene must be
+        // gone before the new one loads), so by the time this method's own
+        // "if (Player2 != null) { SaveCurrentVitals(...); Object.Destroy(...); }" block runs for
+        // that transition, Player2 already got silently destroyed by Unity itself - and Unity's
+        // overloaded `== null` on a destroyed UnityEngine.Object returns true, so the whole
+        // save-current-vitals-before-replacing-P2 block was skipped entirely for that transition.
+        // Net effect: Player2StatsSync's on-disk snapshot only ever got updated by transitions that
+        // happened to *not* cross a scene boundary - for any playthrough where most/every room
+        // transition does cross one, the snapshot never advances past whatever
+        // Player2StatsSync.PerformFirstSync wrote once at the very start of the run, which is
+        // exactly "P2's stats reset to the one-time initial copy" as reported. Marking P2
+        // DontDestroyOnLoad (the same pattern Camera/Camera.cs and Player2Input.cs already use for
+        // their own cross-scene singletons) removes the race entirely: P2 now survives every scene
+        // unload on its own, so this method's own explicit save-then-destroy logic is always the one
+        // that runs, deterministically, every single time - not a race against Unity's own teardown.
+        // Safe with respect to physics: Blasphemous loads its additive scenes via the simple
+        // SceneManager.LoadScene(name, LoadSceneMode.Additive) overload (confirmed in the decompiled
+        // LevelManager), never the LoadSceneParameters overload that would opt into a separate
+        // per-scene PhysicsScene2D - so there is only one global 2D physics world for the whole game,
+        // and moving P2 into the DontDestroyOnLoad scene does not remove it from collision/overlap
+        // queries against the current room's geometry.
+        Object.DontDestroyOnLoad(Player2.gameObject);
+
         // Round 46: found via live log data that P2's wall cliff-ledge grab never once triggered
         // across ~4500 airborne frames of real testing - _grabbedCliffLede (set purely by
         // OnTriggerEnter2D's own Unity physics layer filtering, no Penitent-ownership logic
@@ -195,8 +225,8 @@ public class CoopLocal : BlasMod
         // index/name and what else uses it) that the layer is safe to touch, or finding a more
         // surgical way to separate P1 and P2 specifically instead of an entire layer.
 
-        AddNameLabel(p1, "Pan-chan", WineRed, outlineColor: Color.white);
-        AddNameLabel(Player2, "Baby", new Color(0.35f, 0.85f, 0.35f), outlineColor: Color.black);
+        AddNameLabel(p1, "Pan-chan", new Color32(235, 36, 10,255), outlineColor: new Color32(140, 14, 0, 190));
+        AddNameLabel(Player2, "Baby", new Color32(55, 247, 70,255), outlineColor: new Color32(39, 94, 73,190));
 
         // Snapshot both players' clean (non-mud) movement stats now, before either could
         // possibly have touched a MudAreaEffect - see GamePatches for why this is needed.
@@ -225,11 +255,20 @@ public class CoopLocal : BlasMod
         // after all three exist rather than from inside Health's own EnsureCreated.
         Player2HealthBar.BringToFront();
 
+        // Round 56: all three HUD clones above were just (re)created fresh and default to active -
+        // but this whole method can run *during* a room transition's fade to black (OnPlayerSpawn
+        // fires mid-load). If a fade is already covering the screen right now, hide the brand new
+        // clones immediately instead of letting them flash visible until the matching
+        // FadeWidget.OnFadeHidedEnd fires - see Player2HudFadeSync's own class comment.
+        Player2HudFadeSync.ApplyCurrentFadeState();
+
         // Ronda 48 - debug visual: a translucent overlay tracking P2's real damage hitbox
         // (PenitentDamageArea's own BoxCollider2D, resized live by ResizeDamageArea() while
         // crouching/dashing/etc) so it's visible in-game exactly where a hit will actually land,
         // instead of guessing from the sprite.
-        Player2HitboxVisualizer.EnsureCreated(Player2);
+        // Disabled for now (debug-only feature, not meant to ship visible to players) - the
+        // Player2HitboxVisualizer class itself is left untouched so this is a one-line revert.
+        // Player2HitboxVisualizer.EnsureCreated(Player2);
 
         ModLog.Info(
             $"P2 spawned at {spawnPosition} (p1 was at {p1.transform.position}, offset={P2SpawnOffset}, " +
@@ -258,7 +297,7 @@ public class CoopLocal : BlasMod
 
     private const string NameLabelChildName = "CoopLocalNameLabel";
 
-    private static void AddNameLabel(Penitent penitent, string label, Color color, Color? outlineColor = null)
+    private static void AddNameLabel(Penitent penitent, string label, Color32 color, Color? outlineColor = null)
     {
         if (penitent.transform.Find(NameLabelChildName) != null)
         {
@@ -282,8 +321,8 @@ public class CoopLocal : BlasMod
             {
                 new Vector3(-offset, 0f, 0f), new Vector3(offset, 0f, 0f),
                 new Vector3(0f, -offset, 0f), new Vector3(0f, offset, 0f),
-                new Vector3(-offset, -offset, 0f), new Vector3(-offset, offset, 0f),
-                new Vector3(offset, -offset, 0f), new Vector3(offset, offset, 0f),
+                //new Vector3(-offset, -offset, 0f), new Vector3(-offset, offset, 0f),
+                //new Vector3(offset, -offset, 0f), new Vector3(offset, offset, 0f),
             };
             foreach (Vector3 delta in outlineOffsets)
             {
@@ -309,9 +348,9 @@ public class CoopLocal : BlasMod
     // LabelTargetHeight. The rect stays at localScale (1,1,1), so KeepLocalTransform and the
     // outline offset ring stay exactly as before.
     private const float LabelTargetHeight = 0.4f;
-    private const float LabelBaseFontSize = 4f;
+    private const float LabelBaseFontSize = 5f;
 
-    private static void CreateLabelTextMesh(GameObject target, string label, Color color, int sortingOrder)
+    private static void CreateLabelTextMesh(GameObject target, string label, Color32 color, int sortingOrder)
     {
         // Adding a RectTransform upgrades the object's existing Transform in place, which can
         // reset its localPosition - re-apply it afterwards so the label stays above the penitent.

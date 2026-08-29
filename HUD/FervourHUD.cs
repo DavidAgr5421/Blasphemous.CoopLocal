@@ -87,6 +87,14 @@ internal static class Player2FervourBar
     private static PlayerFervour originalCache;
     private static GameObject instanceRoot;
 
+    // Round 56: see Player2HudFadeSync - same "clone doesn't hide with the vanilla fade" fix as
+    // Player2HealthBar.SetVisible. Round 57: now an alpha fade via HudFade instead of a binary
+    // pop - see HealthHUD.cs's own SetVisible comment.
+    internal static void SetVisible(bool visible, bool instant = false)
+    {
+        HudFade.SetVisible(instanceRoot, visible, instant);
+    }
+
     internal static void EnsureCreated(Penitent p2)
     {
         if (instanceRoot != null)
@@ -128,6 +136,9 @@ internal static class Player2FervourBar
         instanceRoot = cloneObject;
         Instance = cloneObject.GetComponentInChildren<PlayerFervour>();
         FlaskInstance = cloneObject.GetComponentInChildren<PlayerFlask>();
+
+        // Round 57: see Player2HealthBar.EnsureCreated's own comment - same start-hidden priming.
+        HudFade.PrepareHidden(instanceRoot);
 
         // Undo the clone's own Awake() stealing the global static Instance - see class comment.
         if (Instance != null)

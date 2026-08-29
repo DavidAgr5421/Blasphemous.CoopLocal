@@ -91,6 +91,7 @@ internal static class Player2StatsSync
     private const string LifeCurrentKey = "__LifeCurrent__";
     private const string FervourCurrentKey = "__FervourCurrent__";
     private const string FlaskCurrentKey = "__FlaskCurrent__";
+    private const string FlaskHealthCurrentKey = "__FlaskHealthCurrent__";
 
     // Round 42: the first-ever sync (previous round) ran synchronously inside CoopLocal's
     // OnPlayerSpawn handler and captured every one of P1's stats as PermanetBonus=0 - confirmed by
@@ -221,6 +222,7 @@ internal static class Player2StatsSync
             lines.Add($"{LifeCurrentKey}={p2.Stats.Life.Current.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
             lines.Add($"{FervourCurrentKey}={p2.Stats.Fervour.Current.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
             lines.Add($"{FlaskCurrentKey}={p2.Stats.Flask.Current.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+            lines.Add($"{FlaskHealthCurrentKey}={p2.Stats.FlaskHealth.PermanetBonus.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
             System.IO.File.WriteAllLines(path, lines.ToArray());
         }
         catch (Exception ex)
@@ -264,6 +266,19 @@ internal static class Player2StatsSync
             UpsertLine(lines, FervourCurrentKey, outgoingP2.Stats.Fervour.Current);
             UpsertLine(lines, FlaskCurrentKey, outgoingP2.Stats.Flask.Current);
             System.IO.File.WriteAllLines(path, lines.ToArray());
+
+            // Round 55: this used to be silent on success (only the catch block below logged
+            // anything) - added so a live log can directly confirm this runs on *every* room
+            // transition now that Player2 is DontDestroyOnLoad (see CoopLocal.OnPlayerSpawn), not
+            // just the ones that happened to not cross a scene boundary.
+            if (Main.CoopLocal != null)
+            {
+                Blasphemous.ModdingAPI.ModLog.Info(
+                    $"[P2StatsSync] saved P2's current vitals before respawn: Life={outgoingP2.Stats.Life.Current:F0} " +
+                    $"Fervour={outgoingP2.Stats.Fervour.Current:F0} Flask={outgoingP2.Stats.Flask.Current:F0} " +
+                    $"Purge={outgoingP2.Stats.Purge.Current:F0}",
+                    Main.CoopLocal);
+            }
         }
         catch (Exception ex)
         {
@@ -354,6 +369,12 @@ internal static class Player2StatsSync
                 if (key == FlaskCurrentKey)
                 {
                     p2.Stats.Flask.Current = value;
+                    applied++;
+                    continue;
+                }
+                if (key == FlaskHealthCurrentKey)
+                {
+                    p2.Stats.FlaskHealth.SetPermanentBonus(value);
                     applied++;
                     continue;
                 }
