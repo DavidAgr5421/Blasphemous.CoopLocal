@@ -1,6 +1,7 @@
 using Framework.FrameworkCore;
 using Framework.Managers;
 using Gameplay.GameControllers.Entities;
+using Gameplay.GameControllers.Penitent;
 using HarmonyLib;
 using System;
 using System.Collections.Generic;
@@ -62,7 +63,16 @@ internal static class Player2SkillManager
         foreach (string id in AllIds) shadow[id] = false;
 
         string path = SnapshotPath(slot);
-        if (!File.Exists(path)) return;
+        if (!File.Exists(path))
+        {
+            // Partida nueva: todo bloqueado. No se clona de P1 (Core.SkillManager.IsSkillUnlocked)
+            // aunque sería trivial iterar AllIds y copiar el bool de P1 al shadow. Decisión consciente
+            // (Ronda 60): sin flujo de compra real para P2 todavía, clonar daría a P2 progresión gratis.
+            // Si en el futuro se quiere clonado inicial, reemplazar este return por:
+            //   foreach(string id in AllIds) shadow[id]=Core.SkillManager.IsSkillUnlocked(id);
+            //   SaveForSlot(slot);
+            return;
+        }
 
         try
         {
@@ -150,8 +160,39 @@ internal static class Player2SkillManager
 [HarmonyPatch(typeof(Ability), "GetLastUnlockedSkill")]
 internal static class Ability_GetLastUnlockedSkill_P2_Patch
 {
+    private static readonly Dictionary<Ability, string> lastLoggedResult = new Dictionary<Ability, string>();
+    private static readonly Dictionary<Ability, string> lastLoggedIdentity = new Dictionary<Ability, string>();
+
     private static bool Prefix(Ability __instance, ref UnlockableSkill __result, List<string> ___unlocableSkill)
     {
+        // Round 76 audit fix: the identity-mismatch log this round was added *for* (Player2SkillManager
+        // Ronda 76 comment: "descartar identidad de referencia, P2 recreado Ronda 55/63") was originally
+        // written *after* the `EntityOwner != CoopLocal.Player2 => return true` branch below - but that
+        // branch is exactly what discards the one case the log claims to check: if EntityOwner is a STALE
+        // Penitent (an orphaned P2 Ability component whose EntityOwner never got updated to the current
+        // CoopLocal.Player2 after a respawn/room transition), this method returns `true` right there and
+        // vanilla runs silently - the log statement past that point is unreachable for that exact case, so
+        // the previous version could only ever print "==" (dead code, never "!="). Moved here, before the
+        // early return, and widened to cover every Ability instance (not only ones already confirmed ==
+        // Player2) so a stale/orphaned instance is actually visible instead of silently falling through to
+        // vanilla/global gating (which would explain "P2 executes whatever P1 has unlocked" if it happens).
+        Penitent owner = __instance.EntityOwner as Penitent;
+        string identity;
+        if (owner == null) identity = "null";
+        else if (owner == Core.Logic.Penitent) identity = "P1";
+        else if (owner == CoopLocal.Player2) identity = "P2-current";
+        else identity = "STALE"; // neither today's P1 nor today's P2 - the smoking gun this log exists for
+        string instanceName = __instance.GetType().Name;
+        string identityKey = identity;
+        if (!lastLoggedIdentity.TryGetValue(__instance, out string lastIdentity) || lastIdentity != identityKey)
+        {
+            lastLoggedIdentity[__instance] = identityKey;
+            int ownerId = owner != null ? owner.GetInstanceID() : -1;
+            int p1Id = Core.Logic.Penitent != null ? Core.Logic.Penitent.GetInstanceID() : -1;
+            int p2Id = CoopLocal.Player2 != null ? CoopLocal.Player2.GetInstanceID() : -1;
+            DashParryDebugLog.Log($"[Ability] {instanceName} EntityOwner identity={identity} ownerId={ownerId} P1Id={p1Id} P2Id={p2Id}");
+        }
+
         if (__instance.EntityOwner != CoopLocal.Player2)
         {
             return true;
@@ -170,6 +211,15 @@ internal static class Ability_GetLastUnlockedSkill_P2_Patch
             }
         }
         __result = result;
+        string resultId = result != null ? result.id : "null";
+        string listStr = ___unlocableSkill != null ? string.Join(",", ___unlocableSkill.ToArray()) : "(null)";
+        string cacheKey = resultId;
+        // Edge-triggered por instancia de Ability - resultado real del shadow (identidad ya logueada arriba)
+        if (!lastLoggedResult.TryGetValue(__instance, out string last) || last != cacheKey)
+        {
+            lastLoggedResult[__instance] = cacheKey;
+            DashParryDebugLog.Log($"[Ability] {instanceName} branch=shadow list=[{listStr}] -> result={resultId}");
+        }
         return false;
     }
 }

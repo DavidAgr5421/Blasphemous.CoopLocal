@@ -49,6 +49,14 @@ internal static class PrieDieu_ShallowActivationLogic_HealPlayer2_Patch
 {
     private static void Postfix()
     {
+        if (Player2DeathState.IsPendingRevive())
+        {
+            Player2DeathState.ClearPendingRevive();
+            if (CoopLocal.Player2 == null)
+            {
+                CoopLocal.SpawnPlayer2(Core.Logic.Penitent, Core.Logic.Penitent.transform.position);
+            }
+        }
         Penitent p2 = CoopLocal.Player2;
         if (p2 == null)
         {

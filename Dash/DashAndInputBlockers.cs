@@ -604,9 +604,15 @@ internal static class DashBehaviour_OnStateUpdate_Patch
         {
             return false;
         }
-        if (attackPressed && stateInfo.normalizedTime < 1f && (bool)CastLungeAttackMethod.Invoke(__instance, null))
+        if (attackPressed && stateInfo.normalizedTime < 1f)
         {
-            return false;
+            DashParryDebugLog.Log($"P2 Dash CastLungeAttack pre-invoke owner={DashParryDebugLog.Label(owner)} DashBehaviour={__instance.GetInstanceID()} penitent={owner.GetInstanceID()} frame {Time.frameCount}");
+            bool castResult = (bool)CastLungeAttackMethod.Invoke(__instance, null);
+            DashParryDebugLog.Log($"P2 Dash CastLungeAttack post-invoke result={castResult} owner={DashParryDebugLog.Label(owner)} frame {Time.frameCount}");
+            if (castResult)
+            {
+                return false;
+            }
         }
 
         if (parryPressed)

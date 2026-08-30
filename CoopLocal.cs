@@ -106,6 +106,8 @@ public class CoopLocal : BlasMod
             // EntityStats gets rebuilt from scratch on every respawn, so without this all four
             // would silently reset every time (see Player2StatsSync.SaveCurrentVitals's own
             // comment in GamePatches.cs).
+            Player2SkillManager.Persist();
+            Player2InventoryManager.Persist();
             Player2StatsSync.SaveCurrentVitals(Player2);
             Object.Destroy(Player2.gameObject);
             Player2 = null;
@@ -123,8 +125,17 @@ public class CoopLocal : BlasMod
             return;
         }
 
+        if (Player2DeathState.IsPendingRevive())
+        {
+            return;
+        }
+
+        SpawnPlayer2(p1, p1.transform.position + P2SpawnOffset);
+    }
+
+    internal static Penitent SpawnPlayer2(Penitent p1, Vector3 spawnPosition)
+    {
         Penitent p2Prefab = Resources.Load<Penitent>("Core/Penitent");
-        Vector3 spawnPosition = p1.transform.position + P2SpawnOffset;
         Player2 = Object.Instantiate(p2Prefab, spawnPosition, Quaternion.identity);
 
         // Round 55 (Player2StatsSync's own vitals-persistence bug): P2 was instantiated as a plain
@@ -199,6 +210,7 @@ public class CoopLocal : BlasMod
         // this save - see Player2StatsSync's own comment in GamePatches.cs for the full reasoning.
         Player2StatsSync.EnsureSynced(p1, Player2);
         Player2SkillManager.EnsureLoadedForCurrentSlot();
+        Player2InventoryManager.EnsureLoadedForCurrentSlot();
 
         // P1 and P2 are now both on the same physics layer (see SetLayerRecursively above), each
         // with a real Rigidbody2D (Penitent.RigidBody) - so by default they're solid to each
@@ -275,10 +287,14 @@ public class CoopLocal : BlasMod
         // Player2HitboxVisualizer class itself is left untouched so this is a one-line revert.
         // Player2HitboxVisualizer.EnsureCreated(Player2);
 
-        ModLog.Info(
-            $"P2 spawned at {spawnPosition} (p1 was at {p1.transform.position}, offset={P2SpawnOffset}, " +
-            $"actual P2 pos after spawn={Player2.transform.position})",
-            this);
+        if (Main.CoopLocal != null)
+        {
+            Blasphemous.ModdingAPI.ModLog.Info(
+                $"P2 spawned at {spawnPosition} (p1 was at {p1.transform.position}, offset={P2SpawnOffset}, " +
+                $"actual P2 pos after spawn={Player2.transform.position})",
+                Main.CoopLocal);
+        }
+        return Player2;
     }
 
     // Round 54: replaces the old SetLayerRecursively(Transform, int) - a single layer value

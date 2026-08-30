@@ -109,10 +109,16 @@ internal static class CameraManager_UpdateNewCameraParams_Patch
         bool addedNow = false;
         if (proCamera2D.GetCameraTarget(CoopLocal.Player2.transform) == null)
         {
-            // Same weight/offset the game itself uses for P1 in
-            // CameraManager.UpdateNewCameraParams - keeps both players framed with identical
-            // priority.
-            proCamera2D.AddCameraTarget(CoopLocal.Player2.transform, 1f, 1f, 0f, new Vector2(0f, 6f));
+            // Ronda 77: Vector2.zero. Vanilla hace AddCameraTarget(P1, ..., new Vector2(0,6))
+            // en CameraManager.UpdateNewCameraParams() pero en el mismo frame de carga
+            // LevelManager.UpdateNewCameraParams() llama a
+            // CameraPlayerOffset.UpdateNewParams()->SetCameraTarget() que zerea el TargetOffset
+            // del primer target "Penitent" (P1) a Vector2.zero; el offset vertical estable
+            // vanilla vive en ProCamera2D.OverallOffset (baked en el prefab/escena, nunca
+            // escrito por codigo), no en CameraTarget.TargetOffset. Copiar (0,6) a P2 lo
+            // dejaba permanentemente desplazado +6u tras cada carga normal (P1 ya zerado,
+            // Postfix corre antes de SetCameraTarget) y con (0,6) en ambos tras un ciclo F10.
+            proCamera2D.AddCameraTarget(CoopLocal.Player2.transform, 1f, 1f, 0f, Vector2.zero);
             addedNow = true;
         }
 
@@ -146,10 +152,13 @@ internal enum CameraDebugTargetMode
 
 internal static class CameraTargetDebugToggle
 {
-    // Same weight/offset CameraManager.UpdateNewCameraParams()/AddPlayer2AsCameraTarget already
-    // use for P1/P2 respectively - re-adding a target that was previously removed has to match
-    // this exactly, or the two players would come back framed with different priority.
-    private static readonly Vector2 TargetOffset = new Vector2(0f, 6f);
+    // Ronda 77: Vector2.zero. Ver nota en AddPlayer2AsCameraTarget arriba:
+    // el (0,6) de CameraManager.UpdateNewCameraParams es transitorio (zerado en el mismo
+    // frame por CameraPlayerOffset.SetCameraTarget sobre el primer "Penitent"); el offset
+    // vertical real y estable es ProCamera2D.OverallOffset (global, nunca escrito por
+    // codigo). Re-agregar con (0,6) desde el toggle F10 sin que SetCameraTarget vuelva a
+    // correr dejaba ambos targets en (0,6) y el salto de +6u reportado.
+    private static readonly Vector2 TargetOffset = Vector2.zero;
 
     private static GameObject driverObject;
 

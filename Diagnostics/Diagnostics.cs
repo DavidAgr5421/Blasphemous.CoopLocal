@@ -49,13 +49,48 @@ internal static class DashParryDebugLog
         return p == CoopLocal.Player2 ? "P2" : "P1";
     }
 
+    // Round 76 audit: Directory.CreateDirectory() is a syscall - cheap, but pointless to repeat
+    // on literally every single Log() call (this fires many times per second across 83 call
+    // sites in the mod) once the directory demonstrably exists already. Cached after the first
+    // successful creation; File.AppendAllText itself still opens/writes/closes every call (no
+    // buffering) which is an accepted tradeoff for "never lose a line on a crash/relaunch".
+    private static bool directoryEnsured;
+
+    // Unity's own Update()/Harmony-patch call sites are all single-threaded (main thread), so in
+    // practice File.AppendAllText's own open-write-close per call can never truly overlap. This
+    // lock is cheap insurance in case anything (a coroutine callback, an async asset load
+    // continuation) ever calls Log() off the main thread, avoiding a rare "file in use"
+    // IOException that would otherwise be silently swallowed by the try/catch anyway - not
+    // relied upon as the only safety net, just removes the small remaining risk for near-zero cost.
+    private static readonly object fileLock = new object();
+
     internal static void Log(string message)
     {
+        string line = "[DashParryDebug] " + message;
         if (Main.CoopLocal != null)
         {
-            Blasphemous.ModdingAPI.ModLog.Info("[DashParryDebug] " + message, Main.CoopLocal);
+            Blasphemous.ModdingAPI.ModLog.Info(line, Main.CoopLocal);
         }
+        // Persistente append-only para que no se pierda al relanzar el juego (BepInEx/LogOutput.log se trunca)
+        try
+        {
+            string dir = System.IO.Path.Combine(UnityEngine.Application.persistentDataPath, "CoopLocalMod");
+            string ts = System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
+            lock (fileLock)
+            {
+                if (!directoryEnsured)
+                {
+                    System.IO.Directory.CreateDirectory(dir);
+                    directoryEnsured = true;
+                }
+                string path = System.IO.Path.Combine(dir, "debug_log.txt");
+                System.IO.File.AppendAllText(path, $"[{ts}] {line}{System.Environment.NewLine}");
+            }
+        }
+        catch { }
     }
+
+    internal static string PersistentLogPath => System.IO.Path.Combine(System.IO.Path.Combine(UnityEngine.Application.persistentDataPath, "CoopLocalMod"), "debug_log.txt");
 }
 
 // Logs the current animation clip name for either player whenever it changes - used to trace

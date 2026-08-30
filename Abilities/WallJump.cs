@@ -87,6 +87,75 @@ internal static class WallJump_OnUpdate_P2_Patch
     private static readonly FieldInfo DisabledAbilityWhenUseField = AccessTools.Field(typeof(WallJump), "DisabledAbilityWhenUse");
     private static readonly MethodInfo DisableAbilityMethod = AccessTools.Method(typeof(WallJump), "DisableAbility");
 
+    // Round 72 - safety-net release: same private method vanilla itself uses for its own
+    // "let go early" cancel gesture and the damage/camera-shake knockoff paths (EntityOwnerOnDamaged/
+    // OnCameraShakeOverthrow) - reusing it via reflection instead of reimplementing its body means
+    // the retry-timeout release restores gravity/blocker/Animator state exactly like every other
+    // vanilla unhang path does, and the Postfix below (WallJump_UnhangByEvent_BlockerTracking_Patch)
+    // still fires because Harmony patches the method itself, not a particular call site.
+    private static readonly MethodInfo UnhangByEventMethod = AccessTools.Method(typeof(WallJump), "UnhangByEvent");
+
+    // Logging edge-triggered para hipótesis familia 4 (Ronda 64) - solo para diagnóstico, no fix.
+    private static bool _lastStickOnWallBool;
+    private static int _lastWallStateHash;
+
+    // Round 72 - Play(WallClimbContact) retry state. _stickStartFrame records the exact frame the
+    // stick-start branch below called Play() for the first time - the retry check must not fire on
+    // that same frame, since Round 67 confirmed Animator.Play() never takes effect synchronously
+    // within the same Update() that calls it (Unity evaluates Animator transitions once per frame,
+    // after every script's Update() has run) - checking STICK_ON_WALL on the start frame itself
+    // would always read the pre-Play() value and look like a "failure" even in the 90%+ of cases
+    // that succeed one frame later.
+    private static int _stickStartFrame = -1;
+    private static int _stuckRetryFrames;
+    private const int MaxStickRetryFrames = 60; // ~1s of stuck frames before the safety release fires.
+
+    // Ronda 67 - resolución de hash->nombre en runtime (evita reimplementar a ciegas el algoritmo
+    // de hash de Unity fuera del proceso: se calcula con el propio Animator.StringToHash real,
+    // corriendo dentro del juego, así que no puede estar "mal" por versión/algoritmo distinto).
+    // Candidatos elegidos a partir de los nombres de estado que ya cita el propio
+    // AnimatorInyector.IsJumping()/UpdateActions() decompilado (Ronda 67): "Jump"/"Falling"/
+    // "Jump Forward"/"Falling Forward", más los dos ya conocidos de WallJump.
+    private static readonly KeyValuePair<string, int>[] CandidateStateNames = new KeyValuePair<string, int>[]
+    {
+        new KeyValuePair<string, int>("WallClimbContact", Animator.StringToHash("WallClimbContact")),
+        new KeyValuePair<string, int>("WallClimbIdle", Animator.StringToHash("WallClimbIdle")),
+        new KeyValuePair<string, int>("Falling", Animator.StringToHash("Falling")),
+        new KeyValuePair<string, int>("Falling Forward", Animator.StringToHash("Falling Forward")),
+        new KeyValuePair<string, int>("Jump", Animator.StringToHash("Jump")),
+        new KeyValuePair<string, int>("Jump Forward", Animator.StringToHash("Jump Forward")),
+        new KeyValuePair<string, int>("Idle", Animator.StringToHash("Idle")),
+    };
+
+    private static bool _loggedCandidateHashTable;
+
+    private static string ResolveStateName(int shortNameHash, float normalizedTime)
+    {
+        foreach (KeyValuePair<string, int> candidate in CandidateStateNames)
+        {
+            if (candidate.Value == shortNameHash)
+            {
+                return $"{candidate.Key} (norm:{normalizedTime:F2})";
+            }
+        }
+        return $"hash:{shortNameHash} norm:{normalizedTime:F2}";
+    }
+
+    private static string DumpFloatParameters(Animator anim)
+    {
+        List<string> floats = new List<string>();
+        foreach (AnimatorControllerParameter p in anim.parameters)
+        {
+            if (p.type == AnimatorControllerParameterType.Float)
+            {
+                float v = anim.GetFloat(p.nameHash);
+                if (Mathf.Abs(v) > 0.001f)
+                    floats.Add($"{p.name}={v:F2}");
+            }
+        }
+        return floats.Count > 0 ? string.Join(", ", floats.ToArray()) : "(none non-zero)";
+    }
+
     private static bool Prefix(WallJump __instance)
     {
         Penitent owner = __instance.EntityOwner as Penitent;
@@ -127,12 +196,57 @@ internal static class WallJump_OnUpdate_P2_Patch
         bool endStickCoolDown = stickCoolDownTimer < 0f;
         if (Player2Input.AttackHeld && !controller.IsGrounded && wallHit.collider != null && !stickToWall && endStickCoolDown)
         {
+            if (!_loggedCandidateHashTable)
+            {
+                _loggedCandidateHashTable = true;
+                string table = string.Join(", ", Array.ConvertAll(CandidateStateNames, c => $"{c.Key}={c.Value}"));
+                DashParryDebugLog.Log($"P2 WallJump hash cheat-sheet (runtime Animator.StringToHash, this process): {table}");
+            }
+
+            // Estado + parametros del Animator ANTES de tocar nada esta rama (antes de ResetTrigger/
+            // Play) - Ronda 67: confirmar si viene de un estado en loop (normalizedTime>1) y si
+            // AIR_ATTACK/FALLING ya estaban armados por AnimatorInyector este mismo frame, antes de
+            // que este método haga nada.
+            AnimatorStateInfo preState = owner.Animator.GetCurrentAnimatorStateInfo(0);
+            bool preAirAttack = owner.Animator.GetBool("AIR_ATTACK");
+            bool preFalling = owner.Animator.GetBool("FALLING");
+            // Round 69 - FallingBehaviour (the plain "Falling" state's own StateMachineBehaviour,
+            // sibling of FallingForwardBehaviour) was checked as a candidate family-1 bug for this
+            // PRE-state-specific failure - already fixed (Movement/Movement.cs,
+            // FallingBehaviour_OnStateEnter_Patch, predates the Round-numbering in this file), so
+            // it is NOT a new lead. Logging IsJumpingOff/IsClimbingCliffLede/collider-enabled here
+            // anyway in case some OTHER still-unaudited path leaves one of them in an unexpected
+            // state specifically coming from "Falling" (none of WallJump's own vanilla code reads
+            // any of these three, so they can only matter if the Animator Controller graph itself
+            // conditions a transition on them, which ilspycmd cannot show).
+            bool preIsJumpingOff = owner.IsJumpingOff;
+            bool preIsClimbingCliffLede = owner.IsClimbingCliffLede;
+            bool preColliderEnabled = owner.PlatformCharacterController.SmartPlatformCollider.enabled;
+            Vector3 preVel = controller.PlatformCharacterPhysics.Velocity;
+            float preVSpeed = controller.PlatformCharacterPhysics.VSpeed;
+            DashParryDebugLog.Log($"P2 WallJump stick START frame {Time.frameCount} AttackHeld={Player2Input.AttackHeld} AttackDown={Player2Input.AttackDown} AttackUp={Player2Input.AttackUp} stickToWall false->true wall={wallHit.collider.name} PRE-state={ResolveStateName(preState.shortNameHash, preState.normalizedTime)} PRE-AIR_ATTACK={preAirAttack} PRE-FALLING={preFalling} PRE-IsJumpingOff={preIsJumpingOff} PRE-IsClimbingCliffLede={preIsClimbingCliffLede} PRE-ColliderEnabled={preColliderEnabled} PRE-vel={preVel} PRE-vSpeed={preVSpeed:F2} PRE-floats: {DumpFloatParameters(owner.Animator)}");
             owner.Audio.SetParametersValuesByWall(wallHit.collider);
             stickToWall = true;
             StickToWallField.SetValue(__instance, true);
+            // Round 72 - fresh retry state for this new stick attempt (belt-and-suspenders: the
+            // (!stickToWall) branch below already resets these on every exit, including the
+            // safety-release path itself, but resetting again here guards against any future
+            // exit path that doesn't).
+            _stickStartFrame = Time.frameCount;
+            _stuckRetryFrames = 0;
             PlayerStickedOrientationField.SetValue(__instance, owner.Status.Orientation);
             owner.Animator.ResetTrigger("AIR_ATTACK");
             owner.Animator.Play(WallClimbContactAnim);
+            owner.Animator.SetBool("FALLING", false);
+            Vector3 postVel = controller.PlatformCharacterPhysics.Velocity;
+            DashParryDebugLog.Log($"P2 WallJump stick START frame {Time.frameCount} POST-ResetTrigger+Play AIR_ATTACK={owner.Animator.GetBool("AIR_ATTACK")} FALLING={owner.Animator.GetBool("FALLING")} vel={postVel} vSpeed={controller.PlatformCharacterPhysics.VSpeed:F2} floats: {DumpFloatParameters(owner.Animator)}");
+            // Round 69 - dump every bool Animator parameter currently true, not just the two
+            // already-suspected ones (AIR_ATTACK/FALLING) - Round 67/68 only checked those two by
+            // name; this catches any OTHER bool the (invisible, binary) Animator Controller graph
+            // might condition an "Any State" transition on, without having to guess its name in
+            // advance. Compare this line's list between a successful (PRE-state Jump Forward/
+            // Falling Forward) and a failing (PRE-state Falling) log to spot the actual differentiator.
+            DashParryDebugLog.Log($"P2 WallJump stick START frame {Time.frameCount} POST-Play all-true-bools: {DumpTrueBoolParameters(owner.Animator)}");
             owner.transform.position = GetClimbPosition(__instance, owner, wallHit.collider);
             PlayerLogicBlocker.SetBlocked(owner, true);
             Core.Input.SetBlocker("PLAYER_LOGIC", blocking: true);
@@ -148,22 +262,85 @@ internal static class WallJump_OnUpdate_P2_Patch
 
         if (stickToWall)
         {
-            // Stick(), inlined and fixed - the one line that mattered:
-            // Core.Logic.Penitent.SetOrientation(...) -> owner.SetOrientation(...).
-            JumpOffWallField.SetValue(__instance, false);
-            __instance.ToogleAbilities(false);
-            jumpOffCoolDownTimer -= Time.deltaTime;
-            JumpOffCoolDownTimerField.SetValue(__instance, jumpOffCoolDownTimer);
-            stickCoolDownTimer = __instance.StickCoolDown;
-            StickCoolDownTimerField.SetValue(__instance, stickCoolDownTimer);
-            IsJumpOffStackedField.SetValue(__instance, false);
-            controller.PlatformCharacterPhysics.Velocity = Vector3.zero;
-            controller.PlatformCharacterPhysics.VSpeed = 0f;
-            controller.PlatformCharacterPhysics.Gravity = Vector3.zero;
-            controller.PlatformCharacterPhysics.Acceleration = Vector3.zero;
-            Core.Input.SetBlocker("PLAYER_LOGIC", blocking: true);
-            EntityOrientation stickedOrientation = (EntityOrientation)PlayerStickedOrientationField.GetValue(__instance);
-            owner.SetOrientation(stickedOrientation);
+            // Edge-triggered log del bool de animación + estado real mientras está pegado.
+            bool stickOnWallBool = owner.Animator.GetBool("STICK_ON_WALL");
+            AnimatorStateInfo st = owner.Animator.GetCurrentAnimatorStateInfo(0);
+            string stateName = ResolveStateName(st.shortNameHash, st.normalizedTime);
+            int curHash = st.shortNameHash;
+            if (stickOnWallBool != _lastStickOnWallBool || curHash != _lastWallStateHash)
+            {
+                bool airAttackBool = owner.Animator.GetBool("AIR_ATTACK");
+                bool fallingBool = owner.Animator.GetBool("FALLING");
+                Vector3 vel = controller.PlatformCharacterPhysics.Velocity;
+                DashParryDebugLog.Log($"P2 WallJump while-stuck frame {Time.frameCount} STICK_ON_WALL={stickOnWallBool} state={stateName} stickToWall={stickToWall} AttackHeld={Player2Input.AttackHeld} AttackDown={Player2Input.AttackDown} AIR_ATTACK={airAttackBool} FALLING={fallingBool} all-true-bools: {DumpTrueBoolParameters(owner.Animator)} floats: {DumpFloatParameters(owner.Animator)} vel={vel} vSpeed={controller.PlatformCharacterPhysics.VSpeed:F2}");
+                _lastStickOnWallBool = stickOnWallBool;
+                _lastWallStateHash = curHash;
+            }
+
+            // Round 72 - retry Play(WallClimbContact) on every subsequent frame while STICK_ON_WALL
+            // hasn't caught on yet. Rounds 67-71 confirmed the Animator sometimes leaves the forced
+            // Play() toward a competing state (observed landing back on "Jump Forward" at
+            // normalizedTime=0.00) via a transition in the binary Animator Controller graph that
+            // isn't readable from C# (no Bool/Float parameter differs between success and failure
+            // cases) - rather than try to out-race that competing transition on a single frame
+            // (not controllable from this side), keep re-issuing Play() every frame until it takes,
+            // bounded by MaxStickRetryFrames as a safety net against a genuinely stuck case this
+            // session's logs haven't captured. Skip the very first frame of this stick attempt
+            // (Time.frameCount == _stickStartFrame): Play() never takes effect synchronously within
+            // the same Update() that calls it (Round 67), so checking STICK_ON_WALL that same frame
+            // would always look like a failure even in the normal, working case.
+            if (Time.frameCount != _stickStartFrame)
+            {
+                if (!stickOnWallBool)
+                {
+                    _stuckRetryFrames++;
+                    if (_stuckRetryFrames == 1)
+                    {
+                        DashParryDebugLog.Log($"P2 WallJump STICK_ON_WALL still False frame {Time.frameCount} state={stateName} - retrying Play(WallClimbContact)");
+                    }
+                    owner.Animator.Play(WallClimbContactAnim);
+
+                    if (_stuckRetryFrames > MaxStickRetryFrames)
+                    {
+                        DashParryDebugLog.Log($"P2 WallJump retry limit ({MaxStickRetryFrames} frames) exceeded at frame {Time.frameCount}, state={stateName} - forcing UnhangByEvent safety release");
+                        UnhangByEventMethod.Invoke(__instance, null);
+                        stickToWall = false;
+                        _stuckRetryFrames = 0;
+                    }
+                }
+                else if (_stuckRetryFrames > 0)
+                {
+                    DashParryDebugLog.Log($"P2 WallJump STICK_ON_WALL recovered to True at frame {Time.frameCount} after {_stuckRetryFrames} Play() retries, state={stateName}");
+                    _stuckRetryFrames = 0;
+                }
+            }
+
+            if (stickToWall)
+            {
+                // Stick(), inlined and fixed - the one line that mattered:
+                // Core.Logic.Penitent.SetOrientation(...) -> owner.SetOrientation(...).
+                JumpOffWallField.SetValue(__instance, false);
+                __instance.ToogleAbilities(false);
+                jumpOffCoolDownTimer -= Time.deltaTime;
+                JumpOffCoolDownTimerField.SetValue(__instance, jumpOffCoolDownTimer);
+                stickCoolDownTimer = __instance.StickCoolDown;
+                StickCoolDownTimerField.SetValue(__instance, stickCoolDownTimer);
+                IsJumpOffStackedField.SetValue(__instance, false);
+                controller.PlatformCharacterPhysics.Velocity = Vector3.zero;
+                controller.PlatformCharacterPhysics.VSpeed = 0f;
+                controller.PlatformCharacterPhysics.Gravity = Vector3.zero;
+                controller.PlatformCharacterPhysics.Acceleration = Vector3.zero;
+                Core.Input.SetBlocker("PLAYER_LOGIC", blocking: true);
+                EntityOrientation stickedOrientation = (EntityOrientation)PlayerStickedOrientationField.GetValue(__instance);
+                owner.SetOrientation(stickedOrientation);
+            }
+        }
+        else
+        {
+            // Reset edge cache cuando sale del wall-stick para que el próximo enganche loguee fresh.
+            _lastStickOnWallBool = false;
+            _lastWallStateHash = 0;
+            _stuckRetryFrames = 0;
         }
 
         if (Player2Input.JumpDown && stickToWall && jumpOffCoolDownTimer < 0f && owner.Animator.GetBool("STICK_ON_WALL") && !Gameplay.UI.UIController.instance.IsShowingMenu)
@@ -220,6 +397,24 @@ internal static class WallJump_OnUpdate_P2_Patch
         return false;
     }
 
+    // Round 69 - lists every Bool-type Animator parameter currently true, by name, regardless of
+    // whether this class already knows about it. Cheap (parameters array is small, only called at
+    // edge-triggered log points, not every frame) and avoids having to guess in advance which
+    // parameter the (binary, unreadable-via-ilspycmd) Animator Controller graph might condition an
+    // "Any State" transition on.
+    private static string DumpTrueBoolParameters(Animator animator)
+    {
+        List<string> trueBools = new List<string>();
+        foreach (AnimatorControllerParameter param in animator.parameters)
+        {
+            if (param.type == AnimatorControllerParameterType.Bool && animator.GetBool(param.name))
+            {
+                trueBools.Add(param.name);
+            }
+        }
+        return trueBools.Count > 0 ? string.Join(",", trueBools.ToArray()) : "(none)";
+    }
+
     private static Vector3 GetClimbPosition(WallJump instance, Penitent owner, Collider2D climbCollider)
     {
         float x = owner.Status.Orientation != EntityOrientation.Right
@@ -249,5 +444,55 @@ internal static class WallJump_Detach_BlockerTracking_Patch
     private static void Postfix(WallJump __instance)
     {
         PlayerLogicBlocker.SetBlocked(__instance.EntityOwner as Penitent, false);
+    }
+}
+
+// Round 72 - same gap as Stick()/Detach() above, closed the same way: UnhangByEvent() is vanilla's
+// own release path (used by EntityOwnerOnDamaged/OnCameraShakeOverthrow/CheckCancelHook's UnHang()
+// coroutine, and now also by this mod's P2 retry-timeout safety net via reflection above) but never
+// registered with PlayerLogicBlocker on its own - only the global Core.Input.SetBlocker, which
+// BlockerOverrideHelper doesn't consult. Harmony patches the method itself, so this Postfix fires
+// regardless of which call site (vanilla P1's own, or the reflection Invoke in the Prefix above)
+// triggered it.
+[HarmonyPatch(typeof(WallJump), "UnhangByEvent")]
+internal static class WallJump_UnhangByEvent_BlockerTracking_Patch
+{
+    private static void Postfix(WallJump __instance)
+    {
+        PlayerLogicBlocker.SetBlocked(__instance.EntityOwner as Penitent, false);
+    }
+}
+
+// Ronda 67 - diagnóstico puro (no toca comportamiento) para confirmar el orden real de ejecución
+// entre AnimatorInyector.Update() (SpriteAnimator.SetTrigger("AIR_ATTACK") vive dentro de su
+// AirAttack(), llamada desde UpdateActions() en la rama !grounded) y WallJump.OnUpdate() en el
+// mismo frame - la hipótesis de la Ronda 64/65 depende de cuál de los dos corre último, algo que
+// no se puede leer del C# decompilado (orden de componentes del prefab / Script Execution Order).
+// Con ambos logs usando el mismo Time.frameCount, el ORDEN DE LAS LÍNEAS en LogOutput.log para el
+// mismo número de frame revela directamente cuál corrió primero, sin necesitar un contador
+// artificial. Postfix (no Prefix) para loguear el estado real de AIR_ATTACK justo después de que
+// AnimatorInyector haya terminado de decidir si lo arma o no.
+[HarmonyPatch(typeof(Gameplay.GameControllers.Penitent.Animator.AnimatorInyector), "AirAttack")]
+internal static class AnimatorInyector_AirAttack_OrderDebugLogger_Patch
+{
+    private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(Gameplay.GameControllers.Penitent.Animator.AnimatorInyector), "_penitent");
+    private static readonly FieldInfo PlayerInputField = AccessTools.Field(typeof(Gameplay.GameControllers.Penitent.Animator.AnimatorInyector), "_playerInput");
+
+    private static void Postfix(object __instance)
+    {
+        Penitent penitent = PenitentField.GetValue(__instance) as Penitent;
+        if (penitent != CoopLocal.Player2)
+        {
+            return;
+        }
+        PlatformCharacterInput input = PlayerInputField.GetValue(__instance) as PlatformCharacterInput;
+        if (input == null || !input.Attack)
+        {
+            // AirAttack() runs every frame while airborne, but only actually calls SetTrigger when
+            // input.Attack is true (single-frame edge) - only that call matters for the race, so
+            // skip logging the (very frequent) no-op frames.
+            return;
+        }
+        DashParryDebugLog.Log($"P2 AnimatorInyector.AirAttack() SetTrigger(AIR_ATTACK) frame {Time.frameCount} (order marker vs WallJump logs at same frame)");
     }
 }

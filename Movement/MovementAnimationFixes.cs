@@ -31,6 +31,7 @@ using Gameplay.UI.Others.UIGameLogic;
 using HarmonyLib;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Reflection.Emit;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -323,6 +324,157 @@ internal static class LadderGoingUpBehaviour_OnStateEnter_Patch
 internal static class LadderStepRaiser
 {
     internal static Penitent Current;
+}
+
+// Round 66 - FallingForwardBehaviour (Gameplay.GameControllers.AnimationBehaviours.Player.Jump),
+// the animator state entered while falling forward off a ledge. Never audited before. Found from a
+// real playtest log, not a bug report: BepInEx/LogOutput.log showed hundreds of consecutive
+// NullReferenceExceptions ("GetRayCastOrigin -> IsSideBlocked -> OnStateUpdate") spamming every
+// frame for the entire duration of TWO separate room transitions, stopping exactly at "Spawning
+// enemies on level" each time.
+//
+// Root cause, confirmed against the decompiled source (not the same shape as the usual family-1
+// lazy-fallback, though OnStateEnter has that bug too - see below):
+//   private Vector2 GetRayCastOrigin(float heightOffset = 0f)
+//   {
+//       Vector3 position = Core.Logic.Penitent.transform.position;   // <-- flat P1 hardcode
+//       return new Vector2(position.x, position.y + heightOffset);
+//   }
+// This ignores the class's own (per-instance) _penitent field entirely and reads the global P1
+// singleton directly - the flat-hardcode shape already catalogued for Parry.StartParry/
+// Penitent.Damage, not the "if (_penitent == null)" shape. OnStateUpdate's slope-check raycast has
+// the identical hardcode one line further down (`Physics2D.Raycast(Core.Logic.Penitent.transform
+// .position, Vector2.down, ...)`).
+//
+// Confirmed why this only ever throws for P2's clone, never P1's: PenitentSpawnPoint.Instance()
+// (Gameplay.GameControllers.Penitent.Gizmos.PenitentSpawnPoint) does a plain
+// `Object.Instantiate(PenitentPrefab, ...)` with no DontDestroyOnLoad - P1's whole Penitent
+// GameObject (Animator, every StateMachineBehaviour instance included) gets destroyed on every
+// scene unload and freshly re-instantiated in the new scene, so nothing of P1's ever ticks during
+// the load window itself. P2, on the other hand, has had `Object.DontDestroyOnLoad(Player2
+// .gameObject)` since Round 55 specifically so its stats/position survive room transitions - which
+// also means P2's own Animator and this exact StateMachineBehaviour instance keep receiving
+// OnStateUpdate every frame through the *entire* load screen if P2 happened to be in
+// "FallingForward" when the transition trigger fired. `Framework.Managers.LogicManager.Penitent`
+// is a plain nullable auto-property (`public Penitent Penitent { get; set; }`) that only points at
+// whichever Penitent GameObject currently exists in the active scene - during the gap between the
+// old one being destroyed and the new one's Awake() re-registering it, `Core.Logic.Penitent` is
+// genuinely null, and P2's still-running instance of this class hits it every frame until the new
+// scene's own Penitent spawns. Pure coop-only bug: literally cannot happen in vanilla single-player
+// since nothing survives the scene boundary to keep calling it.
+//
+// OnStateEnter also has the ordinary family-1 lazy-fallback AND a bundled second init in the exact
+// same guard (`if (!_penitent) { _penitent = Core.Logic.Penitent; Dash dash = _penitent.Dash;
+// dash.OnStartDash = Delegate.Combine(...); }`) - handled with the same "preset both fields
+// ourselves, once, before vanilla's own check ever runs" pattern already used above for
+// GrabLadderDownBehaviour/LadderGoingUpBehaviour/LadderGoingDownBehaviour, not a blanket
+// ref-Penitent Prefix (would silently skip the Dash.OnStartDash subscription - the exact bundled-
+// init trap documented at the top of NOTES.md). `_penitent` is spelled as an auto-property here
+// (`private Penitent _penitent { get; set; }`), so the reflection target is the compiler-generated
+// backing field, same trick as ParryRepostBehaviour/ParrySuccessBehaviour in Parry/Parry.cs.
+[HarmonyPatch(typeof(FallingForwardBehaviour), "OnStateEnter")]
+internal static class FallingForwardBehaviour_OnStateEnter_Patch
+{
+    private static readonly FieldInfo PenitentBackingField =
+        AccessTools.Field(typeof(FallingForwardBehaviour), "<_penitent>k__BackingField");
+    private static readonly MethodInfo OnStartDashMethod =
+        AccessTools.Method(typeof(FallingForwardBehaviour), "OnStartDash");
+
+    private static void Prefix(FallingForwardBehaviour __instance, Animator animator)
+    {
+        if (PenitentBackingField.GetValue(__instance) != null)
+        {
+            return;
+        }
+
+        Penitent owner = animator.GetComponentInParent<Penitent>();
+        if (owner == null)
+        {
+            return;
+        }
+
+        PenitentBackingField.SetValue(__instance, owner);
+        Dash dash = owner.Dash;
+        Core.SimpleEvent handler = (Core.SimpleEvent)Delegate.CreateDelegate(typeof(Core.SimpleEvent), __instance, OnStartDashMethod);
+        dash.OnStartDash = (Core.SimpleEvent)Delegate.Combine(dash.OnStartDash, handler);
+    }
+}
+
+// GetRayCastOrigin has no Animator parameter to resolve an owner from directly - reads the
+// (now-correct, thanks to the Prefix above) _penitent backing field instead of re-deriving it, and
+// fully replaces the method body (private, no reason to leave the Core.Logic.Penitent hardcode
+// reachable at all - fixes both the NRE and the wrong-raycast-origin-for-P2 bug in one patch).
+[HarmonyPatch(typeof(FallingForwardBehaviour), "GetRayCastOrigin")]
+internal static class FallingForwardBehaviour_GetRayCastOrigin_Patch
+{
+    private static readonly FieldInfo PenitentBackingField =
+        AccessTools.Field(typeof(FallingForwardBehaviour), "<_penitent>k__BackingField");
+
+    private static bool Prefix(FallingForwardBehaviour __instance, float heightOffset, ref Vector2 __result)
+    {
+        Penitent owner = (Penitent)PenitentBackingField.GetValue(__instance);
+        if (owner == null)
+        {
+            return true; // nothing resolved yet - fall back to original (matches pre-fix behavior)
+        }
+
+        Vector3 position = owner.transform.position;
+        __result = new Vector2(position.x, position.y + heightOffset);
+        return false;
+    }
+}
+
+// OnStateUpdate's slope-check raycast (`Physics2D.Raycast(Core.Logic.Penitent.transform.position,
+// Vector2.down, 1.5f, RayCastLayerDetection)`) is the second and last direct Core.Logic.Penitent
+// read in this class - everything else in OnStateUpdate already goes through _penitent correctly.
+// Same single-call-site Transpiler pattern as VerticalAttack_OnUpdate_P2_TimedPress_Patch in
+// Abilities/RangedAndVerticalAttackFixes.cs: a companion Prefix stashes which instance is currently
+// running (safe - Unity's single-threaded per-frame Animator callbacks never interleave two
+// FallingForwardBehaviour.OnStateUpdate calls at once), and the retargeted call substitutes that
+// instance's own (correct) _penitent for the LogicManager.Penitent property read.
+[HarmonyPatch(typeof(FallingForwardBehaviour), "OnStateUpdate")]
+internal static class FallingForwardBehaviour_OnStateUpdate_Patch
+{
+    private static readonly FieldInfo PenitentBackingField =
+        AccessTools.Field(typeof(FallingForwardBehaviour), "<_penitent>k__BackingField");
+    private static readonly MethodInfo LogicManagerGetPenitentMethod =
+        AccessTools.PropertyGetter(typeof(LogicManager), "Penitent");
+    private static readonly MethodInfo ReplacementMethod =
+        AccessTools.Method(typeof(FallingForwardBehaviour_OnStateUpdate_Patch), nameof(GetOwnerForSlopeRaycast));
+
+    private static FallingForwardBehaviour currentInstance;
+
+    private static void Prefix(FallingForwardBehaviour __instance)
+    {
+        currentInstance = __instance;
+    }
+
+    private static Penitent GetOwnerForSlopeRaycast(LogicManager logic)
+    {
+        FallingForwardBehaviour self = currentInstance;
+        Penitent owner = self != null ? (Penitent)PenitentBackingField.GetValue(self) : null;
+        return owner != null ? owner : logic.Penitent;
+    }
+
+    private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+    {
+        bool patched = false;
+        foreach (CodeInstruction instruction in instructions)
+        {
+            if (!patched && (instruction.opcode == OpCodes.Call || instruction.opcode == OpCodes.Callvirt) &&
+                instruction.operand is MethodInfo method && method == LogicManagerGetPenitentMethod)
+            {
+                instruction.opcode = OpCodes.Call;
+                instruction.operand = ReplacementMethod;
+                patched = true;
+            }
+            yield return instruction;
+        }
+        if (!patched)
+        {
+            DashParryDebugLog.Log("[DashParryDebug] FallingForwardBehaviour.OnStateUpdate transpiler did NOT find LogicManager.get_Penitent() - P2 slope-raycast fix NOT applied!");
+        }
+    }
 }
 
 

@@ -126,11 +126,16 @@ internal static class UpgradeCreditState
 [HarmonyPatch(typeof(Tools.Playmaker2.Action.LifeUpgrade), "OnEnter")]
 internal static class LifeUpgrade_CreditP2_Patch
 {
-    private static bool Prefix(Fsm fsm) => UpgradeCreditState.TryBlockForPlayer2(fsm);
+    // OnEnter() takes no parameters - "fsm" only exists as the private field `fsm` on the base
+    // class HutongGames.PlayMaker.FsmStateAction (confirmed via ilspycmd). Harmony's reversed-field
+    // convention needs the 3-underscore prefix (___fsm) to inject it; a bare "fsm" parameter name
+    // doesn't match any real method parameter, which is exactly the collateral finding from Round
+    // 66's playtest log ("Parameter "fsm" not found in method ... LifeUpgrade::OnEnter()").
+    private static bool Prefix(Fsm ___fsm) => UpgradeCreditState.TryBlockForPlayer2(___fsm);
 
-    private static void Postfix(Fsm fsm, Tools.Playmaker2.Action.LifeUpgrade __instance)
+    private static void Postfix(Fsm ___fsm, Tools.Playmaker2.Action.LifeUpgrade __instance)
     {
-        if (!UpgradeCreditState.TryConsumeForPlayer2(fsm, out Penitent p2)) return;
+        if (!UpgradeCreditState.TryConsumeForPlayer2(___fsm, out Penitent p2)) return;
         p2.Stats.Life.Upgrade();
         p2.Stats.Life.SetToCurrentMax(); // mirrors vanilla LifeUpgrade.OnEnter
         Player2StatsSync.PersistPermanentBonus(p2);
@@ -142,11 +147,11 @@ internal static class LifeUpgrade_CreditP2_Patch
 [HarmonyPatch(typeof(Tools.Playmaker2.Action.StrengthUpgrade), "OnEnter")]
 internal static class StrengthUpgrade_CreditP2_Patch
 {
-    private static bool Prefix(Fsm fsm) => UpgradeCreditState.TryBlockForPlayer2(fsm);
+    private static bool Prefix(Fsm ___fsm) => UpgradeCreditState.TryBlockForPlayer2(___fsm);
 
-    private static void Postfix(Fsm fsm, Tools.Playmaker2.Action.StrengthUpgrade __instance)
+    private static void Postfix(Fsm ___fsm, Tools.Playmaker2.Action.StrengthUpgrade __instance)
     {
-        if (!UpgradeCreditState.TryConsumeForPlayer2(fsm, out Penitent p2)) return;
+        if (!UpgradeCreditState.TryConsumeForPlayer2(___fsm, out Penitent p2)) return;
         p2.Stats.Strength.Upgrade();
         Player2StatsSync.PersistPermanentBonus(p2);
         __instance.Finish();
@@ -157,11 +162,11 @@ internal static class StrengthUpgrade_CreditP2_Patch
 [HarmonyPatch(typeof(Tools.Playmaker2.Action.BeadUpgrade), "OnEnter")]
 internal static class BeadUpgrade_CreditP2_Patch
 {
-    private static bool Prefix(Fsm fsm) => UpgradeCreditState.TryBlockForPlayer2(fsm);
+    private static bool Prefix(Fsm ___fsm) => UpgradeCreditState.TryBlockForPlayer2(___fsm);
 
-    private static void Postfix(Fsm fsm, Tools.Playmaker2.Action.BeadUpgrade __instance)
+    private static void Postfix(Fsm ___fsm, Tools.Playmaker2.Action.BeadUpgrade __instance)
     {
-        if (!UpgradeCreditState.TryConsumeForPlayer2(fsm, out Penitent p2)) return;
+        if (!UpgradeCreditState.TryConsumeForPlayer2(___fsm, out Penitent p2)) return;
         p2.Stats.BeadSlots.Upgrade(); // BeadSlots is an Attribute-derived property, not a plain int
         Player2StatsSync.PersistPermanentBonus(p2);
         __instance.Finish();
@@ -172,11 +177,11 @@ internal static class BeadUpgrade_CreditP2_Patch
 [HarmonyPatch(typeof(Tools.Playmaker2.Action.FlaskHealthUpgrade), "OnEnter")]
 internal static class FlaskHealthUpgrade_CreditP2_Patch
 {
-    private static bool Prefix(Fsm fsm) => UpgradeCreditState.TryBlockForPlayer2(fsm);
+    private static bool Prefix(Fsm ___fsm) => UpgradeCreditState.TryBlockForPlayer2(___fsm);
 
-    private static void Postfix(Fsm fsm, Tools.Playmaker2.Action.FlaskHealthUpgrade __instance)
+    private static void Postfix(Fsm ___fsm, Tools.Playmaker2.Action.FlaskHealthUpgrade __instance)
     {
-        if (!UpgradeCreditState.TryConsumeForPlayer2(fsm, out Penitent p2)) return;
+        if (!UpgradeCreditState.TryConsumeForPlayer2(___fsm, out Penitent p2)) return;
         p2.Stats.FlaskHealth.Upgrade();
         Player2StatsSync.PersistPermanentBonus(p2);
         __instance.Finish();
@@ -187,11 +192,11 @@ internal static class FlaskHealthUpgrade_CreditP2_Patch
 [HarmonyPatch(typeof(Tools.Playmaker2.Action.FervourUpgrade), "OnEnter")]
 internal static class FervourUpgrade_CreditP2_Patch
 {
-    private static bool Prefix(Fsm fsm) => UpgradeCreditState.TryBlockForPlayer2(fsm);
+    private static bool Prefix(Fsm ___fsm) => UpgradeCreditState.TryBlockForPlayer2(___fsm);
 
-    private static void Postfix(Fsm fsm, Tools.Playmaker2.Action.FervourUpgrade __instance)
+    private static void Postfix(Fsm ___fsm, Tools.Playmaker2.Action.FervourUpgrade __instance)
     {
-        if (!UpgradeCreditState.TryConsumeForPlayer2(fsm, out Penitent p2)) return;
+        if (!UpgradeCreditState.TryConsumeForPlayer2(___fsm, out Penitent p2)) return;
         p2.Stats.Fervour.Upgrade();
         p2.Stats.Fervour.SetToCurrentMax(); // mirrors vanilla FervourUpgrade.OnEnter
         Player2StatsSync.PersistPermanentBonus(p2);
@@ -203,11 +208,11 @@ internal static class FervourUpgrade_CreditP2_Patch
 [HarmonyPatch(typeof(Tools.Playmaker2.Action.MeaCulpaUpgrade), "OnEnter")]
 internal static class MeaCulpaUpgrade_CreditP2_Patch
 {
-    private static bool Prefix(Fsm fsm) => UpgradeCreditState.TryBlockForPlayer2(fsm);
+    private static bool Prefix(Fsm ___fsm) => UpgradeCreditState.TryBlockForPlayer2(___fsm);
 
-    private static void Postfix(Fsm fsm, Tools.Playmaker2.Action.MeaCulpaUpgrade __instance)
+    private static void Postfix(Fsm ___fsm, Tools.Playmaker2.Action.MeaCulpaUpgrade __instance)
     {
-        if (!UpgradeCreditState.TryConsumeForPlayer2(fsm, out Penitent p2)) return;
+        if (!UpgradeCreditState.TryConsumeForPlayer2(___fsm, out Penitent p2)) return;
         p2.Stats.MeaCulpa.Upgrade(); // MeaCulpa is an Attribute-derived property, not a plain float
         Player2StatsSync.PersistPermanentBonus(p2);
         __instance.Finish();
@@ -218,11 +223,11 @@ internal static class MeaCulpaUpgrade_CreditP2_Patch
 [HarmonyPatch(typeof(Tools.Playmaker2.Action.FlaskAdd), "OnEnter")]
 internal static class FlaskAdd_CreditP2_Patch
 {
-    private static bool Prefix(Fsm fsm) => UpgradeCreditState.TryBlockForPlayer2(fsm);
+    private static bool Prefix(Fsm ___fsm) => UpgradeCreditState.TryBlockForPlayer2(___fsm);
 
-    private static void Postfix(Fsm fsm, Tools.Playmaker2.Action.FlaskAdd __instance)
+    private static void Postfix(Fsm ___fsm, Tools.Playmaker2.Action.FlaskAdd __instance)
     {
-        if (!UpgradeCreditState.TryConsumeForPlayer2(fsm, out Penitent p2)) return;
+        if (!UpgradeCreditState.TryConsumeForPlayer2(___fsm, out Penitent p2)) return;
         p2.Stats.Flask.Upgrade(); // mirrors vanilla FlaskAdd.OnEnter (Stats.Flask.Upgrade())
         Player2StatsSync.PersistPermanentBonus(p2);
         __instance.Finish();

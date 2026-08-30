@@ -245,6 +245,8 @@ internal static class RangeAttack_OnStart_P2_Patch
 [HarmonyPatch(typeof(RangeAttack), "OnUpdate")]
 internal static class RangeAttack_OnUpdate_P2_Patch
 {
+    private static readonly Dictionary<RangeAttack, string> lastRangeSkill = new Dictionary<RangeAttack, string>();
+
     private static bool Prefix(RangeAttack __instance)
     {
         Penitent owner = RangeAttackP2Shared.OwnerOf(__instance);
@@ -284,6 +286,12 @@ internal static class RangeAttack_OnUpdate_P2_Patch
         }
 
         UnlockableSkill lastUnlockedSkill = (UnlockableSkill)RangeAttackP2Shared.GetLastUnlockedSkillMethod.Invoke(__instance, null);
+        string curId = lastUnlockedSkill != null ? lastUnlockedSkill.id : "null";
+        if (!lastRangeSkill.TryGetValue(__instance, out string last) || last != curId)
+        {
+            lastRangeSkill[__instance] = curId;
+            DashParryDebugLog.Log($"[Ability] RangeAttack P2 GetLastUnlockedSkill -> {curId} (owner={DashParryDebugLog.Label(owner)}:{owner.GetInstanceID()} viewP2={Player2MenuView.IsInventoryP2View})");
+        }
         if (lastUnlockedSkill == null || owner.Status.Dead)
         {
             return false;
@@ -372,5 +380,71 @@ internal static class RangeAttack_InstanceProjectile_P2_Patch
         position.y = owner.DamageArea.Center().y + 0.2f;
         PoolManager.Instance.ReuseObject(__instance.RangeAttackProjectile, position, Quaternion.identity);
         return false;
+    }
+}
+
+// --- Logging adicional Ronda 74 para Skill Tree compartido ---
+
+[HarmonyPatch(typeof(VerticalAttack), "OnUpdate")]
+internal static class VerticalAttack_OnUpdate_SkillLog_Patch
+{
+    private static readonly Dictionary<VerticalAttack, string> lastVerticalSkill = new Dictionary<VerticalAttack, string>();
+    private static readonly MethodInfo GetLastSkillMethod = AccessTools.Method(typeof(Ability), "GetLastUnlockedSkill");
+
+    private static void Postfix(VerticalAttack __instance)
+    {
+        Penitent owner = __instance.EntityOwner as Penitent;
+        if (owner == null || owner != CoopLocal.Player2) return;
+        // Solo loguear cuando intenta vertical attack (cerca de gate) para no spamear
+        // Chequeamos si está en aire y con input relevante
+        if (!owner.Status.IsGrounded && owner.PlatformCharacterInput != null && owner.PlatformCharacterInput.isJoystickDown)
+        {
+            UnlockableSkill skill = (UnlockableSkill)GetLastSkillMethod.Invoke(__instance, null);
+            string curId = skill != null ? skill.id : "null";
+            if (!lastVerticalSkill.TryGetValue(__instance, out string last) || last != curId)
+            {
+                lastVerticalSkill[__instance] = curId;
+                DashParryDebugLog.Log($"[Ability] VerticalAttack P2 GetLastUnlockedSkill -> {curId} (owner={DashParryDebugLog.Label(owner)}:{owner.GetInstanceID()}) isGrounded={owner.Status.IsGrounded} vSpeed={owner.PlatformCharacterController.PlatformCharacterPhysics.VSpeed:F2}");
+            }
+        }
+    }
+}
+
+[HarmonyPatch(typeof(Gameplay.GameControllers.Penitent.Animator.AnimatorInyector), "ChargeAttackTriggered")]
+internal static class AnimatorInyector_ChargeAttackTriggered_SkillLog_Patch
+{
+    private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(Gameplay.GameControllers.Penitent.Animator.AnimatorInyector), "_penitent");
+    private static readonly Dictionary<Gameplay.GameControllers.Penitent.Animator.AnimatorInyector, string> lastChargeSkill = new Dictionary<Gameplay.GameControllers.Penitent.Animator.AnimatorInyector, string>();
+
+    // Round 76 audit: ChargeAttackTriggered() runs every single frame while grounded (called from
+    // AnimatorInyector.ChargedAttack(), itself called from UpdateActions() every Update() while
+    // _isGrounded) - re-resolving these via AccessTools.Property/Method on every call (as the
+    // original version of this patch did) repeats a reflection member lookup every frame P2 is
+    // grounded, whether or not anything ends up being logged. Cached once, same pattern already
+    // used by RangeAttackP2Shared/VerticalAttack_OnUpdate_SkillLog_Patch in this same file.
+    private static readonly PropertyInfo HasEnoughFervourProperty = AccessTools.Property(typeof(Ability), "HasEnoughFervour");
+    private static readonly MethodInfo GetLastUnlockedSkillMethod = AccessTools.Method(typeof(Ability), "GetLastUnlockedSkill");
+
+    private static void Prefix(Gameplay.GameControllers.Penitent.Animator.AnimatorInyector __instance)
+    {
+        Penitent penitent = PenitentField.GetValue(__instance) as Penitent;
+        if (penitent == null || penitent != CoopLocal.Player2) return;
+        var chargedAttack = penitent.ChargedAttack;
+        string curId = "null";
+        bool available = false;
+        bool hasFervour = false;
+        if (chargedAttack != null)
+        {
+            available = chargedAttack.IsAvailableSkilledAbility;
+            if (HasEnoughFervourProperty != null) hasFervour = (bool)HasEnoughFervourProperty.GetValue(chargedAttack, null);
+            var skill = GetLastUnlockedSkillMethod.Invoke(chargedAttack, null) as UnlockableSkill;
+            curId = skill != null ? skill.id : "null";
+        }
+        string key = $"{curId}:{available}";
+        if (!lastChargeSkill.TryGetValue(__instance, out string last) || last != key)
+        {
+            lastChargeSkill[__instance] = key;
+            DashParryDebugLog.Log($"[Ability] ChargedAttack P2 IsAvailableSkilledAbility={available} lastSkill={curId} (owner={DashParryDebugLog.Label(penitent)}:{penitent.GetInstanceID()} IsCharging={penitent.IsChargingAttack} HasFervour={hasFervour})");
+        }
     }
 }
