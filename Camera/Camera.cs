@@ -28,6 +28,7 @@ using Gameplay.GameControllers.Penitent.Gizmos;
 using Gameplay.GameControllers.Penitent.InputSystem;
 using Gameplay.GameControllers.Penitent.Sensor;
 using Gameplay.UI.Others.UIGameLogic;
+using DG.Tweening;
 using HarmonyLib;
 using System.Collections.Generic;
 using System.Reflection;
@@ -344,6 +345,161 @@ internal static class CameraTargetModeIndicator
         label.alignment = TMPro.TextAlignmentOptions.TopRight;
         label.color = Color.white;
         label.text = "";
+    }
+}
+
+// Ronda 78: CameraPlayerOffset forward-focus horizontal. Vanilla stores _penitent = Core.Logic.Penitent
+// once in UpdateNewParams() (called only on real level loads via LevelManager.UpdateNewCameraParams)
+// and then LateUpdate() every frame reads _penitent.Status.Orientation to tween
+// ProCamera2D.OverallOffset.x (XOffset=1.5) via DOTween "ForwardFocus". No code path ever
+// reassigns _penitent based on which CameraTarget the camera actually follows, so in F10
+// P2Only the horizontal offset follows P1 orientation and displaces P2 ~1.5u, and in Coop
+// it stays biased to P1. Fix keeps P1Only vanilla, makes P2Only track P2, and centers Coop
+// (OverallOffset.x -> 0, no forward tracking).
+[HarmonyPatch(typeof(CameraPlayerOffset), nameof(CameraPlayerOffset.UpdateNewParams))]
+internal static class CameraPlayerOffset_UpdateNewParams_Patch
+{
+    private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(CameraPlayerOffset), "_penitent");
+    private static readonly FieldInfo ProCameraField = AccessTools.Field(typeof(CameraPlayerOffset), "_proCamera2D");
+    private static readonly FieldInfo PlayerCurrentOrientationField = AccessTools.Field(typeof(CameraPlayerOffset), "_playerCurrentOrientation");
+    private static readonly FieldInfo PlayerLastOrientationField = AccessTools.Field(typeof(CameraPlayerOffset), "_playerLastOrientation");
+
+    private static void Postfix(CameraPlayerOffset __instance)
+    {
+        if (PenitentField == null || ProCameraField == null)
+        {
+            return;
+        }
+
+        CameraDebugTargetMode mode = CameraTargetDebugToggle.Mode;
+        ProCamera2D proCamera2D = __instance.GetComponent<ProCamera2D>();
+        if (proCamera2D == null)
+        {
+            proCamera2D = ProCameraField.GetValue(__instance) as ProCamera2D;
+        }
+        if (proCamera2D == null)
+        {
+            return;
+        }
+
+        if (mode == CameraDebugTargetMode.P2Only && CoopLocal.Player2 != null)
+        {
+            Penitent p2 = CoopLocal.Player2;
+            PenitentField.SetValue(__instance, p2);
+            EntityOrientation orientation = p2.Status.Orientation;
+            if (PlayerCurrentOrientationField != null)
+            {
+                PlayerCurrentOrientationField.SetValue(__instance, orientation);
+            }
+            if (PlayerLastOrientationField != null)
+            {
+                PlayerLastOrientationField.SetValue(__instance, orientation);
+            }
+            if (DOTween.IsTweening("ForwardFocus"))
+            {
+                DOTween.Kill("ForwardFocus");
+            }
+            float targetX = (orientation == EntityOrientation.Left) ? -__instance.XOffset : __instance.XOffset;
+            // Replicate SetCameraXOffset with immediate (0f) tween as vanilla does on load
+            if (__instance.PlayerTarget != null)
+            {
+                DOTween.To(() => proCamera2D.OverallOffset.x, x => proCamera2D.OverallOffset.x = x, targetX, 0f)
+                    .SetEase(Ease.OutSine).SetId("ForwardFocus");
+                // Ensure immediate value in case 0-duration tween does not apply synchronously
+                Vector2 offset = proCamera2D.OverallOffset;
+                offset.x = targetX;
+                proCamera2D.OverallOffset = offset;
+            }
+            // Keep DefaultTargetOffset in sync with the new OverallOffset (vanilla sets it to OverallOffset after tween)
+            var prop = AccessTools.Property(typeof(CameraPlayerOffset), "DefaultTargetOffset");
+            if (prop != null)
+            {
+                prop.SetValue(__instance, proCamera2D.OverallOffset, null);
+            }
+        }
+        else if (mode == CameraDebugTargetMode.Coop)
+        {
+            if (DOTween.IsTweening("ForwardFocus"))
+            {
+                DOTween.Kill("ForwardFocus");
+            }
+            if (Mathf.Abs(proCamera2D.OverallOffset.x) > 0.001f)
+            {
+                DOTween.To(() => proCamera2D.OverallOffset.x, x => proCamera2D.OverallOffset.x = x, 0f, 0f)
+                    .SetEase(Ease.OutSine).SetId("ForwardFocus");
+                Vector2 offset = proCamera2D.OverallOffset;
+                offset.x = 0f;
+                proCamera2D.OverallOffset = offset;
+            }
+            var prop = AccessTools.Property(typeof(CameraPlayerOffset), "DefaultTargetOffset");
+            if (prop != null)
+            {
+                prop.SetValue(__instance, proCamera2D.OverallOffset, null);
+            }
+            // Disable forward tracking for Coop: LateUpdate will early-return and stay centered
+            PenitentField.SetValue(__instance, null);
+        }
+        else
+        {
+            // P1Only: leave vanilla (P1) as-is
+        }
+    }
+}
+
+[HarmonyPatch(typeof(CameraPlayerOffset), "LateUpdate")]
+internal static class CameraPlayerOffset_LateUpdate_Patch
+{
+    private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(CameraPlayerOffset), "_penitent");
+
+    private static bool Prefix(CameraPlayerOffset __instance)
+    {
+        CameraDebugTargetMode mode = CameraTargetDebugToggle.Mode;
+
+        if (mode == CameraDebugTargetMode.P2Only && CoopLocal.Player2 != null)
+        {
+            // Ensure vanilla LateUpdate tracks P2 instead of stale P1
+            if (PenitentField != null)
+            {
+                object current = PenitentField.GetValue(__instance);
+                if (!ReferenceEquals(current, CoopLocal.Player2))
+                {
+                    PenitentField.SetValue(__instance, CoopLocal.Player2);
+                }
+            }
+            return true; // run vanilla logic with corrected _penitent
+        }
+
+        if (mode == CameraDebugTargetMode.Coop)
+        {
+            // Centered, no forward focus in Coop: keep OverallOffset.x at 0
+            ProCamera2D proCamera2D = __instance.GetComponent<ProCamera2D>();
+            if (proCamera2D != null && Mathf.Abs(proCamera2D.OverallOffset.x) > 0.001f)
+            {
+                if (DOTween.IsTweening("ForwardFocus"))
+                {
+                    DOTween.Kill("ForwardFocus");
+                }
+                DOTween.To(() => proCamera2D.OverallOffset.x, x => proCamera2D.OverallOffset.x = x, 0f, __instance.ElapsedTime)
+                    .SetEase(Ease.OutSine).SetId("ForwardFocus");
+            }
+            // Skip vanilla P1 tracking entirely for Coop
+            return false;
+        }
+
+        // P1Only or fallback: ensure _penitent is P1 if it was nulled for Coop
+        if (mode == CameraDebugTargetMode.P1Only)
+        {
+            Penitent p1 = Core.Logic != null ? Core.Logic.Penitent : null;
+            if (p1 != null && PenitentField != null)
+            {
+                object current = PenitentField.GetValue(__instance);
+                if (!ReferenceEquals(current, p1))
+                {
+                    PenitentField.SetValue(__instance, p1);
+                }
+            }
+        }
+        return true;
     }
 }
 

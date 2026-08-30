@@ -28,6 +28,7 @@ using Gameplay.GameControllers.Penitent.Gizmos;
 using Gameplay.GameControllers.Penitent.InputSystem;
 using Gameplay.GameControllers.Penitent.Sensor;
 using Gameplay.UI.Others.UIGameLogic;
+using Gameplay.UI.Others.MenuLogic;
 using HarmonyLib;
 using System.Collections.Generic;
 using System.Reflection;
@@ -129,6 +130,7 @@ internal static class Player2Pad
     internal static bool ParryDown => ButtonDown("Left Bumper", "LB", "L1", "Left Shoulder");
     internal static bool HealDown => ButtonDown("Right Bumper", "RB", "R1", "Right Shoulder");
     internal static bool InteractDown => ButtonDown("Y Button", "Y");
+    internal static bool StartDown => ButtonDown("Start");
 
     internal static bool DashDown => AxisDown("DashTrigger", "Right Trigger", "RT", "R2");
     internal static bool PrayerActivateDown => AxisDown("PrayerTrigger", "Left Trigger", "LT", "L2");
@@ -399,7 +401,9 @@ internal static class Player2Input
 
     // Keyboard-only - opening the shared inventory/prayer menu isn't gamepad-mapped (not asked
     // for), so this is a plain false in Gamepad mode rather than a guessed button.
-    internal static bool MenuDown => Mode == Player2InputMode.Keyboard && Input.GetKeyDown(Player2Keys.Menu);
+    internal static bool MenuDown => Mode == Player2InputMode.Keyboard
+        ? Input.GetKeyDown(Player2Keys.Menu)
+        : Player2Pad.StartDown;
 
     private static bool everTicked;
 
@@ -437,21 +441,49 @@ internal static class Player2Input
             RawButtonScanLog.Tick();
         }
 
-        // Ronda 49: ocultado a pedido del usuario - el tuner interactivo usa flechas/./-/+, las
+// Dentro de Tick(), lógica P2 para abrir menú de inventario:
+        if (MenuDown && Gameplay.UI.UIController.instance != null)
+        {
+            NewInventoryWidget widget = NewInventoryMenuField.GetValue(Gameplay.UI.UIController.instance) as NewInventoryWidget;
+            bool alreadyOpenAsP1 = widget != null && widget.currentlyActive && !Player2MenuView.IsInventoryP2View;
+            if (alreadyOpenAsP1)
+            {
+                // Ya abierto mostrando P1 - cambiar a vista P2 sin cerrar el menú.
+                Player2MenuView.SkillViewPlayer = 1;
+                Player2MenuView.InventoryViewPlayer = 1;
+                object currentTab = CurrentTabTypeField.GetValue(widget);
+                SelectTabMethod.Invoke(widget, new object[] { currentTab, false });
+            }
+            else
+            {
+                // Cerrado (abrir como P2) o ya abierto mostrando P2 (cerrar normal, toggle).
+                if (widget == null || !widget.currentlyActive)
+                {
+                    Player2MenuView.RequestOpenAsP2();
+                }
+                Gameplay.UI.UIController.instance.ToggleInventoryMenu();
+            }
+        }
+// Ronda 49: ocultado a pedido del usuario - el tuner interactivo usa flechas/./-/+, las
         // mismas teclas con historial de solaparse con P1. La clase sigue intacta en
         // HUD/HudPositionTuner.cs por si se necesita retomar el ajuste manual del HUD más adelante;
         // solo se dejó de invocar su Tick().
         // Player2HudPositionTuner.Tick();
-        Player2PurgePoints.Tick();
+Player2PurgePoints.Tick();
+        }
 
         // Opening the shared inventory/prayer menu isn't per-player state (there's only one
         // save's worth of inventory/prayers), so this just calls the same public method the
         // game's own menu button does - no Ability/Rewired-owner scoping needed.
-        if (MenuDown && Gameplay.UI.UIController.instance != null)
-        {
-            Gameplay.UI.UIController.instance.ToggleInventoryMenu();
-        }
-    }
+// Ronda 49: ocultado a pedido del usuario - el tuner interactivo usa flechas/./-/+, las
+
+    private static readonly System.Reflection.FieldInfo NewInventoryMenuField =
+        AccessTools.Field(typeof(Gameplay.UI.UIController), "newInventoryMenu");
+    private static readonly System.Reflection.FieldInfo CurrentTabTypeField =
+        AccessTools.Field(typeof(NewInventoryWidget), "currentTabType");
+    private static readonly System.Reflection.MethodInfo SelectTabMethod =
+        AccessTools.Method(typeof(NewInventoryWidget), "SelectTab",
+            new[] { typeof(NewInventoryWidget.TabType), typeof(bool) });
 
     private static Rewired.ControllerType ExcludedFromPlayer1 =>
         Mode == Player2InputMode.Gamepad ? Rewired.ControllerType.Joystick : Rewired.ControllerType.Keyboard;

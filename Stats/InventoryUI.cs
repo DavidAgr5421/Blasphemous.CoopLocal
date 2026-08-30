@@ -2,6 +2,7 @@ using Framework.Inventory;
 using Framework.Managers;
 using Gameplay.UI.Others.MenuLogic;
 using HarmonyLib;
+using System.Reflection;
 using UnityEngine;
 
 namespace Blasphemous.CoopLocal;
@@ -26,6 +27,46 @@ internal static class Grid_ShowLayout_P2_Patch
                 var cur = curTypeField.GetValue(__instance);
                 mi.Invoke(__instance, new object[] { cur });
             }
+        }
+    }
+}
+
+[HarmonyPatch(typeof(NewInventory_LayoutGrid), "ShowLayout")]
+internal static class Grid_ShowLayout_P2_ItemSource_Patch
+{
+    private static readonly MethodInfo FillGridElementsGeneric =
+        AccessTools.Method(typeof(NewInventory_LayoutGrid), "FillGridElements");
+
+    private static bool Prefix(NewInventory_LayoutGrid __instance, NewInventoryWidget.TabType tabType, bool editMode)
+    {
+        if (!Player2MenuView.IsInventoryP2View) return true; // vista P1 - vanilla intacto
+        if (Core.InventoryManager == null) return true;
+
+        switch (tabType)
+        {
+            case NewInventoryWidget.TabType.Prayers:
+                Invoke<Prayer>(InventoryManager.ItemType.Prayer,
+                    Core.InventoryManager.GetPrayersOwned(), p => Player2InventoryManager.IsPrayerOwned(p.id));
+                return false;
+            case NewInventoryWidget.TabType.Rosary:
+                Invoke<RosaryBead>(InventoryManager.ItemType.Bead,
+                    Core.InventoryManager.GetRosaryBeadOwned(), b => Player2InventoryManager.IsOwnedBead(b.id));
+                return false;
+            case NewInventoryWidget.TabType.Sword:
+                Invoke<Sword>(InventoryManager.ItemType.Sword,
+                    Core.InventoryManager.GetSwordsOwned(), s => Player2InventoryManager.IsSwordOwned(s.id));
+                return false;
+            default:
+                // Collectables/Reliquary/Quest - sin concepto per-player todavía, vanilla intacto
+                return true;
+        }
+
+        void Invoke<T>(InventoryManager.ItemType type, System.Collections.ObjectModel.ReadOnlyCollection<T> all, System.Func<T, bool> ownedByP2) where T : BaseInventoryObject
+        {
+            var list = new System.Collections.Generic.List<T>();
+            foreach (var item in all) if (ownedByP2(item)) list.Add(item);
+            var closed = FillGridElementsGeneric.MakeGenericMethod(typeof(T));
+            closed.Invoke(__instance, new object[] { type, list.AsReadOnly() });
         }
     }
 }
@@ -76,51 +117,6 @@ internal static class Grid_EquipObject_P2_Patch
             case InventoryManager.ItemType.Sword:
                 Player2InventoryManager.EquipSword(obj.id);
                 return false;
-        }
-        return true;
-    }
-}
-
-[HarmonyPatch(typeof(NewInventory_LayoutGrid), "UnEquipObject")]
-internal static class Grid_UnEquipObject_P2_Patch
-{
-    private static bool Prefix(NewInventory_LayoutGrid __instance, BaseInventoryObject obj)
-    {
-        if (!Player2MenuView.IsInventoryP2View) return true;
-        if (obj == null) return false;
-        var typeField = AccessTools.Field(typeof(NewInventory_LayoutGrid), "currentItemType");
-        var cur = (InventoryManager.ItemType)typeField.GetValue(__instance);
-        switch (cur)
-        {
-            case InventoryManager.ItemType.Prayer: Player2InventoryManager.UnequipPrayer(); return false;
-            case InventoryManager.ItemType.Bead: Player2InventoryManager.UnequipBead(obj.id); return false;
-            case InventoryManager.ItemType.Sword: Player2InventoryManager.UnequipSword(); return false;
-        }
-        return true;
-    }
-}
-
-[HarmonyPatch(typeof(NewInventory_LayoutGrid), "GetFirstEmptySlot")]
-internal static class Grid_GetFirstEmptySlot_P2_Patch
-{
-    private static bool Prefix(NewInventory_LayoutGrid __instance, ref int __result)
-    {
-        if (!Player2MenuView.IsInventoryP2View) return true;
-        var typeField = AccessTools.Field(typeof(NewInventory_LayoutGrid), "currentItemType");
-        var cur = (InventoryManager.ItemType)typeField.GetValue(__instance);
-        if (cur == InventoryManager.ItemType.Bead)
-        {
-            __result = Player2InventoryManager.FindFreeBeadSlot();
-            // Si no hay slot libre por BeadSlots de P2 menor, respetar límite de p2
-            int max = CoopLocal.Player2 != null ? (int)CoopLocal.Player2.Stats.BeadSlots.Final : 8;
-            if (__result >= max) __result = -1;
-            return false;
-        }
-        if (cur == InventoryManager.ItemType.Prayer || cur == InventoryManager.ItemType.Sword)
-        {
-            // 1 slot siempre libre si no equipado
-            __result = 0;
-            return false;
         }
         return true;
     }

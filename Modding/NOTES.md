@@ -1298,12 +1298,100 @@ algo) si se hubieran aplicado a ciegas.
      previo "Same weight/offset the game itself uses for P1" (incorrecto - el `(0,6)` de P1 no es
      estable).
 
-  **Build:** `dotnet build -p:SolutionDir="..."` 0 errores. **Pendiente de playtest real (no
+   **Build:** `dotnet build -p:SolutionDir="..."` 0 errores. **Pendiente de playtest real (no
   verificable solo por lectura de codigo):** F10 `Coop->P1Only` debe quedar centrado sin salto de
   6u, y Coop con P1/P2 a la misma Y debe quedar a la misma altura de encuadre que P1 solo. No
   marcado como confirmado en juego, solo como implementado + verificado por build.
 
-## Pendiente (roadmap de "credit P2 independently", fases 2-4 sin terminar)
+- **Ronda 78** - Bug de camara horizontal en F10 "P2 solo" (P2 corrido ~1.5u a izquierda/derecha) y sesgo Coop hacia P1 (implementado, verificado por build, pendiente de playtest real). Distinto de Ronda 77 (vertical TargetOffset).
+
+  **Causa raiz confirmada contra DLL real (`Assembly-CSharp.dll`, ilspycmd, no stub):**
+  `Gameplay.GameControllers.Camera.CameraPlayerOffset` (`CameraPlayerOffset.cs`) maneja "forward focus" horizontal:
+  `private Penitent _penitent; [Range(-5,5)] public float XOffset = 1.5f;`
+  `UpdateNewParams() { _penitent = Core.Logic.Penitent; ... _playerCurrentOrientation = _penitent.Status.Orientation; SetCameraXOffset(_playerCurrentOrientation, 0f); ... SetCameraTarget(...); }`
+  `LateUpdate()` corre todos los frames: `if (!_penitent) return; _playerCurrentOrientation = _penitent.Status.Orientation; if (_playerLastOrientation != _playerCurrentOrientation) { DOTween.Kill("ForwardFocus"); if (_deltaXOffsetRecoverTime >= XOffsetRecoverTime) SetCameraXOffset(...); } if (IsCameraForwardBlocked()) StopCameraTween();`
+  `SetCameraXOffset(EntityOrientation o, float t) { if (PlayerTarget != null) { Vector2 v = new Vector2(XOffset, YOffset); if (o==Left) v.x = -XOffset; DOTween.To(x=>_proCamera2D.OverallOffset.x=x, _proCamera2D.OverallOffset.x, v.x, t).SetEase(OutSine).SetId("ForwardFocus"); } }`
+  `_penitent` se asigna UNA sola vez en `UpdateNewParams()` (solo en carga real via `LevelManager.UpdateNewCameraParams()`) y nunca se reasigna segun que target siga realmente la camara. `OverallOffset` es campo publico mutable de `ProCamera2D` (mismo que Ronda 77, sumado global en `Move()/Reset()`). En F10 P2Only la camara sigue a P2 pero `_penitent` sigue siendo P1, el offset se calcula con la orientacion de P1 desplazando a P2 ~XOffset (1.5). Mismo sesgo en Coop (siempre a favor de P1, grep confirma que ningun otro sitio en `Assembly-CSharp.dll` distingue el Penitent seguido).
+
+  **Fix minimo en `Camera/Camera.cs` (no tocar `CentreTargetOnStart`, solo `CameraPlayerOffset`):**
+  1. `[HarmonyPatch(typeof(CameraPlayerOffset), "UpdateNewParams")] Postfix` corrige tras el vanilla: si `Mode==P2Only && Player2!=null` setea `_penitent=P2`, `_playerCurrentOrientation/_playerLastOrientation = P2.Status.Orientation`, mata tween "ForwardFocus" y tweunea `OverallOffset.x` inmediato (0f) a `±XOffset` segun P2, actualiza `DefaultTargetOffset`; si `Mode==Coop` lleva `OverallOffset.x->0f` inmediato y pone `_penitent=null` para desactivar forward tracking y deja `DefaultTargetOffset` centrado; si `P1Only` deja vanilla.
+  2. `[HarmonyPatch(typeof(CameraPlayerOffset), "LateUpdate")] Prefix` decide por frame: `P2Only` asegura `_penitent=P2` y deja correr vanilla con orientacion correcta; `Coop` asegura `OverallOffset.x` se tweunea a 0 con `ElapsedTime` si hace falta y hace `return false` para saltarse el tracking de P1 y el `IsCameraForwardBlocked()` de P1; `P1Only` re-restaura `_penitent=P1` si venia nulado por Coop y deja vanilla. Usa `AccessTools.Field` para `_penitent/_proCamera2D/_playerCurrentOrientation/_playerLastOrientation` (HarmonyX, 4 guiones para `_penitent`) y `DG.Tweening`.
+
+   **Build:** `dotnet build -p:SolutionDir="..."` 0 errores. **Pendiente de playtest real:** F10 P2Only con P1 mirando Left/Right debe mantener a P2 centrado (±0, no ±1.5 segun P1), y Coop debe quedar centrado sin sesgo lateral (OverallOffset.x≈0) con ambos a la misma X se ve igual que P1 solo. No confirmado en juego, solo implementado + build.
+
+- **Ronda 79** - Rezo de P2 anima pero no castea (implementado, verificado por build, pendiente de playtest real).
+
+  **Causa raiz (lectura directa del repo, no requiere decompilar vanilla):**
+  `Stats/Player2InventoryManager.cs:124-132` `IsPrayerOwned(string id)` y `IsOwnedBead` ya hacen fallback a global cuando el shadow de P2 esta vacio (`if (ownedPrayers.Count==0 && Core.InventoryManager!=null) foreach(var p in Core.InventoryManager.GetPrayersOwned()) ...`), misma filosofia `IsOwnedBead`. Pero `GetEquippedPrayerObj():137-141` (el que usa `Stats/InventoryGameplayPatches.cs:57-68` `PrayerUse_GetEquippedPrayer_P2_Patch` `Postfix(PrayerUse __instance, ref Prayer __result)` donde `if(owner==Player2) __result = Player2InventoryManager.GetEquippedPrayerObj()`) **no** tenia fallback: `if(string.IsNullOrEmpty(equippedPrayer) || Core.InventoryManager==null) return null; return GetPrayer(equippedPrayer);`. Antes de Ronda 70 (sistema propio de inventario P2) P2 no tenia override y heredaba implicito el `PrayerUse.GetEquippedPrayer()` global de P1 (`Core.InventoryManager.GetPrayerInSlot(0)`). Desde Ronda 70 el Postfix fuerza `null` permanente si P2 nunca equipo via F7 (`Stats/InventoryUI.cs` `Grid_EquipObject_P2_Patch`), y `PrayerUse_P2Input_Patch`/`PrayerCasterTracker` siguen animando (`AuraTransform` via `CanUsePrayer` solo chequea Fervour) pero `Cast()/StartUsingPrayer()->prayer.Use()` no tiene Prayer real -> sintoma exacto "anima pero no hace nada".
+
+  **Fix minimo en `Stats/Player2InventoryManager.cs:137-149` (restaura paridad con `IsPrayerOwned`):**
+  `GetEquippedPrayerObj()` ahora: `if(Core.InventoryManager==null) return null; if(!string.IsNullOrEmpty(equippedPrayer)) return Core.InventoryManager.GetPrayer(equippedPrayer); return Core.InventoryManager.GetPrayerInSlot(0);` — fallback al equipado global (el de P1). Verificado nombre real en DLL (`Framework.Managers.InventoryManager` no tiene `GetEquippedPrayer()`, tiene `GetPrayerInSlot(int slot)`; `Gameplay.GameControllers.Penitent.Abilities.PrayerUse.GetEquippedPrayer()` vanilla es `return Core.InventoryManager.GetPrayerInSlot(slot)` slot 0) y en el repo (`Prayer/PrayerSystem.cs:104` loguea `__instance.GetEquippedPrayer()`). Asi si P2 tiene equip explicito via F7 se prioriza shadow, si no hereda el de P1 como antes de Ronda 70. No tocado `UnequipPrayer()` (vacio sigue cayendo en mismo fallback, indistinguible de "nunca equipo", aceptado como `IsPrayerOwned` vacio = fallback), no tocado `Stats/InventoryGameplayPatches.cs` (Postfix ya bien, ahora devuelve no-null) ni `Prayer/PrayerSystem.cs` (Ronda 39/43/62 siguen correctos).
+
+   **Build:** `dotnet build -p:SolutionDir="..."` 0 errores. **Pendiente de playtest real:** 1) P2 sin equipar nada via F7, con P1 teniendo rezo equipado global, pulsar Q de P2 -> debe castear mismo rezo que P1 (fallback); 2) equipar rezo distinto para P2 via F7 menu inventario → Q de P2 debe castear su propio rezo y Q de P1 el suyo, sin cruzarse; verificar que `UnequipPrayer` (des-equipar) vuelve a fallback y no queda null permanente.
+
+- **Ronda 80** - Lunge attack de P2 no hace daño (implementado, verificado por build, pendiente de playtest real). No es mismo mecanismo que Ronda 79 (rezo `Player2InventoryManager`).
+
+  **Causa raiz confirmada contra DLL real (`Assembly-CSharp.dll`, ilspycmd, no stub):**
+  `Gameplay.GameControllers.Penitent.Abilities.LungeAttack:AttackAreaOnStay` solo aplica daño si `if(CanHit && Casting && _newEnemyHit) AttackDamageableEntity(...)`. `CanHit {get;set;}` default false y `OnCastEnd` lo pone false. Nunca se pone true por C# normal — se activa via Animation Event `Gameplay.GameControllers.Penitent.Animator.PenitentAttackAnimations.CanLungeAttack(Activation activation)` (hereda de `Gameplay.GameControllers.Entities.Animations.AttackAnimationsEvents`, enum anidado `Activation {True, False}` public). Vanilla:
+  `public void CanLungeAttack(Activation activation) { LungeAttack l = Core.Logic.Penitent.GetComponentInChildren<LungeAttack>(); l.CanHit = activation==Activation.True; }`
+  A diferencia de todos los demas metodos de esa misma clase (`DamageByFall`, `OpenAttackWindow`, `PrayerUseAttack`, etc.) que usan correctamente `private Penitent _penitent` resuelto en `Awake() via GetComponentInParent<Penitent>()` per-instance (confirmado sin lazy-init familia 1), este unico metodo usa `Core.Logic.Penitent` global (siempre P1). El evento se invoca por `SendMessage` sobre el Animator de P2 — la instancia que recibe el call SI es la de P2, pero dentro hardcodea P1, asi que `CanHit=true` va al LungeAttack de P1, no al de P2. `AttackArea` de P2 detecta overlap correcto per-instance pero su `CanHit` es false → `if(CanHit&&...)` nunca pasa y `AttackDamageableEntity()` nunca se llama. Daño `_lungeHit.DamageAmount = _penitent.Stats.Strength.Final * damageFactorByLevel` y tracking `_hitEntities` (lista instancia) SI son per-instance correctos — unico gate roto es este.
+
+  **Datos exactos verificados ilspycmd:** `Activation` es `Gameplay.GameControllers.Entities.Animations.AttackAnimationsEvents.Activation`, `PenitentAttackAnimations` es `public class` en `Gameplay.GameControllers.Penitent.Animator` con campo `private Penitent _penitent` asignado en `Awake()`, sin bundled-init (no hay trampa familia 1). `CanLungeAttack` es `public void` no virtual/static.
+
+  **Fix minimo en `Combat/LungeAttackFix.cs` nuevo (carpeta `Combat/` segun convencion "combat animation owner-fixes"):**
+  `[HarmonyPatch(typeof(PenitentAttackAnimations), nameof(CanLungeAttack))] Prefix(Activation activation, Penitent ____penitent) { if(____penitent==null) return true; LungeAttack l = ____penitent.GetComponentInChildren<LungeAttack>(); if(l!=null) l.CanHit = activation==Activation.True; return false; }` — reemplaza metodo entero (`return false`) para P1 y P2 por igual, seguro porque para P1 `____penitent` (Awake per-instance) es exactamente `Core.Logic.Penitent` (P1 unico global), mismo resultado para P1 y nuevo correcto para P2, sin branch `owner==Player2`. Usa `____penitent` (4 guiones, HarmonyX para `_penitent`).
+
+  **Build:** `dotnet build -p:SolutionDir="..."` 0 errores. **Pendiente de playtest real:** P2 `dash+atacar` sobre enemigo real debe aplicar daño visible (barra vida baja) y P1 lunge debe seguir igual que antes (equivalencia para P1, ver nota arriba — no debe haber cambio).
+
+- **Ronda 81** - Menús propios para P2 con inventario/skill tree independiente.
+
+  **Contexto:** La Ronda 70 estableció la Fase 2 (`Stats/InventoryUI.cs`) donde `InventoryViewPlayer` ya
+  podía fijarse a 1, pero el Grid siempre leía `Core.InventoryManager` global (inventario P1) sin forma
+  de override per-player. Adicionalmente, el toggle `ToggleInventoryMenu` en `Player2Input` abría el
+  menú compartido siempre mostrando la vista P1. Esta Ronda 81 cierra ese gap:
+
+  1. **`Input/Player2Input.cs:402`** - `MenuDown` ahora lee `Player2Pad.StartDown` en modo gamepad
+     (antes solo teclado `KeyCode.I`), confirmado contra la firma real `ButtonDown("Start")` en
+     `Player2Pad`.
+
+  2. **`Stats/Player2MenuView.cs`** - Agregado `PendingOpenAsP2` flag + `RequestOpenAsP2()` /
+     `ConsumePendingOpenAsP2()` métodos para comunicación bidireccional entre el input patch y el patch
+     central de Show().
+
+  3. **`Stats/Player2MenuOpen.cs`** (nuevo) - Patch Harmony `Prefix` sobre
+     `NewInventoryWidget.Show(bool p_active)` que fija `SkillViewPlayer`/`InventoryViewPlayer` ANTES de
+     que Show() renderice el primer frame, evitando "flash" de datos P1 al abrir como P2. Usa
+     `ConsumePendingOpenAsP2()` para consumir la solicitud una sola vez.
+
+  4. **`Input/Player2Input.cs:450-467`** - Lógica completa en `Tick()`: si el menú ya está abierto
+     mostrando P1 (`alreadyOpenAsP1`), cambia a vista P2 sin cerrar el menú (fija
+     `SkillViewPlayer=1`/`InventoryViewPlayer=1` y invoca `SelectTab` con el tab actual). Si el menú
+     está cerrado o ya es P2, solicita apertura como P2 vía `RequestOpenAsP2()` y luego llama
+     `ToggleInventoryMenu()` vanilla.
+
+  5. **`Stats/Player2InventoryManager.cs:134-136`** - Agregado `IsSwordOwned(string id)` con
+     fallback a `Core.InventoryManager.GetSwordsOwned()` idéntico al patrón ya existente de
+     `IsPrayerOwned`/`IsOwnedBead`. Faltaba este equivalente para que el Grid mostrara Swords owneds
+     de P2.
+
+  6. **`Stats/InventoryUI.cs:73-111`** - Nuevo `Prefix` `Grid_ShowLayout_P2_ItemSource_Patch` sobre
+     `NewInventory_LayoutGrid.ShowLayout` que, cuando `IsInventoryP2View` es true, filtra los ítems
+     mostrados en el grid para que solo incluyan los que P2 efectivamente posee (usando
+     `Player2InventoryManager.IsXxxOwned()`). Los tipos coverage: Prayers, Rosary Beads, Swords.
+     Collectables/Reliquary/Quest permanecen vanilla. Usa `FillGridElements<T>` genérico vía
+     reflection (`MakeGenericMethod`). El Postfix existente `Grid_ShowLayout_P2_Patch` continúa
+     operando sin conflictos (Harmony permite Prefix+Postfix del mismo método).
+
+  **Hallazgo colateral documentado:** `InventoryViewPlayer` nunca se tocó desde la Ronda 70, por eso
+  el Grid de ítems always mostraba la colección global de P1. Ambos gaps (fallback de Sword ownership
+  + filtro de ítems en ShowLayout) ya fueron arreglados en esta Ronda 81, no pendientes.
+
+  **Build:** `dotnet build` 0 errores (verificado incrementalmente tras cada archivo modificado).
+  **Pendiente de playtest real:** P2 presiona I/Start con menú cerrado -> abre mostrando SU inventario/
+  skills; P2 presiona I/Start con el menú de P1 abierto -> cambia a vista P2 sin cerrar; P2 presiona
+  I/Start de nuevo ya en su propia vista -> cierra; P1 sigue abriendo su menú sin cambios; equipar
+ /desequipar Prayers/Beads/Sword desde la vista P2 afecta solo a P2 con la lista correcta de ítems.
+"#
 
 - Corazones de Espada (Sword) para P2: estructura base en `Player2InventoryManager` pero `Sword` hearts no auditados a fondo (probablemente `Framework.Inventory` hearts son Beads con id `HE*`).
 - Cuentas de Rosario / slots de Prayer para P2: `BeadSlots` ya cubierto, equipado ahora sombreado pero HUD de P2 para beads/prayer slots aún no existe.

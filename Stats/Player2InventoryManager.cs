@@ -132,12 +132,31 @@ internal static class Player2InventoryManager
     }
 
     internal static bool IsPrayerEquipped(string id) => equippedPrayer != null && equippedPrayer == id;
+
+    internal static bool IsSwordOwned(string id)
+    {
+        if (ownedSwords.Contains(id)) return true;
+        if (ownedSwords.Count == 0 && Core.InventoryManager != null)
+        {
+            try { foreach (var s in Core.InventoryManager.GetSwordsOwned()) if (s.id == id) return true; } catch { }
+        }
+        return false;
+    }
     internal static bool IsPrayerEquipped(Framework.Inventory.Prayer p) => p != null && IsPrayerEquipped(p.id);
     internal static string GetEquippedPrayerId() => equippedPrayer;
     internal static Framework.Inventory.Prayer GetEquippedPrayerObj()
     {
-        if (string.IsNullOrEmpty(equippedPrayer) || Core.InventoryManager == null) return null;
-        return Core.InventoryManager.GetPrayer(equippedPrayer);
+        if (Core.InventoryManager == null) return null;
+        if (!string.IsNullOrEmpty(equippedPrayer))
+        {
+            return Core.InventoryManager.GetPrayer(equippedPrayer);
+        }
+        // Sin equip explicito para P2 todavia (o P2 se des-equipo a proposito via
+        // UnequipPrayer) - fallback al rezo equipado globalmente (el de P1), misma
+        // filosofia que IsOwnedBead/IsPrayerOwned de mas arriba en este mismo archivo.
+        // PrayerUse.GetEquippedPrayer() vanilla es Core.InventoryManager.GetPrayerInSlot(slot) (slot 0),
+        // no existe GetEquippedPrayer() en InventoryManager - verificado contra DLL real.
+        return Core.InventoryManager.GetPrayerInSlot(0);
     }
 
     internal static bool IsBeadEquipped(string id)
