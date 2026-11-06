@@ -1791,3 +1791,18 @@ algo) si se hubieran aplicado a ciegas.
 
 
 
+
+### Ronda 100: Aislamiento de Input en Menú de Guardado y Sincronización Automática Multi-Perfil de Partidas (`MultiPlayer/CoopGameSetupPatches.cs`)
+1. **Diagnóstico del Problema Reportado**:
+   - Al pulsar `Escape` en el menú previo de configuración cooperativa (`CoopGameSetupUI`) para volver a la selección de ranuras de guardado, la pantalla de slots se cerraba o aparecía vacía ("partidas borradas").
+   - **Causas Raíz Identificadas**:
+     1. **Fuga de Inputs en Segundo Plano (`SelectSaveSlots.Update`)**: Mientras `CoopGameSetupUI` estaba abierto por encima, el `Update` vanilla de `SelectSaveSlots` seguía corriendo. Al pulsar `Escape`, `CoopGameSetupUI` se cerraba pero en ese mismo frame `SelectSaveSlots` también recibía el botón 51 (`Escape` en Rewired), ejecutando `IsShowing = false; SelectedSlot = -1;` y regresando de golpe al Menú Principal. Si el usuario pulsaba Ataque (botón 52) navegando en el coop setup, `SelectSaveSlots` podía incluso abrir la confirmación de borrar partida.
+     2. **Discrepancia de Carpeta por Perfil de Steam**: Blasphemous guarda las partidas en `AppData/LocalLow/TheGameKitchen/Blasphemous/Savegames/<SteamID>/`. Al cambiar de cuenta activa en Steam, el juego intentaba leer la carpeta del nuevo SteamID (la cual estaba vacía), mientras que las partidas reales (`savegame_0.save` de 294 KB y `savegame_1.save` de 283 KB) permanecían intactas en la carpeta del perfil anterior.
+2. **Soluciones Implementadas**:
+   - **Aislamiento Total de Inputs (`SelectSaveSlots_BlockUpdate_WhenCoopSetupOpen_Patch`)**:
+     - Harmony Prefix en `SelectSaveSlots.Update` que bloquea completamente la ejecución mientras `CoopGameSetupUI.IsOpen` sea verdadero.
+     - Sistema de supresión de rebote (debounce de 4 frames tras cerrar el menú) para evitar que la tecla `Escape` o el botón de ataque recién pulsados se filtren a la pantalla de slots al cerrarse.
+   - **Restauración y Refresco al Cancelar (`onCancel`)**:
+     - Se fuerza `instance.IsShowing = true;`, se refrescan las ranuras mediante `instance.SetAllData(...)` y se re-selecciona la ranura capturada con `instance.OnSelectedSlots(capturedSlot)`.
+   - **Sincronización Automática Multi-Perfil de Steam (`PersistentManager_GetSaveGameFile_MultiProfileSync_Patch`)**:
+     - Harmony Postfix en `PersistentManager.GetSaveGameFile`: Si la partida solicitada no existe en la carpeta del SteamID activo, escanea automáticamente las demás carpetas de perfiles de Steam en `Savegames/` y restaura automáticamente el archivo `.save`, backups y directorios asociados al perfil en uso. Las partidas nunca más se perderán o aparecerán invisibles al cambiar de cuenta de Steam.
