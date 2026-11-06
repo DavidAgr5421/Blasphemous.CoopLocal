@@ -114,7 +114,7 @@ internal static class Player2InventoryManager
     }
 
     // Owned helpers — si P2 no tiene shadow owned, fallback a global owned (colección compartida)
-    internal static bool IsOwnedBead(string id) => ownedBeads.Contains(id) || (Core.InventoryManager != null && Core.InventoryManager.GetRosaryBead(id) != null && ownedBeads.Count == 0 && IsGlobalOwnedBead(id));
+    internal static bool IsOwnedBead(string id) => ownedBeads.Contains(id) || (Core.InventoryManager != null && IsGlobalOwnedBead(id));
     private static bool IsGlobalOwnedBead(string id)
     {
         try { foreach (var b in Core.InventoryManager.GetRosaryBeadOwned()) if (b.id == id) return true; } catch { }
@@ -123,20 +123,50 @@ internal static class Player2InventoryManager
 
     internal static bool IsPrayerOwned(string id)
     {
+        if (string.IsNullOrEmpty(id)) return false;
         if (ownedPrayers.Contains(id)) return true;
-        if (ownedPrayers.Count == 0 && Core.InventoryManager != null)
+        if (Core.InventoryManager != null)
         {
-            try { foreach (var p in Core.InventoryManager.GetPrayersOwned()) if (p.id == id) return true; } catch { }
+            try
+            {
+                foreach (var p in Core.InventoryManager.GetPrayersOwned())
+                {
+                    if (p != null && string.Equals(p.id, id, StringComparison.OrdinalIgnoreCase)) return true;
+                }
+            }
+            catch { }
         }
         return false;
     }
 
+    internal static void AddOwnedPrayer(string id)
+    {
+        if (string.IsNullOrEmpty(id)) return;
+        if (ownedPrayers.Add(id))
+        {
+            Persist();
+            if (Main.CoopLocal != null)
+            {
+                Blasphemous.ModdingAPI.ModLog.Info($"[P2Inv] Prayer unlocked for P2: {id}", Main.CoopLocal);
+            }
+        }
+    }
+
     internal static bool IsPrayerEquipped(string id) => equippedPrayer != null && equippedPrayer == id;
+
+    internal static void AddOwnedSword(string id)
+    {
+        if (string.IsNullOrEmpty(id)) return;
+        if (ownedSwords.Add(id))
+        {
+            Persist();
+        }
+    }
 
     internal static bool IsSwordOwned(string id)
     {
         if (ownedSwords.Contains(id)) return true;
-        if (ownedSwords.Count == 0 && Core.InventoryManager != null)
+        if (Core.InventoryManager != null)
         {
             try { foreach (var s in Core.InventoryManager.GetSwordsOwned()) if (s.id == id) return true; } catch { }
         }
@@ -146,17 +176,8 @@ internal static class Player2InventoryManager
     internal static string GetEquippedPrayerId() => equippedPrayer;
     internal static Framework.Inventory.Prayer GetEquippedPrayerObj()
     {
-        if (Core.InventoryManager == null) return null;
-        if (!string.IsNullOrEmpty(equippedPrayer))
-        {
-            return Core.InventoryManager.GetPrayer(equippedPrayer);
-        }
-        // Sin equip explicito para P2 todavia (o P2 se des-equipo a proposito via
-        // UnequipPrayer) - fallback al rezo equipado globalmente (el de P1), misma
-        // filosofia que IsOwnedBead/IsPrayerOwned de mas arriba en este mismo archivo.
-        // PrayerUse.GetEquippedPrayer() vanilla es Core.InventoryManager.GetPrayerInSlot(slot) (slot 0),
-        // no existe GetEquippedPrayer() en InventoryManager - verificado contra DLL real.
-        return Core.InventoryManager.GetPrayerInSlot(0);
+        if (Core.InventoryManager == null || string.IsNullOrEmpty(equippedPrayer)) return null;
+        return Core.InventoryManager.GetPrayer(equippedPrayer);
     }
 
     internal static bool IsBeadEquipped(string id)
@@ -196,9 +217,34 @@ internal static class Player2InventoryManager
     internal static void EquipSword(string id) { equippedSword = id; if (!string.IsNullOrEmpty(id)) ownedSwords.Add(id); Persist(); }
     internal static void UnequipSword() { equippedSword = null; Persist(); }
 
+    internal static string GetBeadInSlot(int slot)
+    {
+        if (slot >= 0 && slot < 8) return equippedBeads[slot];
+        return null;
+    }
+
+    internal static string GetSwordInSlot(int slot)
+    {
+        if (slot == 0) return equippedSword;
+        return null;
+    }
+
+    internal static string GetRelicInSlot(int slot)
+    {
+        if (slot >= 0 && slot < 3) return equippedRelics[slot];
+        return null;
+    }
+
+    internal static string GetEquippedSwordId() => equippedSword;
+
     internal static int FindFreeBeadSlot()
     {
-        for (int i = 0; i < 8; i++) if (string.IsNullOrEmpty(equippedBeads[i])) return i;
+        int maxSlots = CoopLocal.Player2 != null ? (int)CoopLocal.Player2.Stats.BeadSlots.Final : 8;
+        if (maxSlots <= 0) maxSlots = 2;
+        for (int i = 0; i < maxSlots && i < 8; i++)
+        {
+            if (string.IsNullOrEmpty(equippedBeads[i])) return i;
+        }
         return -1;
     }
     internal static int FindBeadSlot(string id)
@@ -207,4 +253,28 @@ internal static class Player2InventoryManager
         return -1;
     }
     internal static string[] GetEquippedBeads() => (string[])equippedBeads.Clone();
+}
+
+[HarmonyLib.HarmonyPatch(typeof(InventoryManager), "AddPrayer", new[] { typeof(Framework.Inventory.Prayer) })]
+internal static class InventoryManager_AddPrayer_P2_Patch
+{
+    private static void Postfix(Framework.Inventory.Prayer prayer, bool __result)
+    {
+        if (prayer != null)
+        {
+            Player2InventoryManager.AddOwnedPrayer(prayer.id);
+        }
+    }
+}
+
+[HarmonyLib.HarmonyPatch(typeof(InventoryManager), "AddPrayer", new[] { typeof(string) })]
+internal static class InventoryManager_AddPrayerById_P2_Patch
+{
+    private static void Postfix(string idPrayer, bool __result)
+    {
+        if (!string.IsNullOrEmpty(idPrayer))
+        {
+            Player2InventoryManager.AddOwnedPrayer(idPrayer.ToUpper());
+        }
+    }
 }

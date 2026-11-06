@@ -131,12 +131,57 @@ internal static class Healing_GetHealingInput_Patch
 [HarmonyPatch(typeof(HealingBehaviour), "OnStateEnter")]
 internal static class HealingBehaviour_OnStateEnter_Patch
 {
-    private static void Prefix(Animator animator, ref Penitent ____penitent)
+    private static readonly PropertyInfo HealingAbilityProp = AccessTools.Property(typeof(HealingBehaviour), "HealingAbility");
+
+    private static void Prefix(HealingBehaviour __instance, Animator animator, ref Penitent ____penitent)
     {
         Penitent owner = animator.GetComponentInParent<Penitent>();
         if (owner != null)
         {
             ____penitent = owner;
+            Healing ownHealing = owner.GetComponentInChildren<Healing>();
+            if (ownHealing != null && HealingAbilityProp != null)
+            {
+                HealingAbilityProp.SetValue(__instance, ownHealing, null);
+            }
+        }
+    }
+
+    private static void Postfix(Animator animator)
+    {
+        Penitent owner = animator.GetComponentInParent<Penitent>();
+        if (owner != null)
+        {
+            PlayerLogicBlocker.SetBlocked(owner, true);
+        }
+    }
+}
+
+[HarmonyPatch(typeof(HealingBehaviour), "OnStateExit")]
+internal static class HealingBehaviour_OnStateExit_Patch
+{
+    private static readonly PropertyInfo HealingAbilityProp = AccessTools.Property(typeof(HealingBehaviour), "HealingAbility");
+
+    private static void Prefix(HealingBehaviour __instance, Animator animator, ref Penitent ____penitent)
+    {
+        Penitent owner = animator.GetComponentInParent<Penitent>();
+        if (owner != null)
+        {
+            ____penitent = owner;
+            Healing ownHealing = owner.GetComponentInChildren<Healing>();
+            if (ownHealing != null && HealingAbilityProp != null)
+            {
+                HealingAbilityProp.SetValue(__instance, ownHealing, null);
+            }
+        }
+    }
+
+    private static void Postfix(Animator animator)
+    {
+        Penitent owner = animator.GetComponentInParent<Penitent>();
+        if (owner != null)
+        {
+            PlayerLogicBlocker.SetBlocked(owner, false);
         }
     }
 }

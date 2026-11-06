@@ -25,6 +25,8 @@ internal static class Player2SkillManager
         "LUNGE_1", "LUNGE_2", "LUNGE_3",
         "RANGED_1", "RANGED_2", "RANGED_3",
         "VERTICAL_1", "VERTICAL_2", "VERTICAL_3",
+        "VENENO_1", "VENENO_2", "VENENO_3",
+        "SANGRADO_1", "SANGRADO_2", "SANGRADO_3",
     };
 
     private static readonly Dictionary<string, bool> shadow = new Dictionary<string, bool>();

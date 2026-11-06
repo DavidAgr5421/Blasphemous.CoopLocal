@@ -300,44 +300,23 @@ internal static class GrabLadder_OnUpdate_P2_Patch
             __instance.IsTopLadderReposition = false;
         }
 
-        // P2 ladder jump fix: Ensure jump input is read from P2's own input instead of
-// the shared Rewired Player 0. This fixes the issue where P2's ladder jump was
-// affected by P1's input (or vice versa).
-//
-// Original vanilla code checked Rewired.GetButtonDown(65) from shared Player 0,
-// which meant P1's jump button press would trigger the ladder jump logic for both.
-// The patch below redirects P2's jump check to Player2Input.JumpDown, matching P1's
-// capability to jump from the ladder point.
-//
-// IMPORTANT: We no longer forcibly call TakeOffLadderMethod here - instead we let
-// the vanilla GrabLadder.OnUpdate() logic handle whether to jump from ladder point
-// or exit ladder, because the vanilla logic has the correct conditions for each case.
-// Forcibly calling TakeOffLadderMethod was preventing the vanilla "jump from point"
-// behavior that P1 has.
-if (penitent.IsOnLadder || penitent.IsClimbingLadder || penitent.StepOnLadder)
-{
-    // Use P2's own jump input instead of shared Rewired Player 0
-    // This allows P2's ladder jump logic to work independently from P1
-    bool p2JumpInput = Player2Input.JumpDown;
-    if (p2JumpInput && !Core.Input.InputBlocked)
-    {
-        // Note: we do NOT call TakeOffLadderMethod here.
-        // The vanilla GrabLadder.OnUpdate() has its own logic to determine:
-        // 1. If conditions allow, jump from the current ladder position (like P1 can)
-        // 2. Otherwise, exit the ladder entirely
-        // By not interfering, we allow the vanilla logic to work correctly for P2,
-        // matching P1's capability to jump from the ladder point.
-    }
-}
-// NOTE: grabbing a ladder from mid-air (jump + hold up/down toward it) is NOT decided by
-// GrabLadder.OnUpdate() at all - that logic lives entirely in the third-party
-// CreativeSpore.SmartColliders.PlatformCharacterController.DoClimbing(), a completely
-// different class. A no-op block used to sit here under the mistaken belief that "letting
-// vanilla logic handle it" would work - impossible, since this whole method is a Prefix that
-// returns false and therefore fully replaces GrabLadder.OnUpdate() for P2, vanilla or not.
-// The real fix for the in-air grab is PlatformCharacterController_DoClimbing_P2_AirGrab_Patch
-// below.
-return false;
+        // Round 82 - Ladder let-go / cancel grab:
+        // Vanilla checks Rewired.GetButtonDown(65) (Grab_Cancel, which is Dash).
+        // Calling TakeOffLadder stops climbing and runs DisabledClimbAbilityLapse(0.5f) which
+        // disables CanClimbLadder and removes the Ladder layer from ClimbingLayers for 0.5s.
+        // In addition, ResetLadderJumpTimeThreshold() blocks StartClimbing() for 0.5s.
+        var animState = penitent.Animator.GetCurrentAnimatorStateInfo(0);
+        bool isTakingOff = animState.IsName("grab_ladder_to_go_down") || animState.IsName("release_ladder_to_floor_up");
+
+        bool cancelLadder = Player2Input.DashDown || (Player2Input.Down && Player2Input.JumpDown);
+        if (cancelLadder && !isTakingOff && !Core.Input.InputBlocked && (penitent.IsClimbingLadder || penitent.PlatformCharacterController.IsClimbing))
+        {
+            penitent.PlatformCharacterController.ResetLadderJumpTimeThreshold();
+            TakeOffLadderMethod?.Invoke(__instance, null);
+            DashParryDebugLog.Log($"P2 ladder release/take-off triggered (frame {Time.frameCount})");
+        }
+
+        return false;
     }
 }
 

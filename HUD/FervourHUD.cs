@@ -484,7 +484,7 @@ internal static class PlayerFervour_CalculateMarks_P2_Patch
 
         int num = 0;
         float num2 = 0f;
-        Framework.Inventory.Prayer prayerInSlot = Core.InventoryManager.GetPrayerInSlot(0);
+        Framework.Inventory.Prayer prayerInSlot = Player2InventoryManager.GetEquippedPrayerObj();
         int num3 = prayerInSlot != null ? prayerInSlot.fervourNeeded + (int)p2.Stats.PrayerCostAddition.Final : 0;
         Image fillExactFull = (Image)FillExactFullField.GetValue(__instance);
         if (num3 > 0)

@@ -325,9 +325,9 @@ internal static class Player2StatsSync
         }
         p2.Stats.Life.SetToCurrentMax();
         p2.Stats.Flask.SetToCurrentMax();
-        if (healFervour)
+        if (healFervour) { p2.Stats.Fervour.SetToCurrentMax(); }
         {
-            p2.Stats.Fervour.SetToCurrentMax();
+            // Ronda 89: Fervour ya no se fuerza a SetToCurrentMax() al cambiar de sala; se conserva el valor restaurado de FervourCurrentKey.
         }
         SaveCurrentVitals(p2);
         if (Main.CoopLocal != null)
@@ -421,11 +421,11 @@ internal static class Player2StatsSync
             // snapshot above instead; a real heal only happens via PrieDieu.ShallowActivationLogic's
             // own Postfix (HealAtPrieDieu) or the first-ever sync.
             //
-            // Round 46: Fervour is a deliberate exception, per explicit user request - always
+            // Ronda 89: Fervour ya no se fuerza a SetToCurrentMax() al cambiar de sala; se conserva el valor restaurado de FervourCurrentKey (salvo en HealAtPrieDieu cuando healFervour es true).
             // force it to max on spawn so prayers can be tested immediately, overriding whatever
             // FervourCurrentKey just restored above. Remove this line (and the matching one in
             // PerformFirstSync) if/when the user wants Fervour to persist like Life/Flask do.
-            p2.Stats.Fervour.SetToCurrentMax();
+            // Ronda 89: Fervour ya no se fuerza a SetToCurrentMax() al cambiar de sala; se conserva el valor restaurado de FervourCurrentKey.
 
             if (Main.CoopLocal != null)
             {

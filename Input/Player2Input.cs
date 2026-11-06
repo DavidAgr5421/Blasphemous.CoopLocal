@@ -110,7 +110,59 @@ internal static class Player2Pad
         get
         {
             var joysticks = Rewired.ReInput.controllers.Joysticks;
-            return joysticks.Count > 0 ? joysticks[0] : null;
+            if (joysticks == null || joysticks.Count == 0)
+            {
+                return null;
+            }
+
+            int joyIndex = 0;
+            switch (CoopGameConfig.Slots[1].Device)
+            {
+                case CoopDeviceType.Gamepad1: joyIndex = 0; break;
+                case CoopDeviceType.Gamepad2: joyIndex = 1; break;
+                case CoopDeviceType.Gamepad3: joyIndex = 2; break;
+                case CoopDeviceType.Gamepad4: joyIndex = 3; break;
+                default:
+                    // Si P2 está sin asignar o en teclado, devolver el siguiente joystick disponible si P1 usa el 0
+                    joyIndex = CoopGameConfig.Slots[0].Device == CoopDeviceType.Gamepad1 ? 1 : 0;
+                    break;
+            }
+
+            if (joyIndex >= 0 && joyIndex < joysticks.Count)
+            {
+                return joysticks[joyIndex];
+            }
+
+            return joysticks[0];
+        }
+    }
+
+    internal static Rewired.Joystick P1Pad
+    {
+        get
+        {
+            var joysticks = Rewired.ReInput.controllers.Joysticks;
+            if (joysticks == null || joysticks.Count == 0)
+            {
+                return null;
+            }
+
+            int joyIndex = 0;
+            switch (CoopGameConfig.Slots[0].Device)
+            {
+                case CoopDeviceType.Gamepad1: joyIndex = 0; break;
+                case CoopDeviceType.Gamepad2: joyIndex = 1; break;
+                case CoopDeviceType.Gamepad3: joyIndex = 2; break;
+                case CoopDeviceType.Gamepad4: joyIndex = 3; break;
+                default: joyIndex = 0; break;
+            }
+
+            if (joyIndex >= 0 && joyIndex < joysticks.Count)
+            {
+                return joysticks[joyIndex];
+            }
+
+            return joysticks[0];
         }
     }
 
@@ -130,7 +182,11 @@ internal static class Player2Pad
     internal static bool ParryDown => ButtonDown("Left Bumper", "LB", "L1", "Left Shoulder");
     internal static bool HealDown => ButtonDown("Right Bumper", "RB", "R1", "Right Shoulder");
     internal static bool InteractDown => ButtonDown("Y Button", "Y");
-    internal static bool StartDown => ButtonDown("Start");
+    internal static bool StartDown => ButtonDown("Start", "Back", "Select");
+
+    internal static bool CancelDown => ButtonDown("B Button", "B");
+    internal static bool LoreDown => ButtonDown("Y Button", "Y");
+    internal static bool SelectDown => ButtonDown("A Button", "A");
 
     internal static bool DashDown => AxisDown("DashTrigger", "Right Trigger", "RT", "R2");
     internal static bool PrayerActivateDown => AxisDown("PrayerTrigger", "Left Trigger", "LT", "L2");
@@ -373,7 +429,7 @@ internal static class Player2Input
 {
     private const KeyCode ToggleKey = KeyCode.F9;
 
-    internal static Player2InputMode Mode { get; private set; } = Player2InputMode.Gamepad;
+    internal static Player2InputMode Mode { get; set; } = Player2InputMode.Gamepad;
 
     internal static bool Left => Mode == Player2InputMode.Gamepad ? Player2Pad.Left : Input.GetKey(Player2Keys.Left);
     internal static bool Right => Mode == Player2InputMode.Gamepad ? Player2Pad.Right : Input.GetKey(Player2Keys.Right);
@@ -439,10 +495,42 @@ internal static class Player2Input
         if (Mode == Player2InputMode.Gamepad)
         {
             RawButtonScanLog.Tick();
+
+            // Ronda 89: Atajo en F6 y F7 (en Gamepad) — además se evalúa globalmente abajo.
         }
 
-// Dentro de Tick(), lógica P2 para abrir menú de inventario:
-        if (MenuDown && Gameplay.UI.UIController.instance != null)
+        // Ronda 92: Atajo de Debug F8 para alternar/probar sendas elementales (Veneno / Sangrado) y ciclar rezos de prueba
+        if (Input.GetKeyDown(KeyCode.F8))
+        {
+            SwordElementalUpgrades.CycleDebugElementalAndPrayers();
+        }
+
+        // Ronda 93: Atajo F5 para invocar o reiniciar un enemigo Dummy de pruebas frente al jugador
+        if (Input.GetKeyDown(KeyCode.F5))
+        {
+            Combat.TestDummyManager.SpawnOrResetDummy();
+        }
+
+        // Dentro de Tick(), lógica P2 para abrir menú de inventario y atajo F6/F7 de fervor máximo:
+        if (Input.GetKeyDown(KeyCode.F6) || Input.GetKeyDown(KeyCode.F7))
+        {
+            var p1 = Framework.Managers.Core.Logic.Penitent;
+            if (p1 != null && p1.Stats != null && p1.Stats.Fervour != null)
+            {
+                p1.Stats.Fervour.SetToCurrentMax();
+            }
+            var p2 = CoopLocal.Player2;
+            if (p2 != null && p2.Stats != null && p2.Stats.Fervour != null)
+            {
+                p2.Stats.Fervour.SetToCurrentMax();
+                Player2StatsSync.SaveCurrentVitals(p2);
+            }
+            if (Main.CoopLocal != null)
+            {
+                Blasphemous.ModdingAPI.ModLog.Info("[FervourShortcut] F6/F7 pressed -> P1 & P2 Fervour set to CurrentMax", Main.CoopLocal);
+            }
+        }
+        if (MenuDown && Gameplay.UI.UIController.instance != null && Time.frameCount != Player2MenuView.LastMenuToggleFrame)
         {
             NewInventoryWidget widget = NewInventoryMenuField.GetValue(Gameplay.UI.UIController.instance) as NewInventoryWidget;
             bool alreadyOpenAsP1 = widget != null && widget.currentlyActive && !Player2MenuView.IsInventoryP2View;
@@ -453,6 +541,9 @@ internal static class Player2Input
                 Player2MenuView.InventoryViewPlayer = 1;
                 object currentTab = CurrentTabTypeField.GetValue(widget);
                 SelectTabMethod.Invoke(widget, new object[] { currentTab, false });
+                RefreshDeviceAssignment();
+                CoopMenuOwnerBanner.Refresh();
+                Player2MenuView.LastMenuToggleFrame = Time.frameCount;
             }
             else
             {
@@ -461,6 +552,7 @@ internal static class Player2Input
                 {
                     Player2MenuView.RequestOpenAsP2();
                 }
+                Player2MenuView.LastMenuToggleFrame = Time.frameCount;
                 Gameplay.UI.UIController.instance.ToggleInventoryMenu();
             }
         }
@@ -485,8 +577,26 @@ Player2PurgePoints.Tick();
         AccessTools.Method(typeof(NewInventoryWidget), "SelectTab",
             new[] { typeof(NewInventoryWidget.TabType), typeof(bool) });
 
-    private static Rewired.ControllerType ExcludedFromPlayer1 =>
-        Mode == Player2InputMode.Gamepad ? Rewired.ControllerType.Joystick : Rewired.ControllerType.Keyboard;
+    internal static void RefreshDeviceAssignment()
+    {
+        ApplyExclusiveDevices();
+    }
+
+    private static Rewired.ControllerType ExcludedFromPlayer0
+    {
+        get
+        {
+            bool p2Driving = Player2MenuView.IsInventoryP2View;
+            if (Mode == Player2InputMode.Gamepad)
+            {
+                return p2Driving ? Rewired.ControllerType.Keyboard : Rewired.ControllerType.Joystick;
+            }
+            else
+            {
+                return p2Driving ? Rewired.ControllerType.Joystick : Rewired.ControllerType.Keyboard;
+            }
+        }
+    }
 
     private static void ApplyExclusiveDevices()
     {
@@ -495,19 +605,18 @@ Player2PurgePoints.Tick();
         {
             return;
         }
-        // excludeFromControllerAutoAssignment blocks Rewired's auto-assigner from giving P1
-        // *any* controller, not just the excluded type - confirmed live (round 34 testing):
-        // toggling Keyboard mode then back to Gamepad mode left P1 with neither Keyboard nor
-        // Joystick, since the flag being on the whole time meant nothing ever got auto-reattached.
-        // So the allowed type has to be re-added explicitly here rather than left to Rewired.
         p1Rewired.controllers.excludeFromControllerAutoAssignment = true;
-        p1Rewired.controllers.ClearControllersOfType(ExcludedFromPlayer1);
+        p1Rewired.controllers.ClearControllersOfType(ExcludedFromPlayer0);
         ReattachAllowedDevice(p1Rewired);
     }
 
     private static void ReattachAllowedDevice(Rewired.Player p1Rewired)
     {
-        if (Mode == Player2InputMode.Gamepad)
+        Rewired.ControllerType allowed = ExcludedFromPlayer0 == Rewired.ControllerType.Joystick
+            ? Rewired.ControllerType.Keyboard
+            : Rewired.ControllerType.Joystick;
+
+        if (allowed == Rewired.ControllerType.Keyboard)
         {
             var keyboard = Rewired.ReInput.controllers.Keyboard;
             if (keyboard != null && !p1Rewired.controllers.ContainsController(keyboard))
@@ -517,7 +626,7 @@ Player2PurgePoints.Tick();
         }
         else
         {
-            Rewired.Joystick pad = Player2Pad.Pad;
+            Rewired.Joystick pad = Player2MenuView.IsInventoryP2View ? Player2Pad.Pad : Player2Pad.P1Pad;
             if (pad != null && !p1Rewired.controllers.ContainsController(pad))
             {
                 p1Rewired.controllers.AddController(pad, false);
@@ -534,7 +643,7 @@ Player2PurgePoints.Tick();
         {
             return;
         }
-        Rewired.ControllerType excluded = ExcludedFromPlayer1;
+        Rewired.ControllerType excluded = ExcludedFromPlayer0;
         int before = excluded == Rewired.ControllerType.Joystick
             ? p1Rewired.controllers.joystickCount
             : (p1Rewired.controllers.ContainsController(Rewired.ControllerType.Keyboard, 0) ? 1 : 0);
@@ -542,8 +651,7 @@ Player2PurgePoints.Tick();
         {
             p1Rewired.controllers.ClearControllersOfType(excluded);
             LogModeAndControllers(
-                $"P1's Rewired player still had a {excluded} controller assigned - cleared again " +
-                "(Rewired's auto-assigner likely re-attached it since the last check).");
+                $"Player 0 still had a {excluded} controller assigned - cleared again (swapping for menu/gameplay).");
         }
         ReattachAllowedDevice(p1Rewired);
     }
@@ -564,8 +672,12 @@ Player2PurgePoints.Tick();
 
     private static Rewired.Player GetP1Rewired()
     {
+        if (Rewired.ReInput.players != null && Rewired.ReInput.players.playerCount > 0)
+        {
+            return Rewired.ReInput.players.GetPlayer(0);
+        }
         Penitent p1 = Core.Logic.Penitent;
-        return p1 != null ? p1.PlatformCharacterInput.Rewired : null;
+        return p1 != null ? p1.PlatformCharacterInput?.Rewired : null;
     }
 }
 
@@ -586,6 +698,14 @@ internal static class Player2ModeIndicator
     private const string GameFontName = "MajesticExtended_FullLatin";
 
     private static TMPro.TextMeshProUGUI label;
+
+    internal static void SetMenuOverlayHidden(bool hidden)
+    {
+        if (label != null)
+        {
+            label.gameObject.SetActive(!hidden);
+        }
+    }
 
     internal static void Show(Player2InputMode mode)
     {

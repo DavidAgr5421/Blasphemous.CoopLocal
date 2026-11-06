@@ -1402,3 +1402,392 @@ algo) si se hubieran aplicado a ciegas.
 - `GameModeManager`/NG+/Demake: hallazgo relacionado sin confirmar impacto real - también
   hardcodean `Core.Logic.Penitent.Stats.X.SetPermanentBonus(0f)` al cambiar de modo,
   dejarían a P2 con progresión "vieja" si el coop se usa junto con esos modos.
+
+
+### Ronda 82 - Drop-through inmediato de plataformas unidireccionales para P2 & Menú de inventario / equipamiento propio interactivo para P2
+
+**Causas raíz identificadas y solucionadas:**
+1. **Drop-through de plataformas unidireccionales (saltar hacia abajo / atravesar):**
+   - *Causa raíz 1 (Delay y timing desincronizado):* En `PlatformCharacterInput_Update_Patch`, el salto hacia abajo estaba sujeto a un timer `player2JumpOffTimer = input.timeToJumpOff` (1.0 segundo). Tras un segundo de retardo, el jugador ya no estaba presionando o la animación se había cancelado. Además, el flag `IsJumpOff` se reiniciaba prematuramente en el frame 2 (`else { IsJumpOff = false; }`), lo que impedía que `AnimatorInyector` ejecutara la transición fluida.
+   - *Causa raíz 2 (Familia 1 en StateMachineBehaviours de salto y agacharse):*
+     - `JumpOffBehaviour` (`OnStateExit`): No reasignaba `____penitent = owner`, provocando que al salir del salto se restableciera la colisión 2D (`Dash.SetDefaultSkinCollision()` y `Physics.Enable2DCollision()`) sobre P1 o se omitiera en P2.
+     - `JumpOffBehaviour` (`OnStateUpdate`): No reasignaba `____penitent` ni `____rootMotion`, afectando la raíz de salto de P1.
+     - `CrouchDownBehaviour` (`OnStateUpdate` y `OnStateExit`): Solo `OnStateEnter` estaba parcheado. En `OnStateUpdate`, si `_penitent` apuntaba a P1, `_penitent.isJumpOffReady` se activaba para P1 y no para P2.
+   - *Solución Ronda 82:*
+     - Activación **inmediata** de `PlatformDropDown`: al detectar Agacharse (`crouch`) + Salto (`jump`) sobre una plataforma unidireccional (`OneWayDownCollision || !IsOnFloorPlatform`), se cancela el salto hacia arriba (`SetActionState(Jump, false)`), se activa `SetActionState(PlatformDropDown, true)`, se envía un impulso de velocidad vertical negativa (`VSpeed = -2.5f`), se dispara el trigger de animación `"JUMP_OFF"` y se limpia `PlatformDropDown` en el frame siguiente (`player2PlatformDropDownPulse = true`).
+     - Parches completos sobre `CrouchDownBehaviour` (`OnStateEnter`, `OnStateUpdate`, `OnStateExit`) y `JumpOffBehaviour` (`OnStateEnter`, `OnStateUpdate`, `OnStateExit`) reasignando `____penitent = owner` y `____rootMotion` para P2.
+
+2. **Menú de inventario propio para P2 (visualización, equipamiento y navegación):**
+   - *Causa raíz 1 (Control de la UI limitado a P1):* Blasphemous delega la UI (`RewiredStandaloneInputModule` y `UIController.Update()`) a Rewired Player 0 (P1). Dado que el joystick de P2 estaba desasignado de Player 0 para evitar crosstalk en gameplay, al abrir el menú P2 no podía navegar el grid ni cambiar de pestañas ni presionar botones.
+   - *Causa raíz 2 (Slots equipados en la parte superior):* En `NewInventory_LayoutGrid`, la visualización de los slots superiores (`UpdateEquipped`) no estaba parcheada para P2, mostrando siempre los rezos, cuentas y corazón de espada de P1.
+   - *Causa raíz 3 (Equip/Unequip/EmptySlot):* `EquipObject`, `UnEquipObject` y `GetFirstEmptySlot` manipulaban el inventario global de P1.
+   - *Solución Ronda 82:*
+     - `Stats/InventoryUI.cs`:
+       - `Grid_UpdateEquipped_P2_Patch`: Actualiza los slots superiores (rosario, rezo activo, corazón de espada) para reflejar los ítems equipados de P2 (`Player2InventoryManager.GetBeadInSlot`, `GetEquippedPrayerObj`, `GetSwordInSlot`, `GetRelicInSlot`) y bloquea los slots por encima de `P2.Stats.BeadSlots.Final`.
+       - `Grid_IsEquipped_P2_Patch`, `Grid_EquipObject_P2_Patch`, `Grid_UnEquipObject_P2_Patch`, `Grid_GetFirstEmptySlot_P2_Patch`: Gestionan el equipamiento y desequipamiento directo en el inventario propio de P2.
+       - `NewInventoryWidget_SetTab_P2_Patch`: Muestra explícitamente en el encabezado `[P2] NOMBRE (F7=P1)` o `[P1] NOMBRE (F7=P2)`.
+     - `Input/Player2Input.cs` & `Stats/Player2MenuOpen.cs`:
+       - Asignación dinámica de dispositivos en `ExcludedFromPlayer0`: mientras `Player2MenuView.IsInventoryP2View == true`, Player 0 recibe temporalmente el mando/teclado de P2, permitiendo a P2 navegar el grid y presionar botones directamente a través de la UI del juego.
+       - `UIController_MenuNavigation_P2_Patch`: Permite alternar la vista en cualquier momento pulsando `F7`, y permite a P2 navegar entre categorías (LB/RB / Q/E), ver lore (Y / U) y cerrar el menú (B / Dash / Escape).
+
+
+### Ronda 83 - Eliminación de toggle F7 y corrección de mecánicas de escalera (Ladder Jump Cooldown & Let-Go) para P2
+
+1. **Eliminación del intercambio con F7 (Causa del bug de teclado):**
+   - El toggle con F7 fuera del menú dejaba `Player2MenuView.IsInventoryP2View == 1` activo en pleno juego, lo que alteraba `ExcludedFromPlayer0` y provocaba que ambos personajes respondieran al teclado simultáneamente.
+   - Se eliminó completamente la tecla F7 de `Stats/Player2MenuOpen.cs`, `Stats/SkillTreeUI.cs` y los textos de `Stats/InventoryUI.cs`.
+   - `Player2MenuView.IsInventoryP2View` y `IsSkillP2View` ahora exigen explícitamente que el menú esté visible en pantalla (`Gameplay.UI.UIController.instance.IsShowingInventory`), garantizando que fuera del menú sea siempre `false`.
+
+2. **Mecánica de escaleras de mano (Ladder jump & release):**
+   - *Problema 1 (Regrab instantáneo al saltar con Arriba presionado):* En `PlatformCharacterInput.Update` vanilla, al saltar desde una escalera se llama a `controller.ResetLadderJumpTimeThreshold()`, lo que establece `m_deltaLadderJumpTimeThreshold = 0.5f`. Esto impide que `PlatformCharacterController.StartClimbing()` vuelva a engancharse a la escalera durante el salto. En P2 nunca se llamaba a este método, por lo que `m_deltaLadderJumpTimeThreshold` era siempre 0 y P2 se reenganchaba en 0 frames.
+     - *Solución:* En `Movement/Movement.cs`, al detectar que P2 está escalando (`controller.IsClimbing || penitent.IsClimbingLadder`) y presiona Salto, se invoca `controller.ResetLadderJumpTimeThreshold()`. Esto otorga los 0.5s de gracia donde P2 realiza el salto limpiamente antes de poder reengancharse.
+   - *Problema 2 (Soltarse o lanzarse de la escalera):* En vanilla, presionar Dash (Action 65 / Grab_Cancel) ejecuta `GrabLadder.TakeOffLadder()`, que llama a `StopClimbing()` e inicia `DisabledClimbAbilityLapse(0.5f)` (desactiva `CanClimbLadder` y retira la capa `Ladder` de `ClimbingLayers` durante 0.5s). En `Movement/LadderMechanics.cs`, el parche de P2 devolvía `false` con un bloque vacío, impidiendo que `TakeOffLadder` se ejecutara.
+     - *Solución:* En `GrabLadder_OnUpdate_P2_Patch`, al presionar Dash o Abajo + Salto mientras se escala, se llama a `controller.ResetLadderJumpTimeThreshold()` y se invoca `TakeOffLadderMethod` para iniciar el cooldown de 0.5 segundos y soltarse en caída libre sin reengancharse inmediatamente.
+
+
+### Ronda 84 - Sistema de rezos independiente y progresión propia para P2
+
+**Causas raíz diagnosticadas:**
+1. **Fallback forzado a P1 en `GetEquippedPrayerObj()`:** En `Player2InventoryManager.cs`, cuando P2 no tenía un rezo equipado o aún no había asignado uno, el método devolvía `Core.InventoryManager.GetPrayerInSlot(0)` (el rezo de P1). En consecuencia, P2 siempre terminaba usando el rezo de P1.
+2. **`PrayerUse.GetEquippedPrayer()` y `CanUsePrayer` en `PrayerUse.cs`:** Ambos métodos leían directamente `Core.InventoryManager.GetPrayerInSlot(slot)` (el rezo de P1) tanto para P1 como para P2. El casteo de P2 (`OnCastStart()`) obtenía la instancia de P1 y evaluaba el coste de fervor del rezo de P1.
+3. **Bug en `IsPrayerOwned(id)` (desaparición de rezos tras equipar uno):** La condición `if (ownedPrayers.Count == 0 && Core.InventoryManager != null)` hacía que, tras equipar o desbloquear 1 solo rezo en `ownedPrayers`, el contador fuera > 0 y todos los demás rezos descubiertos por la partida desaparecieran de la interfaz de P2.
+4. **Segmentos de fervor en el HUD de P2 (`HUD/FervourHUD.cs`):** La línea 487 leía `Core.InventoryManager.GetPrayerInSlot(0)` para calcular los segmentos de coste en la barra de fervor de P2.
+
+**Soluciones implementadas:**
+- `Stats/Player2InventoryManager.cs`:
+  - `GetEquippedPrayerObj()`: eliminado el fallback a P1; devuelve estrictamente `Core.InventoryManager.GetPrayer(equippedPrayer)` o `null`.
+  - `IsPrayerOwned(id)`: consulta siempre si el rezo está en `ownedPrayers` o en los rezos descubiertos de la partida (`Core.InventoryManager.GetPrayersOwned()`).
+  - `AddOwnedPrayer(id)` y parches Harmony en `InventoryManager.AddPrayer` (tanto la sobrecarga por string como por objeto `Prayer`): cualquier rezo recogido en el mundo se añade automáticamente a la progresión de P2 y se persiste en `p2_inventory_slot{slot}.txt`.
+- `Prayer/PrayerSystem.cs`:
+  - `PrayerUse_GetEquippedPrayer_P2_Patch`: prefijo sobre `PrayerUse.GetEquippedPrayer()` que devuelve exclusivamente `Player2InventoryManager.GetEquippedPrayerObj()` para P2.
+  - `PrayerUse_CanUsePrayer_P2_Patch`: prefijo sobre el getter `PrayerUse.CanUsePrayer` que valida el coste contra el rezo propio de P2 y su fervor actual.
+  - `PrayerUse_P2Input_Patch`: valida si P2 tiene un rezo equipado antes de lanzar; si no tiene fervor suficiente llama a `NotEnoughFervour()`, reproduce la animación `AuraTransform` en P2 y ejecuta `Cast()` con su propio rezo.
+  - `PrayerUse_OnUpdate_P2_AuraTransform_Patch`: para P2 devuelve `false` en la lectura de Rewired para que la lógica vanilla (atada a P1) no interfiera con P2.
+- `HUD/FervourHUD.cs`:
+  - Actualizado para calcular los segmentos de coste según `Player2InventoryManager.GetEquippedPrayerObj()`.
+
+
+### Ronda 85 - Inmovilización de P2 durante rezos y sincronización de reclinatorio (Prie-Dieu / Altar) en cooperativo
+
+1. **Suspensión / inmovilización de P2 durante el casteo de rezos:**
+   - *Causas identificadas:*
+     - En `Prayer/PrayerSystem.cs`, `PrayerUse_P2Input_Patch` contenía una escucha en `Player2Input.PrayerActivateUp` que llamaba inmediatamente a `StopCast()`. Al pulsar y soltar el botón de rezo, la habilidad se cancelaba al instante en vez de reproducir el efecto y mantener el estado durante su duración natural (`timeToEnd`).
+     - Al entrar en la animación `AuraTransform`, la clase de máquina de estados vanilla `AuraTransformBehaviour.OnStateEnter` ejecutaba `Core.Input.SetBlocker("PLAYER_LOGIC", true)` sobre P1 y no marcaba a P2 en `PlayerLogicBlocker`, lo que dejaba a P2 libre de moverse y patinar por el suelo mientras congelaba a P1.
+     - `PlatformCharacterInput_Update_Patch` en `Movement/Movement.cs` no evaluaba el estado de rezo (`PrayerCast.IsUsingAbility`), permitiendo que las velocidades de movimiento y teclas de acción continuaran aplicándose a P2.
+   - *Soluciones implementadas:*
+     - Se eliminó el `StopCast()` prematuro al soltar el botón de rezo en `PrayerUse_P2Input_Patch`.
+     - Se crearon los parches `AuraTransformBehaviour_OnStateEnter_Patch` y `AuraTransformBehaviour_OnStateExit_Patch` para P2: establecen `PlayerLogicBlocker.SetBlocked(owner, true/false)` específicamente para P2 y evitan que el blocker global de P1 sea modificado o que se detenga el audio de P1 al terminar.
+     - En `Movement/Movement.cs`, `isPrayerCasting` (`penitent.PrayerCast.IsUsingAbility`) se incluye en la condición de `blocked` y pone `controller.PlatformCharacterPhysics.HSpeed = 0f`, impidiendo cualquier movimiento horizontal, salto, ataque o dash mientras P2 está lanzando el rezo.
+
+2. **Sincronización de reclinatorio (Prie-Dieu y Altar de Confesor) para P1 y P2:**
+   - *Mecanismo vanilla de Prie-Dieu:* El juego no usa la animación del propio Penitent para el reclinatorio; desactiva el `SpriteRenderer` y `DamageArea` del Penitent y activa en su lugar el objeto de escena `interactorAnimator`, el cual reproduce las animaciones dedicadas `ACTIVATION`, `KNEE_START` y `KNEE_END`. Al usarlo P2 o P1, P2 era ignorado, quedándose de pie o pudiendo caminar alrededor mientras P1 quedaba de rodillas.
+   - *Solución implementada en `Abilities/PrieDieuCoopSync.cs`:*
+     - Cuando cualquiera de los dos jugadores (P1 o P2) interactúa con un Prie-Dieu o Altar:
+       - P1 se posiciona en el lugar estándar frente al reclinatorio.
+       - P2 es reposicionado automáticamente un poco más a la derecha (`X + 1.2f`) a la misma altura, con orientación hacia la izquierda (`EntityOrientation.Left`) mirando hacia P1.
+       - Se desactiva el `SpriteRenderer` y `DamageArea` de P2 y se bloquea su input (`PlayerLogicBlocker.SetBlocked(p2, true)`).
+       - Se instancia un clon visual de `interactorAnimator` para P2 situado a la derecha (`X + 1.2f`) con `flipX = true` (mirando a P1) y despojado de colliders o scripts de eventos para no alterar la escena.
+       - Cada frame mientras la interacción está activa (`PlayerReposition`), el clon de P2 sincroniza su estado de animación, tiempo normalizado y velocidad con `interactorAnimator`, haciendo que ambos personajes se arrodillen y se levanten en perfecta sincronía.
+       - Al terminar la interacción (`InteractionEnd`): se reactivan el `SpriteRenderer` y `DamageArea` de P2, se desbloquea su movimiento y se destruye limpiamente el clon visual.
+       - Si P2 estaba muerto o pendiente de reanimación, es revivido y curado por completo junto con P1.
+       - En `CoopLocal.cs` (`OnLevelLoaded`), se invoca `PrieDieuCoopSync.Reset()` como salvaguarda para limpiar referencias en cualquier cambio de nivel.
+
+
+### Ronda 86 - Skin oscura de P2 en Prie-Dieu y paridad integral de todos los rezos del juego
+
+1. **Skin oscura de P2 (Verdadera Apostasía) en Prie-Dieu:**
+   - *Problema:* El objeto de animación de Prie-Dieu clonado para P2 (`interactorAnimator`) utilizaba la paleta/material estándar de P1, provocando que P2 se arrodillara con la skin por defecto en lugar de su skin oscura.
+   - *Solución:* En `Cosmetics/Cosmetics.cs` se expuso `GetPlayer2PaletteTexture()`. En `Abilities/PrieDieuCoopSync.cs`, al instanciar y actualizar el clon visual `p2KneelVisual`, se genera una instancia de material independiente y se le asigna la textura `_PaletteTex` de Verdadera Apostasía (`PENITENT_ENDING_B`), asegurando que P2 vista su skin oscura idéntica a su modelo en juego.
+
+2. **Auditoría e implementación completa de los 18 rezos del juego (`Prayer/PrayerEffectsExpanded.cs`):**
+   - Mediante análisis estático con REA y descompilación de `Assembly-CSharp.dll` y `data.unity3d`, se mapearon y estudiaron todos los rezos del juego (`PR01` a `PR203`), identificando hardcodes a `Core.Logic.Penitent` en los efectos de oraciones restantes:
+     1. **`PR03` / `PR101` (Seguidilla / Zarabanda - Escudos orbitales):** `PenitentShieldSystem.FollowPlayer` y `ShieldSystemPrayer.InstantiateShield` seguían a P1. Parcheados con `ShieldOwnerTracker` para seguir y orbitar exclusivamente a P2 cuando es quien lanza el rezo.
+     2. **`PR04` (Saeta Dolorosa):** `HeavyAttackPrayerEffect` activaba `IsHeavyAttackPrayerEquipped` sobre P1. Ahora activa y desactiva el estado de ataque pesado y nivel 2 en el `PenitentAttack` de P2.
+     3. **`PR10` (Tientos a tus Cabellos Ensangrentados):** `PenitentGuardianEffect` otorgaba invulnerabilidad a P1. Ahora `____owner` se reasigna a P2, aplicando `PrayerProtectionEnabled` e `Invulnerable` en P2 y posicionando la dama protectora sobre P2.
+     4. **`PR12` (Zambra al Resplandor Coronado):** `ZambraTearsHarvestEffect` y `TearHarvestEffect` solo afectaban y seguían a P1. Ahora disparan el `ZambraTearsHarvestPrayer` de P2 y el efecto visual de cosecha sigue la posición de P2.
+     5. **`PR14` (Campanillero a los Hijos de la Aurora - Querubines):** `AlliedCherubSystem` y `AlliedCherub` medían distancias y orbitaban a P1. Con `CherubOwnerTracker`, los querubines se despliegan, orbitan y atacan a los enemigos cercanos a P2.
+     6. **`PR15` (Taranto a la Hermana Mía):** `PenitentAreaAttack` invocaba el shockwave y daño en área en la posición de P1 con las estadísticas de P1. Ahora se ejecuta centrado en P2, con el multiplicador de fuerza de rezo de P2.
+     7. **`PR16` (Aubade of the Nameless Guardian):** `PrayerGhostGuardian` y `GuardianPrayerBehaviour` fijaban a P1 como `Master`. Ahora el guardián espectral se instancia junto a P2, lo reconoce como `Master`, calcula distancias y ataques según P2 y se coordina con los ataques y bloqueos de P2.
+     8. **`PR201` (Cantó de los Muertos / Miriam):** `PrayerMiriam` y `MiriamPortalPrayerBehaviour` vinculaban el portal a P1 y se autodestruía si P1 no tenía PR201 equipado. Ahora el portal sigue a P2, ataca sincronizado con P2 y no se destruye mientras P2 lo tenga equipado.
+     9. **`PR202` (Regreso a Puerto):** `PenitentTeleportToPriedieu` solo reproducía la animación en P1. Ahora reproduce la animación `RegresoAPuerto` tanto en P2 como en P1, asegurando que ambos se teletransporten juntos al Prie-Dieu activo.
+     10. **`PR203` (Fuego de San Telmo):** `PR203ElmFireLoopEffect` generaba las trampas de relámpagos alrededor de P1. Ahora genera el anillo eléctrico en la posición y orientación de P2 con la fuerza y duración de P2.
+
+
+### Ronda 87 - Sincronización de eventos de animación en rezos (Verdiales del Pueblo Olvidado y paridad general)
+
+1. **Problema identificado con el timing de rezos en P2:**
+   - En el rezo *Verdiales del Pueblo Olvidado* (y demás rezos ofensivos), al presionar la tecla de rezo con P2, el daño y los proyectiles (orbes/ondas rastreadoras) se disparaban instantáneamente en el frame 0, antes de que el Penitente clavara la espada en el suelo.
+   - En P1, en cambio, la animación `AuraTransform` comenzaba primero y los proyectiles y el daño solo se liberaban en el momento exacto en que la espada tocaba el suelo.
+
+2. **Causa raíz descubierta en `PrayerUse.OnUpdate` y `PenitentAttackAnimations`:**
+   - Análisis comparativo contra el decompilado de `Gameplay.GameControllers.Penitent.Abilities.PrayerUse` y `Gameplay.GameControllers.Penitent.Animator.PenitentAttackAnimations`:
+     - En el juego vanilla, al pulsar la tecla de rezo, `PrayerUse.OnUpdate` **NUNCA** llama a `Cast()`. Únicamente ejecuta `base.EntityOwner.Animator.Play(_animAuraTransform)`.
+     - La animación `AuraTransform` posee un **Animation Event** en el fotograma del impacto de la espada contra el suelo que invoca el método `PrayerUseAttack()` en `PenitentAttackAnimations`.
+     - Dicho método ejecuta `VerticalAttack.TriggerVerticalAttack(instantiateExplosion: false)` y finalmente llama a `PrayerUse.Cast()`, deduciendo el fervor y disparando `prayer.Use()` / `OnApplyEffect()` exactamente en el fotograma del golpe de espada.
+     - En nuestro mod, `PrayerUse_P2Input_Patch` estaba ejecutando `__instance.Cast()` inmediatamente en el bloque `if (Player2Input.PrayerActivateDown)`, forzando la deducción de fervor y la creación de los proyectiles en el instante del botón (frame 0). Cuando el Animation Event `PrayerUseAttack` se disparaba después, `Ability.Cast()` ya veía `Casting == true` y se descartaba.
+
+3. **Solución implementada:**
+   - En `Prayer/PrayerSystem.cs`:
+     - **`PrayerUse_P2Input_Patch`:** Se eliminó la llamada inmediata a `__instance.Cast()` al presionar `Player2Input.PrayerActivateDown`. Ahora únicamente valida el coste de fervor (`NotEnoughFervour()`), verifica `CanUsePrayer` y arranca la animación con `owner.Animator?.Play("AuraTransform")`.
+     - **`PenitentAttackAnimations_PrayerUseAttack_Patch`:** Nuevo parche Prefix sobre `PenitentAttackAnimations.PrayerUseAttack` que asegura que `_penitent` apunte al Penitent dueño (`__instance.GetComponentInParent<Penitent>()`), garantizando que cuando el Animation Event de P2 se ejecute en el fotograma de clavado de espada, `PrayerUseAttack` llame a `Cast()` en el componente `PrayerUse` propio de P2.
+   - **Resultado:**
+     - En *Verdiales del Pueblo Olvidado*, las ondas/proyectiles viajan y aplican daño en el punto exacto de la animación donde la espada penetra la tierra, 100% idéntico a P1.
+     - Este mismo ajuste sincroniza automáticamente todos los rezos dependientes del evento de animación (columnas de fuego, rayos divinos, destellos de luz, etc.) con el fotograma exacto del juego original.
+
+
+### Ronda 88 - Visuales de Menú Propio de P2, Árbol de Habilidades, Banner "[nombre jugador] menu", Ocultación de HUD y Arquitectura Multi-Jugador (P2-P4)
+
+1. **Corrección de visuales del menú de inventario de P2 (`Stats/InventoryUI.cs`, `Stats/Player2InventoryManager.cs`, `Stats/InventoryGameplayPatches.cs`):**
+   - *Causa raíz:* En `Stats/InventoryUI.cs`, `Grid_ShowLayout_P2_ItemSource_Patch` era un `Prefix` sobre `NewInventory_LayoutGrid.ShowLayout` que retornaba `false` tras llamar a `FillGridElements`. Al abortar el resto de `ShowLayout`, nunca se ejecutaban `CacheEquipped()` (que activa el contenedor visual superior `rootLayout` de la pestaña de Rezos, Cuentas de Rosario o Corazones de Espada y puebla `cachedEquipped`), `UpdateItemsBySwordHeartEquipability()`, ni `FocusSlotSecure()`. Además, `NewInventoryWidget_SetTab_P2_Patch` parcheaba `SetTab` en lugar de `SelectTab`, y `Player2InventoryManager.IsOwnedBead` / `IsSwordOwned` ocultaban el resto de objetos globales en cuanto `ownedBeads.Count > 0`.
+   - *Solución:*
+     - `ShowLayout` ahora ejecuta su flujo completo (`CacheEquipped`, activación de paneles superiores `rootLayout`, `FocusSlotSecure`, `UpdateEquipped`) y en `Grid_ShowLayout_P2_Patch` actualiza tanto los recuadros superiores de objetos equipados de P2 (rezo equipado, cuentas de rosario, corazón de Mea Culpa) como el contador de Lágrimas de Enmienda (`purgeControl.text`) de P2.
+     - En `Grid_EquipObject_P2_Patch` y `Grid_UnEquipObject_P2_Patch`, al reemplazar un rezo o corazón de espada se desmarca la celda previa (`UpdateItemById(prevId)`) y se reproducen los sonidos originales de `equipSounds` / `unequipSounds`.
+     - En `Stats/InventoryGameplayPatches.cs`, se evita superponer los objetos equipados de P2 sobre las consultas de `InventoryManager` mientras el menú está abierto en vista de P1.
+
+2. **Menú de Habilidades y Santuario Mea Culpa para P2 (`Stats/SkillTreeUI.cs`, `Stats/Player2MenuOpen.cs`):**
+   - Se añadió `NewInventoryWidget_ShowSkills_P2View_Patch` y `UnlockSkillsMenu_OnEnter_P2_Patch`: si P2 interactúa con un santuario Mea Culpa (o presiona su botón de menú `I` / `Start`), el menú de mejora de habilidades se abre mostrando el árbol propio de P2 (`Player2SkillManager`), el nivel de Mea Culpa de P2 (`[Baby] <nivel>`), las Lágrimas de Enmienda de P2 y el estado real del botón de compra (`SkillDescription_SetKill_P2_Patch` sobre `NewInventory_Description.SetKill`).
+
+3. **Indicador superior derecho `"[nombre jugador] menu"` con la fuente del juego (`Stats/Player2MenuOpen.cs`):**
+   - Se implementó `CoopMenuOwnerBanner`, que instancia un texto en la esquina superior derecha del menú clonando la tipografía original del juego (`"Majestic"` desde `NewInventoryWidget.tabLabel` y `"MajesticExtended_FullLatin"` para el menú de pausa), mostrando `"Baby menu"` (en el color verde de P2) cuando P2 abre su menú y `"Pan-chan menu"` (en el color rojo de P1) cuando P1 abre el suyo.
+
+4. **Ocultación de barras de vida, fervor y lágrimas de P2 al abrir menús (`HUD/Player2HudFadeSync.cs`):**
+   - *Causa raíz:* Los clones del HUD de P2 estaban emparentados en la raíz del `Canvas` de `UIController` por encima de `UIController.content`, y `Player2HudFadeSync` solo escuchaba a `FadeWidget` (transiciones de sala), no a la apertura de menús.
+   - *Solución:* `Player2HudFadeSync.RefreshMenuOcclusion()` (invocado desde `UIController.Update` y `NewInventoryWidget.Show`/`ShowSkills`) oculta instantáneamente `Player2HealthBar`, `Player2FervourBar`, `Player2PurgePoints` y `Player2ModeIndicator` mientras cualquier menú esté abierto, y los restaura al cerrarse.
+
+5. **Corrección de navegación y bloqueo de personaje durante menús (`Stats/Player2MenuOpen.cs`, `Input/Player2Input.cs`, `Movement/Movement.cs`):**
+   - Se eliminaron las llamadas duplicadas a `SelectPreviousCategory`, `SelectNextCategory`, `ShowLore` y `GoBack` en `UIController_MenuNavigation_P2_Patch` que provocaban saltos dobles de pestaña y cierres/reaperturas en el mismo frame (`LastMenuToggleFrame`).
+   - En `Movement/Movement.cs`, se añadió `isMenuBlocked` a `blocked` para que P2 quede completamente inmóvil mientras cualquier menú esté abierto.
+
+6. **Base arquitectónica y diagnóstico para P2, P3 y P4 (`MultiPlayer/CoopPlayerRegistry.cs`):**
+   - Se creó `CoopPlayerSlot` y `CoopPlayerRegistry` con soporte indexado para hasta 4 jugadores (`0` = P1 `"Pan-chan"`, `1` = P2 `"Baby"`, `2` = P3 `"P3"`, `3` = P4 `"P4"`), centralizando nombres, colores, skins, posiciones de HUD e instancias de `Penitent`.
+
+### Ronda 89: Corrección de Rezos de Buff Temporal (*Següiriya*), Bloqueo en *Verdiales*, Persistencia de Fervor y UI Izquierda
+
+1. **Separación entre Animación de Rezo (`AuraTransform`) y Duración del Efecto (`PrayerCast.IsUsingAbility`)** (`Movement/Movement.cs`, `Prayer/PrayerSystem.cs`):
+   - **Causa raíz doble**:
+     - En `Movement.cs`, `isPrayerCasting` se evaluaba con `____penitent.PrayerCast.IsUsingAbility`. Para rezos de buff temporal como *Següiriya a tus Ojos como Estrellas* (`EffectTime = 15s–20s`), `IsUsingAbility` permanece `true` durante los 15–20 segundos completos del buff, lo que dejaba a P2 congelado hasta que terminaba el efecto.
+     - En cambio, para rezos instantáneos de proyectiles como *Verdiales del Pueblo Olvidado* (`EffectTime = 0s`), durante la primera mitad de la animación `AuraTransform` (antes de clavar la espada) `IsUsingAbility` era `false`, y `canMove = !crouch && !isPrayerCasting` no consultaba `blocked` (`PlayerLogicBlocker`), permitiendo a P2 deslizarse o cancelar la animación si se movía al activar el rezo.
+   - **Solución**:
+     - En `PrayerUse_P2Input_Patch.Postfix` (`Prayer/PrayerSystem.cs`), al iniciar `AuraTransform` se activa inmediatamente `PlayerLogicBlocker.SetBlocked(owner, true)` y se pone `HSpeed = 0f`.
+     - En `Movement.cs`, se reemplazó `PrayerCast.IsUsingAbility` por la verificación del estado activo del `Animator` (`AuraTransform` / `RegresoAPuerto`) junto con `PlayerLogicBlocker.IsBlocked(____penitent)`. Además, `canMove = !crouch && !blocked` y `HSpeed = 0f` se aplican siempre que `isPrayerAnimPlaying || PlayerLogicBlocker.IsBlocked(____penitent)` sea verdadero. Así P2 queda 100% inmóvil únicamente durante los ~1.5s de la animación `AuraTransform` y recupera la movilidad en cuanto sale del estado (`AuraTransformBehaviour.OnStateExit`), idéntico a P1.
+
+2. **Redirección de *Següiriya a tus Ojos como Estrellas* y Todos los `ObjectEffect_Stat` / `ItemGhostTrail` / `ItemTemporalEffect` a P2** (`Prayer/PrayerEffectsExpanded.cs`):
+   - Decompilado `Framework.Inventory.ObjectEffect_Stat`, `Tools.Items.ItemGhostTrail`, `Tools.Items.ItemTemporalEffect`, `Framework.Inventory.PrayerUseVfx`, `Framework.Inventory.ProtectionDomeEffect` y `Framework.Inventory.ToxicCloudEffect`: todos tenían hardcodeado `Core.Logic.Penitent`.
+   - Añadido `ObjectEffectCasterTracker` y parches `Prefix` en `OnApplyEffect`, `OnRemoveEffect` y `OnUpdate` para que cuando P2 lanza *Següiriya* (o cualquier rezo de estadísticas/estela/invulnerabilidad/cúpula/nube tóxica), el `RawBonus` de `AttackSpeed` (y demás stats) y la estela roja `GhostTrailGenerator` se apliquen y remuevan exclusivamente sobre `CoopLocal.Player2`.
+
+3. **Cartel `"{jugador} menu"` Movido Arriba a la Izquierda** (`Stats/Player2MenuOpen.cs`):
+   - `CoopMenuOwnerBanner` ahora ancla tanto el `Text` nativo del inventario como el `TextMeshProUGUI` del overlay en la esquina superior izquierda (`anchorMin = (0, 1)`, `anchorMax = (0, 1)`, `pivot = (0, 1)`, `anchoredPosition = (24, -14)` / `(24, -18)`, alineación izquierda).
+
+4. **Atajo `F6` / `F7` para Fervor al Máximo y Persistencia de Fervor entre Salas** (`Input/Player2Input.cs`, `Stats/Player2StatsSync.cs`):
+   - Añadido en `Player2Input.Tick()` el atajo en `KeyCode.F6` y `KeyCode.F7` que rellena `Stats.Fervour.SetToCurrentMax()` para P1 y P2 y guarda el estado de P2.
+   - Eliminada la línea `p2.Stats.Fervour.SetToCurrentMax()` al final de `Player2StatsSync.ApplySnapshot` que sobrescribía en cada cambio de sala el valor `__FervourCurrent__` restaurado del disco.
+
+### Ronda 90: Sistema Elemental de Mea Culpa (Veneno I-III, Sangrado I-III), Corazones de Espada y Árbol de Habilidades
+- **Sendas Elementales**:
+  - Implementadas en [`Combat/SwordElementalUpgrades.cs`](file:///d:/Tirando/Blasphemous%20coop/Blasphemous.CoopLocal/Combat/SwordElementalUpgrades.cs):
+    - **Veneno (I a III)**:
+      - *Veneno I*: 1 DPS durante 5s.
+      - *Veneno II*: 2.5 DPS durante 7.5s.
+      - *Veneno III*: 4 DPS durante 10s.
+    - **Sangrado (I a III)**:
+      - *Sangrado I*: Umbral de golpes (6 en enemigos comunes, 10 en jefes). Al alcanzarlo: 5% de vida máxima inmediata + 3 DPS durante 5s.
+      - *Sangrado II*: 7.5% de vida máxima inmediata + 4 DPS durante 5s.
+      - *Sangrado III*: 10% de vida máxima inmediata + 5 DPS durante 5s.
+  - **Progresión Dual no excluyente**:
+    - Un jugador puede desbloquear ambos caminos; el efecto elemental activado en combate depende estrictamente del corazón de Mea Culpa equipado:
+      - `HE_VENENO`: *Corazón de Ponzoña Viva* (requiere al menos Ponzoña I).
+      - `HE_SANGRADO`: *Corazón de la Hemorragia Sagrada* (requiere al menos Filo Sangrante I).
+  - **Árbol de Habilidades**:
+    - Nodos escalados un 30% más grandes (`scale = 1.10f`).
+    - Navegación bidireccional completa por cruceta (D-Pad), WASD y flechas conectada explícitamente entre el árbol original y las columnas elementales.
+    - Atajos `Q` (Veneno) y `E` (Sangrado) en el menú de habilidades para ciclar directamente a las columnas.
+    - Coste fijado a 0 lágrimas para pruebas y testing.
+  - **Debug F8**:
+    - Cicla entre modos de prueba (Ninguno -> Veneno I -> Veneno III -> Sangrado I -> Sangrado III -> Híbridos P1/P2), equipa el corazón correspondiente, avanza por la lista de rezos y rellena el fervor al 100%.
+
+### Ronda 91: HUD Elemental sobre Enemigos - Barras de Duración Descendente y Números de Daño Flotantes
+- **Barras Descendentes de Duración (`Combat/SwordElementalUpgrades.cs`)**:
+  - Sustituido el texto de cuenta regresiva en segundos por barras visuales que descienden con el tiempo sobre los enemigos:
+    - **Barra Verde de Veneno**: Representa el tiempo restante de la ponzoña descendiendo de 100% a 0% a lo largo de su duración (5s / 7.5s / 10s).
+    - **Barra Roja de Sangrado**:
+      - Durante la acumulación de golpes muestra el progreso hacia el umbral de hemorragia.
+      - Tras el estallido, la barra desciende mostrando el tiempo restante de la hemorragia progresiva (5s).
+    - Soporte multi-jugador: si un enemigo sufre ambos efectos simultáneamente (ej. P1 aplica veneno y P2 sangrado), ambas barras se apilan limpiamente en vertical sobre la cabeza del enemigo.
+  - **Números de Daño Emergentes Flotantes (`FloatingDamageNumber`)**:
+    - Al aplicar ticks o estallidos de daño directo elemental:
+      - **Texto verde** para ticks de daño de veneno (`-1`, `-2.5`, `-4`).
+      - **Texto rojo** para ticks de sangrado (`-3`, `-4`, `-5`) y estallidos de hemorragia porcentual (mayor tamaño para impacto crítico).
+    - Los números flotan verticalmente hacia arriba y se desvanecen gradualmente en transparencia (`alpha -> 0`) antes de eliminarse.
+
+### Ronda 92: Muñeco de Pruebas Dummy (`Combat/TestDummyManager.cs`) y Atajo F5
+- **Atajo `F5`**:
+  - Al pulsar `F5`, invoca o reposiciona un enemigo Dummy de pruebas frente al jugador que tenga el foco (o P1).
+  - Si ya existe un Dummy en la sala, lo teletransporta frente al jugador, reinicia su vida al 100% y elimina estados alterados.
+- **Características del Dummy Enemy**:
+  - **Inmóvil e inerte**: Implementa `DummyEnemyBehaviour` (`EnemyBehaviour`), sin IA de persecución ni ataques (`EnableBehaviourOnLoad = false`).
+  - **Física cinemática**: `Rigidbody2D` con `isKinematic = true` para que permanezca en su sitio sin ser empujado ni caer al vacío.
+  - **Vida masiva (1,000,000 HP)**: Permite probar cadenas de combos, rezos, daño de veneno y estallidos de sangrado. Si la vida llega a 0, se auto-reinicia de inmediato a 1,000,000 HP.
+  - **Texto de HP flotante**: Muestra sobre el Dummy el valor actual de vida (`HP: 998,420 / 1,000,000`) en color dorado brillante.
+  - **Visual estilizado procedural**: Sprite de muñeco de entrenamiento generado por código (poste de madera, saco con cuerdas y diana roja/blanca en el pecho).
+  - **Totalmente compatible con el sistema elemental**: Admite el acoplamiento de `EnemyElementalStatusController`, mostrando sobre él las barras de veneno/sangrado y los números flotantes verdes/rojos.
+
+### Ronda 93: Sistema de Enfoque y Selección Dinámica de Objetivo para Enemigos y Jefes (`Combat/EnemyTargetingSystem.cs`)
+1. **Estudio y Diagnóstico con REA / Decompilación**:
+   - Se analizaron las 225 clases de la jerarquía de enemigos y jefes en `Assembly-CSharp.dll`:
+     - En el juego vanilla, todos los enemigos (`Enemy`, `EnemyBehaviour`, `VisionCone`, `EnemyAttack`) gestionan el objetivo mediante `Enemy.Target` y `Enemy.DistanceToTarget`.
+     - En `Enemy.OnStart()`, `Enemy.OnUpdate()` y `EnemyBehaviour.GetTarget()`, el juego asigna de forma rígida: `base.Target = Core.Logic.Penitent.gameObject;` (P1).
+     - Las acciones de IA (`LookAtTarget`, `Chase(Target.transform)`, `DistanceToTarget <= attackRange`) y los conos de visión (`VisionCone.CanSeeTarget(Target.transform, "Penitent")`) se evalúan contra `Target`.
+     - Por esa razón, aunque P2 estuviera al lado del enemigo o golpeándolo, el enemigo ignoraba a P2 y solo perseguía, miraba y atacaba en dirección a P1.
+2. **Solución Implementada**:
+   - **Módulo `Combat/EnemyTargetingSystem.cs`**:
+     - **Selección por Proximidad**: Evalúa en cada frame a todos los jugadores activos y vivos (`CoopPlayerRegistry` con soporte para P1, P2, P3 y P4) y asigna como `Enemy.Target` al jugador vivo más cercano.
+     - **Sistema de Represalia / Aggro**: Cuando un jugador (ej. P2) golpea a un enemigo (`EnemyDamageArea.TakeDamage`), el enemigo registra represalia inmediata hacia ese jugador durante 5 segundos, girándose y enfocándose en él.
+     - **Parches de Harmony**:
+       - `Enemy_OnUpdate_Targeting_Patch` (Postfix sobre `Enemy.OnUpdate`): Mantiene sincronizados `Target` y `DistanceToTarget` en cada frame con el jugador objetivo.
+       - `EnemyBehaviour_GetTarget_MultiPlayer_Patch` (Prefix sobre `EnemyBehaviour.GetTarget`): Retorna el objetivo real a la máquina de estados / BehaviourTree.
+       - `VisionCone_CanSeeTarget_MultiPlayer_Patch` (Prefix sobre `VisionCone.CanSeeTarget`): Lanza los rayos de visión hacia el jugador objetivo actual.
+       - `EnemyDamageArea_TakeDamage_Aggro_Patch` (Postfix sobre `EnemyDamageArea.TakeDamage`): Activa el cambio de aggro al recibir daño.
+       - Parches de orientación para jefes (`Amanecidas`, `Crisanta`, `Esdras`, `PontiffOldman`) en `LookAtPenitent`.
+
+### Ronda 94: Sistema de Configuración Previa de Partida Cooperativa (`MultiPlayer/CoopGameSetupUI.cs`, `CoopGameConfig.cs`, `CoopGameSetupPatches.cs`)
+1. **Requerimientos del Usuario**:
+   - Al crear una nueva partida en los slots de guardado, debe abrirse una pantalla de configuración previa que permita:
+     - Elegir si jugar cooperativo (`¿Jugar en Cooperativo? Sí / No`).
+     - Elegir el número de jugadores (1 a 4).
+     - Asignar el dispositivo de control a cada jugador:
+       - **Regla estricta**: El teclado solo puede ser asignado a un único jugador.
+       - **Detección por botón**: Al presionar cualquier botón de un mando físico (Joystick 1..4) o tecla del teclado, el sistema auto-detecta y asigna de inmediato ese mando/teclado a la ranura del jugador correspondiente.
+     - Elegir el nombre de cada jugador (con ciclo de nombres sugeridos).
+     - Elegir el color del texto de cada jugador (paleta vibrante y contrastada).
+2. **Arquitectura e Implementación**:
+   - **`MultiPlayer/CoopGameConfig.cs`**:
+     - Estructura persistente (`coop_game_settings.cfg`) para guardar el modo coop, número de jugadores, nombres, paletas y dispositivos (`CoopDeviceType`: `Unassigned`, `Keyboard`, `Gamepad1..4`).
+     - Lógica `AssignDevice(playerIndex, device)`: garantiza exclusividad total del teclado (si un jugador toma el teclado, se desasigna automáticamente de cualquier otro).
+     - Vinculado con `CoopPlayerRegistry` para que los nombres y colores se reflejen de inmediato en las etiquetas flotantes sobre las cabezas de los penitentes, HUD y en los banners del menú (`"[Nombre] Menú"`).
+   - **`MultiPlayer/CoopGameSetupUI.cs`**:
+     - Canvas uGUI dinámico overlay con estilo gótico del juego (fondo semi-transparente oscuro, marco dorado, tipografía original del juego).
+     - Escaneo continuo de botones de mandos (`Joystick1Button0..15` a `Joystick4Button0..15`) y teclado para asignación interactiva al pulsar.
+     - Navegación fluida por menú (Arriba/Abajo), cambio de valores (Izquierda/Derecha o A/Enter) y atajos de confirmación y cancelación.
+   - **`MultiPlayer/CoopGameSetupPatches.cs`**:
+     - Harmony Prefix en `SelectSaveSlots.OnAcceptSlots`: intercepta la pulsación sobre una ranura vacía (`slot.IsEmpty`), detiene la transición y despliega la UI de configuración cooperativa. Al pulsar "¡Comenzar Partida!", reanuda la creación de la partida con toda la configuración aplicada.
+     - Atajo `C` / `F4` en `SelectSaveSlots.Update` para abrir la pantalla de configuración en cualquier momento desde la pantalla de partidas guardadas.
+   - **Integración con Gameplay (`Input/Player2Input.cs` & `CoopLocal.cs`)**:
+     - `Player2Pad.Pad` y `Player2Pad.P1Pad` resuelven dinámicamente los gamepads físicos basándose en `CoopGameConfig.Slots`.
+     - Exclusión y reasignación de mandos en Rewired adaptadas para que 2 gamepads puedan jugar simultáneamente sin interferencia mutua.
+     - `CoopLocal.SpawnPlayer2` respeta `CoopGameConfig.IsCoopEnabled` y `PlayerCount < 2`, evitando instanciar a P2 ni su HUD si el cooperativo fue desactivado.
+
+### Ronda 95: Desbloqueo Elemental Independiente, Activación por Compra en Árbol, Navegación Fluida y Debug de Posición/Escala (`Combat/SwordElementalUpgrades.cs`, `MultiPlayer/CoopGameConfig.cs`)
+1. **Desbloqueo Independiente sin Bloqueos Mutuos**:
+   - Eliminada cualquier restricción o reseteo que bloquease una rama al comprar o equipar la otra. Ambas ramas (Veneno I..III y Sangrado I..III) pueden adquirirse y mejorarse en su totalidad al mismo tiempo en el árbol de habilidades.
+   - Corregido el campo `parentSkill` de `SkillVeneno1` y `SkillSangrado1`: se cambió de `"NO DEPENDENCY"` a `string.Empty` (`""`), permitiendo que el sistema vanilla y de P2 detecten el Nivel I como inmediatamente desbloqueable con Mea Culpa >= 1.
+2. **Regla Estricta de Activación de Habilidades por Compra en el Árbol**:
+   - Aunque el jugador tenga equipado el Corazón de Mea Culpa (`HE_VENENO` o `HE_SANGRADO`), **ningún efecto elemental se activa hasta que se adquiera al menos el Nivel I en el árbol de habilidades**.
+   - En `EnemyDamageArea_TakeDamage_ElementalStatus_Patch`, se valida que `poisonTier > 0` y `bleedTier > 0` antes de invocar `ctrl.ApplyPoison` o `ctrl.AddBleedHit`.
+3. **Navegación Natural en el Menú de Habilidades**:
+   - Implementado un despachador de navegación interactiva bidireccional en `SwordElementalUpgrades.HandleSkillTreeShortcuts` compatible con teclado (`WASD`) y mandos (`Left Stick` y `D-Pad`):
+     - **Desde Veneno**: Pulsar Derecha navega limpiamente a Sangrado en el mismo nivel; Arriba/Abajo navega entre los tiers (I, II, III).
+     - **Desde Sangrado**: Pulsar Izquierda navega a Veneno en el mismo nivel; Derecha navega al nodo correspondiente del árbol vanilla; Arriba/Abajo navega entre los tiers.
+     - **Desde el Árbol Vanilla**: Pulsar Izquierda cerca del margen izquierdo entra fluidamente a la columna de Sangrado en el tier correspondiente.
+     - Preservadas las conexiones originales del árbol vanilla (`FindSelectableOnRight`, `Up`, `Down`) para evitar atrapar el cursor en los bordes.
+4. **Sistema en Vivo de Ajuste de Posición, Escala y Tamaño de Texto**:
+   - Empaquetados todos los nodos elementales y sus etiquetas en un contenedor raíz común (`ElementalTreeContainer`).
+   - Controles interactivos dentro del menú de habilidades:
+     - **Flechas (`Arriba`, `Abajo`, `Izquierda`, `Derecha`)**: Mueven la posición completa del árbol elemental en pantalla (mantener Shift para desplazamiento rápido).
+     - **Tecla `.` (Punto) o `+`**: Aumenta el tamaño / escala del árbol en incrementos de +0.05.
+     - **Tecla `-` (Menos)**: Disminuye el tamaño / escala del árbol en incrementos de -0.05.
+     - **Tecla `{` (Llave que abre o `[` )**: Aumenta el tamaño del texto de descripción e instrucciones de la habilidad en incrementos de +10% para máxima legibilidad.
+     - **Tecla `}` (Llave que cierra o `]` )**: Disminuye el tamaño del texto de descripción en incrementos de -10%.
+   - **Persistencia**: La posición (`TreeOffsetX`, `TreeOffsetY`), la escala (`TreeScale`) y la escala de texto (`SkillTextScale`) se guardan automáticamente en `coop_game_settings.cfg`.
+   - **Banner Visual en Pantalla**: Muestra en tiempo real en la parte inferior del menú de habilidades:
+     `[ÁRBOL ELEMENTAL DEBUG] Posición: X=... Y=... | Escala Árbol: ... | Escala Texto: ...%` con instrucciones claras.
+
+### Ronda 96: Corrección de Enfoque y Detección de P2 en Enemigos con Poste / Tronco (`Combat/EnemyTargetingSystem.cs`)
+1. **Diagnóstico y Causa Raíz**:
+   - El usuario reportó que ciertos enemigos como *"los que llevan una especie de poste"* aún no fijaban a P2 y solo iban a por P1.
+   - Mediante análisis con Mono.Cecil sobre las 77 clases de enemigos en `Assembly-CSharp.dll`, se identificaron los enemigos exactos:
+     - **`BellCarrier`** (Porteador con poste/tronco y campana colgada que embiste con el poste).
+     - **`Processioner`** y **`ShooterProcessioner`** (Porteador con madero/poste sobre los hombros y querubín encadenado).
+     - **`WheelCarrier`** (Porteador con poste y rueda de Santa Catalina).
+     - **`Flagellant`** y **`NewFlagellant`** (Porteador con poste/cruz y alambre de espino).
+     - **`WalkingTomb`** (Porteador con monolito/poste de tumba).
+   - **Hallazgo Crítico 1 (Sobrescritura de OnUpdate)**: En Ronda 93 se había aplicado un parche en `[HarmonyPatch(typeof(Enemy), "OnUpdate")]`. Sin embargo, **48 de las 77 clases de enemigos sobrescriben `OnUpdate()` virtualmente llamando a `Entity.OnUpdate()` directamente**, ¡omitiendo por completo a `Enemy.OnUpdate()`! Por lo tanto, `Enemy_OnUpdate_Targeting_Patch` nunca se ejecutaba para ninguno de estos 48 enemigos. En su propio `OnUpdate()`, cada uno comprobaba `if (Target == null) Target = Core.Logic.Penitent.gameObject;` y calculaba `DistanceToTarget` contra P1 exclusivamente.
+   - **Hallazgo Crítico 2 (Composición de ChainedAngel)**: `Processioner` tiene como hijo/compañero a `ChainedAngel` (el querubín que dispara). En `Processioner.OnPlayerSpawn`, se asignaba `ChainedAngel.Target = base.Target` (P1). Al no actualizarse el `Target` de `ChainedAngel`, los proyectiles seguían disparándose únicamente a P1.
+   - **Hallazgo Crítico 3 (Sobrecarga de LookAtTarget en BellCarrier)**: `EnemyBehaviour.LookAtTarget` recibe `Vector3 targetPos`. Sin embargo, `BellCarrierBehaviour.LookAtTarget` no es un override de `EnemyBehaviour`, sino una **sobrecarga independiente que recibe `Transform targetPosition`**. La llamada polimórfica vanilla en `EnemyBehaviour` caía en el método base vacío y nunca ejecutaba el giro (`TurnAround`) en `BellCarrier`.
+   - **Hallazgo Crítico 4 (Suscripciones a OnPlayerDead)**: `WalkingTomb`, `AshCharger`, `Runner` y `NewFlagellant` se suscribían directamente a `Core.Logic.Penitent.OnDead`, desactivando su IA y deteniéndose por completo en cuanto P1 caía, ignorando que P2 seguía vivo.
+2. **Solución Implementada**:
+   - **Parche Maestro en `Entity.Update`**: Al ser `Entity.Update()` un método no virtual de MonoBehaviour que Unity llama en cada fotograma para todas las entidades (`this.OnUpdate()`), engancharlo garantiza cobertura absoluta del 100% de las 77 clases de enemigos, actualizando `enemy.Target` y `enemy.DistanceToTarget` hacia el jugador vivo óptimo (P1 o P2).
+   - **Sincronización de `ChainedAngel`**: Al actualizar el objetivo de `Processioner`, se actualiza de forma simultánea `ChainedAngel.Target` y su `DistanceToTarget`.
+   - **Orientación y Giro Dinámico para `BellCarrier`**:
+     - Si el jugador objetivo se encuentra detrás del `BellCarrier` mientras está activo/alerta/persiguiendo y no se encuentra ya girando, se invoca `bellCarrier.BellCarrierBehaviour.LookAtTarget(target.transform)`.
+     - En `RecordDamageAggro`, si P2 golpea a un `BellCarrier`, este fija aggro de inmediato, reinicia su temporizador de persecución (`ResetTimeChasing()`), se gira hacia P2 y activa el modo persecución (`Chasing()`).
+     - En `BellCarrierBehaviour.CheckCollision`, se añadió una comprobación de seguridad para que `TargetInLine` se active si el objetivo se encuentra en la línea frontal (hasta 15 unidades de alcance).
+   - **Navegación de `NewFlagellant` en Plataformas**: Parche en `NewFlagellantBehaviour.CanGoDownToReachPlayer` para evaluar la posición del objetivo real en lugar de asumir `Core.Logic.Penitent`.
+   - **Protección de Muerte de P1**: Parches en `NewFlagellantBehaviour.OnPlayerDead`, `WalkingTombBehaviour.TargetOnDead`, `AshChargerBehaviour.TargetOnDead` y `RunnerBehaviour.OnPlayerDead` para no desactivarse si todavía queda algún jugador vivo en la sala (`EnemyTargetingSystem.GetActiveLivingPlayers().Count > 0`).
+
+### Ronda 97: Selección de Skin para P2, P3 y P4 en Menú de Partida Nueva y Persistencia (`MultiPlayer/CoopGameSetupUI.cs`, `CoopGameConfig.cs`, `Cosmetics/Cosmetics.cs`)
+1. **Requerimiento del Usuario**:
+   - Permitir elegir la skin / aspecto cosmético para los jugadores P2, P3 y P4 desde el menú interactivo previo de configuración de partida cooperativa.
+2. **Arquitectura e Integración**:
+   - **Catálogo Oficial de Aspectos (`CoopGameConfig.AvailableSkins`)**:
+     - 18 aspectos oficiales disponibles: `Original`, `Verdadera Apostasía`, `Ruta Inmisericorde`, `Hijo del Milagro`, `El Osario`, `Aleación del Pecado (Mecenas)`, `Carga Dorada (Deluxe)`, `Limosnero de la Iglesia`, `Corazón Sangrante`, `Fe Inquebrantable`, `Verdadera Culpa`, `Canto de Sirena (Boss Rush)`, `Fervor de Acero (Rango S)`, `8-Bits (Demake)`, `Sierpes`, `Isidora`, `Game Boy (Demake 2)` y `Konami / Anónimo`.
+   - **Menú de Configuración Interactiva (`CoopGameSetupUI.cs`)**:
+     - Para cada jugador cooperativo invitado (P2, P3, P4) se añade una fila `Jugador X - Aspecto / Skin`.
+     - Navegación con Izquierda/Derecha o A/D para alternar entre las 18 skins disponibles en tiempo real con indicador ornamental `◈ [Nombre Skin]`.
+     - Dimensiones y distribución del panel ajustadas dinámicamente con espaciado responsive para acomodar hasta 19 filas sin desbordamiento.
+   - **Persistencia en Disco (`coop_game_settings.cfg`)**:
+     - Nuevas claves `P{i}_Skin` guardadas y leídas automáticamente en `CoopGameConfig.Save()` y `Load()`.
+     - Sincronización inmediata con `CoopPlayerRegistry.SkinPaletteId`.
+   - **Aplicación Dinámica per-Instancia (`Cosmetics/Cosmetics.cs`)**:
+     - `ColorPaletteSwapper.SetMaterial`: Parche generalizado para que cualquier jugador invitado (`CoopPlayerRegistry.IsGuestPlayer`) aplique su textura `_PaletteTex` específica en su propio `SpriteRenderer` y `extraMaterial`.
+     - Compatible con `PrieDieuCoopSync` para que el sprite de penitente rezando en el reclinatorio de P2 refleje también su skin elegida.
+
+### Ronda 98: Reorganización Horizontal del Menú de Configuración y Cambio de Estado con Botón de Ataque (`MultiPlayer/CoopGameSetupUI.cs`)
+1. **Requerimiento del Usuario**:
+   - Organizar el menú de modo que para cada jugador y sus configuraciones se navegue moviéndose hacia la izquierda o derecha (`[◄ / ►]`).
+   - Para cambiar el estado / valor de la configuración seleccionada, presionar el **Botón de Atacar**.
+2. **Diseño de Interfaz por Columnas / Tarjetas Horizontales**:
+   - Reemplazada la antigua lista vertical continua por un sistema de 3 zonas con disposición por columnas:
+     - **Zona 0 (Barra Superior)**: `[ Modo de Juego: Cooperativo (Sí/No) ]` y `[ Cantidad: 2..4 Jugadores ]`.
+     - **Zona 1 (Tarjetas de Jugadores)**: Columnas lado a lado (`PlayerCard_0` a `PlayerCard_3`) cuyo ancho y posición se distribuyen de forma uniforme según la cantidad activa (2, 3 o 4 jugadores). Cada tarjeta muestra:
+       - Cabecera con rol y color (`JUGADOR 1 (Host)`, `JUGADOR 2`, etc.).
+       - Fila 0: `Control / Dispositivo` (Teclado / Mando 1..4).
+       - Fila 1: `Nombre` (Ciclo de nombres sugeridos).
+       - Fila 2: `Color de Texto` (Muestra de color y nombre).
+       - Fila 3: `Aspecto / Skin` (Catálogo de 18 skins).
+     - **Zona 2 (Barra Inferior)**: Botones de `¡Comenzar Partida!` y `Volver / Cancelar`.
+3. **Flujo de Navegación Bidireccional (`HandleNavigationInput`)**:
+   - **`Izquierda` / `Derecha` (`A` / `D`, Stick / Cruceta)**: Se desplaza horizontalmente entre los jugadores (Columnas P1 ◄──► P2 ◄──► P3 ◄──► P4). La tarjeta activa se resalta con borde dorado brillante y fondo iluminado.
+   - **`Arriba` / `Abajo` (`W` / `S`, Stick / Cruceta)**: Se desplaza verticalmente entre las configuraciones de la tarjeta activa (Control ◄──► Nombre ◄──► Color ◄──► Skin), subiendo a la barra superior o bajando a los botones de acción.
+4. **Modificación con el Botón de Atacar (`IsAttackButtonPressed` & `HandleAttackButtonPress`)**:
+   - Al situarse sobre cualquier ajuste y presionar el botón de ataque (`Botón X / Cuadrado` en mando, tecla `K` o `J` en teclado, o Enter/A), se conmuta o avanza al siguiente valor/estado de la configuración seleccionada.
+   - Auto-asignación interactiva preservada: pulsar cualquier botón en un mando físico o tecla en teclado mientras se está en la fila "Control" auto-detecta y asigna el dispositivo a ese jugador.
+
+### Ronda 99: Escritura de Nombres con Teclado, Vista Previa de Skins en Menú, Corrección de Distancia de Tiers y Desacoplamiento Visual de Corazones en Árbol Elemental
+1. **Edición Interactiva de Nombre con Teclado (`MultiPlayer/CoopGameSetupUI.cs`)**:
+   - Eliminado el ciclo de nombres default predefinidos.
+   - Al seleccionar la fila "Nombre" de cualquier jugador y presionar el **Botón de Atacar** (o Enter/Espacio), se activa el modo de escritura interactiva `isEditingName`.
+   - Se intercepta `Input.inputString` en tiempo real:
+     - Permite escribir caracteres alfanuméricos, espacios, guiones y símbolos habituales (hasta 14 caracteres de longitud).
+     - Admite borrar caracteres hacia atrás mediante la tecla `Backspace` (`\b`).
+     - Muestra un cursor parpadeante dinámico (`_`) en color dorado brillante al final del texto mientras se escribe.
+     - Presionar `Enter`, `KeypadEnter` o el botón de ataque confirma y guarda el nombre personalizado en `coop_game_settings.cfg` y `CoopPlayerRegistry`.
+     - Presionar `Escape` cancela la edición y restaura el nombre anterior.
+2. **Sprite de Vista Previa de Skin en Menú (`MultiPlayer/CoopGameSetupUI.cs`)**:
+   - Añadido un componente `Image` dedicado (`SkinPreview`) a la derecha del texto en la Fila 3 ("Aspecto / Skin") de cada tarjeta de jugador.
+   - En cada refresco o ciclado de skin, se obtiene el sprite oficial en miniatura mediante `Core.ColorPaletteManager.GetPaletteSpritePreview(skinId)` y se muestra con `preserveAspect = true`.
+3. **Reducción de Distancia entre Nodos Elementales a un 60% (`Combat/SwordElementalUpgrades.cs`)**:
+   - En `EnsureSkillTreeNodesInjected`, se recalcularon las alturas verticales de los 3 tiers elementales (`Tier I, II, III`) tanto para Veneno como para Sangrado centrados en el Tier 2 (`elemTier2Y = yTier2`).
+   - Los deltas hacia el Tier 1 y Tier 3 se escalan por `0.60f` (`elemTier1Y = yTier2 + (yTier1 - yTier2) * 0.60f`, `elemTier3Y = yTier2 + (yTier3 - yTier2) * 0.60f`).
+   - Las etiquetas superiores de columna (`VENENO [Q]` y `SANGRADO [E]`) se reubicaron proporcionalmente a `elemTier3Y + 28f`.
+4. **Desacoplamiento Visual Estricto: Corazones vs Desbloqueo en Árbol de Habilidades (`Stats/SkillTreeUI.cs`, `Combat/SwordElementalUpgrades.cs`, `MultiPlayer/CoopGameSetupPatches.cs`)**:
+   - **Corrección de Bug**: Equipar un corazón de Mea Culpa (`HE_VENENO` o `HE_SANGRADO`) en el inventario ya no altera ni desbloquea visualmente los nodos del árbol de habilidades.
+   - En `SkillItem_UpdateStatus_P2_Patch`, se unificó la lógica visual de los nodos elementales tanto para P1 como para P2:
+     - Cada nodo solo se muestra desbloqueado (`backgorundUnLocked` activo y sprite `smallImageBuyed`) si realmente ha sido adquirido y comprado en `SkillManager` (P1) o `Player2SkillManager` (P2).
+     - Si no ha sido adquirido, se evalúa estrictamente si es desbloqueable: Tier 1 requiere Mea Culpa $\ge 1$; Tier 2 requiere Mea Culpa $\ge 2$ y Tier 1 comprado; Tier 3 requiere Mea Culpa $\ge 3$ y Tier 2 comprado.
+     - Si el tier previo no ha sido comprado, el nodo se muestra bloqueado (`backgorundLocked` activo con número de tier e icono oculto).
+   - Al crear una nueva partida en un slot vacío (`SelectSaveSlots_OnAcceptSlots_CoopSetup_Patch`), se reinicia limpiamente el estado elemental de ambos jugadores mediante `ResetElementalPath` para evitar arrastrar residuos de depuración anteriores.
+
+
+
+
+

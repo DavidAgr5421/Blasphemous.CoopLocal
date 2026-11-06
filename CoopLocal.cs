@@ -86,6 +86,7 @@ public class CoopLocal : BlasMod
         {
             return;
         }
+        PrieDieuCoopSync.Reset();
         CopyLayersRecursively(Core.Logic.Penitent.transform, Player2.transform);
     }
 
@@ -125,6 +126,12 @@ public class CoopLocal : BlasMod
             return;
         }
 
+        // Si el modo cooperativo está desactivado o la cantidad de jugadores es 1, no generar P2
+        if (!CoopGameConfig.IsCoopEnabled || CoopGameConfig.PlayerCount < 2)
+        {
+            return;
+        }
+
         if (Player2DeathState.IsPendingRevive())
         {
             return;
@@ -135,6 +142,11 @@ public class CoopLocal : BlasMod
 
     internal static Penitent SpawnPlayer2(Penitent p1, Vector3 spawnPosition)
     {
+        if (!CoopGameConfig.IsCoopEnabled || CoopGameConfig.PlayerCount < 2)
+        {
+            return null;
+        }
+
         Penitent p2Prefab = Resources.Load<Penitent>("Core/Penitent");
         Player2 = Object.Instantiate(p2Prefab, spawnPosition, Quaternion.identity);
 
@@ -242,8 +254,10 @@ public class CoopLocal : BlasMod
         // index/name and what else uses it) that the layer is safe to touch, or finding a more
         // surgical way to separate P1 and P2 specifically instead of an entire layer.
 
-        AddNameLabel(p1, "Pan-chan", new Color32(235, 36, 10,255), outlineColor: new Color32(140, 14, 0, 190));
-        AddNameLabel(Player2, "Baby", new Color32(55, 247, 70,255), outlineColor: new Color32(39, 94, 73,190));
+        CoopPlayerRegistry.RegisterInstance(0, p1);
+        AddNameLabel(p1, CoopPlayerRegistry.GetDisplayName(0), CoopPlayerRegistry.GetLabelColor(0), outlineColor: CoopPlayerRegistry.GetOutlineColor(0));
+        CoopPlayerRegistry.RegisterInstance(1, Player2);
+        AddNameLabel(Player2, CoopPlayerRegistry.GetDisplayName(1), CoopPlayerRegistry.GetLabelColor(1), outlineColor: CoopPlayerRegistry.GetOutlineColor(1));
 
         // Snapshot both players' clean (non-mud) movement stats now, before either could
         // possibly have touched a MudAreaEffect - see GamePatches for why this is needed.

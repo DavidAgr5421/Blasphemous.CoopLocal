@@ -74,6 +74,9 @@ internal static class PrayerUse_P2Input_Patch
     // reused for player prayers) haven't been individually audited for their own owner/position
     // logic yet - if castInformation comes back "SUCCESSFULLY EXECUTED" with Fervour genuinely
     // dropping on P2, the bug is in one of *those* classes instead, not in PrayerUse itself.
+    // Ronda 87: Al presionar el botón de rezo, únicamente se inicia la animación AuraTransform.
+    // El cast real (deducción de fervor y aplicación de efectos/proyectiles) lo ejecuta el Animation Event
+    // PrayerUseAttack() en PenitentAttackAnimations cuando la espada golpea el suelo, igual que en P1.
     private static void Postfix(PrayerUse __instance)
     {
         Penitent owner = __instance.GetComponentInParent<Penitent>();
@@ -83,32 +86,140 @@ internal static class PrayerUse_P2Input_Patch
         }
         if (Player2Input.PrayerActivateDown)
         {
-            // Round 39: PrayerUse.get_CanUsePrayer (non-virtual, decompiled from the real shipped
-            // Assembly-CSharp.dll) is the property that actually checks fervourNeeded against the
-            // per-instance _penitent.Stats.Fervour.Current before P1 is allowed to cast - it was
-            // never being consulted here, so P2's Cast() fired unconditionally regardless of
-            // P2's own Fervour, and with no floor P2's Fervour could go arbitrarily negative.
-            // Gating on it here mirrors P1's real logic exactly ("misma logica que rezo P1").
+            Framework.Inventory.Prayer p2Prayer = Player2InventoryManager.GetEquippedPrayerObj();
+            if (p2Prayer == null)
+            {
+                return; // P2 has no prayer equipped
+            }
+            float cost = (float)p2Prayer.fervourNeeded + owner.Stats.PrayerCostAddition.Final;
+            if (owner.Stats.Fervour.Current < cost)
+            {
+                Gameplay.UI.UIController.instance?.NotEnoughFervour();
+                return;
+            }
             bool canUsePrayer = (bool)CanUsePrayerProperty.GetValue(__instance, null);
             if (!canUsePrayer)
             {
                 return;
             }
-            float fervourBefore = owner.Stats.Fervour.Current;
-            __instance.Cast();
-            string info = (string)CastInformationField.GetValue(__instance);
+            // Inicia la animación AuraTransform y bloquea de inmediato a P2 igual que P1.
+            PlayerLogicBlocker.SetBlocked(owner, true);
+            if (owner.PlatformCharacterController != null && owner.PlatformCharacterController.PlatformCharacterPhysics != null)
+            {
+                owner.PlatformCharacterController.PlatformCharacterPhysics.HSpeed = 0f;
+            }
+            owner.Animator?.Play(UnityEngine.Animator.StringToHash("AuraTransform"));
             if (Main.CoopLocal != null)
             {
                 Blasphemous.ModdingAPI.ModLog.Info(
-                    $"[PrayerUse] P2 Cast() -> castInformation='{info}', P2 Fervour {fervourBefore:F1} -> {owner.Stats.Fervour.Current:F1}, " +
-                    $"equippedPrayer={(__instance.GetEquippedPrayer() != null ? __instance.GetEquippedPrayer().name : "null")}",
+                    $"[PrayerUse] P2 PrayerActivateDown -> started AuraTransform anim (equippedPrayer={p2Prayer.name}, cost={cost:F1})",
                     Main.CoopLocal);
             }
         }
-        if (Player2Input.PrayerActivateUp)
+    }
+}
+
+// Ronda 87: Sincronización del evento de animación con el lanzamiento de rezos (PrayerUseAttack).
+// En el juego vanilla, al presionar el botón de rezo NO se llama inmediatamente a Cast(),
+// sino que únicamente se inicia la animación "AuraTransform".
+// Cuando la animación llega al fotograma exacto donde la espada se clava en el piso,
+// Unity dispara el Animation Event que llama a PenitentAttackAnimations.PrayerUseAttack(),
+// el cual activa VerticalAttack y llama a PrayerUse.Cast().
+// Al quitar la llamada prematura a Cast() en el botón y asegurar que PrayerUseAttack resuelva a P2,
+// los proyectiles de Verdiales y los efectos de todos los rezos se disparan con el timing
+// de animación exacto e idéntico al de P1.
+[HarmonyPatch(typeof(Gameplay.GameControllers.Penitent.Animator.PenitentAttackAnimations), "PrayerUseAttack")]
+internal static class PenitentAttackAnimations_PrayerUseAttack_Patch
+{
+    private static void Prefix(Gameplay.GameControllers.Penitent.Animator.PenitentAttackAnimations __instance, ref Penitent ____penitent)
+    {
+        Penitent owner = __instance.GetComponentInParent<Penitent>();
+        if (owner != null)
         {
-            __instance.StopCast();
+            ____penitent = owner;
+            if (owner == CoopLocal.Player2 && Main.CoopLocal != null)
+            {
+                Blasphemous.ModdingAPI.ModLog.Info(
+                    "[PrayerUse] P2 AnimationEvent PrayerUseAttack fired -> sword struck ground, invoking Cast()",
+                    Main.CoopLocal);
+            }
         }
+    }
+}
+
+// Ronda 85: Asegurar que durante el rezo P2 quede bloqueado/suspendido sin moverse,
+// y que al entrar P2 en AuraTransform no se bloquee erroneamente Core.Input (lo cual congelaria a P1).
+[HarmonyPatch(typeof(AuraTransformBehaviour), "OnStateEnter")]
+internal static class AuraTransformBehaviour_OnStateEnter_Patch
+{
+    private static bool Prefix(Animator animator, ref Penitent ____penitent, ref PrayerUse ____prayer)
+    {
+        Penitent owner = animator.GetComponentInParent<Penitent>();
+        if (owner == null || owner != CoopLocal.Player2)
+        {
+            return true;
+        }
+        ____penitent = owner;
+        ____prayer = owner.GetComponentInChildren<PrayerUse>();
+        PlayerLogicBlocker.SetBlocked(owner, true);
+        DashParryDebugLog.Log("[PrayerFreeze] P2 AuraTransform enter -> PlayerLogicBlocker set to TRUE");
+        return false;
+    }
+}
+
+[HarmonyPatch(typeof(AuraTransformBehaviour), "OnStateExit")]
+internal static class AuraTransformBehaviour_OnStateExit_Patch
+{
+    private static bool Prefix(Animator animator, Penitent ____penitent)
+    {
+        Penitent owner = animator.GetComponentInParent<Penitent>() ?? ____penitent;
+        if (owner == null || owner != CoopLocal.Player2)
+        {
+            return true;
+        }
+        PlayerLogicBlocker.SetBlocked(owner, false);
+        owner.Audio?.StopPrayerCast();
+        DashParryDebugLog.Log("[PrayerFreeze] P2 AuraTransform exit -> PlayerLogicBlocker set to FALSE");
+        return false;
+    }
+}
+
+// Devuelve el rezo equipado propio de P2 en vez del de P1
+[HarmonyPatch(typeof(PrayerUse), "GetEquippedPrayer")]
+internal static class PrayerUse_GetEquippedPrayer_P2_Patch
+{
+    private static bool Prefix(PrayerUse __instance, ref Framework.Inventory.Prayer __result)
+    {
+        Penitent owner = __instance.EntityOwner as Penitent ?? __instance.GetComponentInParent<Penitent>();
+        if (owner == null || owner != CoopLocal.Player2)
+        {
+            return true;
+        }
+        __result = Player2InventoryManager.GetEquippedPrayerObj();
+        return false;
+    }
+}
+
+// Verifica si P2 puede usar su rezo propio según su coste y fervor actual
+[HarmonyPatch(typeof(PrayerUse), "CanUsePrayer", MethodType.Getter)]
+internal static class PrayerUse_CanUsePrayer_P2_Patch
+{
+    private static bool Prefix(PrayerUse __instance, ref bool __result, Penitent ____penitent)
+    {
+        Penitent owner = ____penitent ?? __instance.EntityOwner as Penitent ?? __instance.GetComponentInParent<Penitent>();
+        if (owner == null || owner != CoopLocal.Player2)
+        {
+            return true;
+        }
+        Framework.Inventory.Prayer prayer = Player2InventoryManager.GetEquippedPrayerObj();
+        if (prayer == null)
+        {
+            __result = false;
+            return false;
+        }
+        float cost = (float)prayer.fervourNeeded + owner.Stats.PrayerCostAddition.Final;
+        __result = !__instance.Casting && owner.Status.IsGrounded && !__instance.IsUsingAbility && owner.Stats.Fervour.Current >= cost && !Core.Input.InputBlocked && !Core.Input.HasBlocker("CONSOLE");
+        return false;
     }
 }
 
@@ -354,10 +465,9 @@ internal static class PrayerUse_OnUpdate_P2_AuraTransform_Patch
             // P1 - untouched vanilla behavior.
             return player.GetButtonTimedPressDown(actionId, time);
         }
-        // time is always 0f at this call site (see PrayerUse.OnUpdate decompiled source) - a
-        // timed-press with zero required hold time is just a plain press-edge, which is exactly
-        // what Player2Input.PrayerActivateDown already tracks.
-        return Player2Input.PrayerActivateDown;
+        // Retornar false para P2 para que el bloque de OnUpdate() vanilla (que evalúa el rezo de P1)
+        // no corra para P2. El lanzamiento de P2 se gestiona íntegramente en PrayerUse_P2Input_Patch.
+        return false;
     }
 
     private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)

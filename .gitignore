@@ -12,3 +12,6 @@ publish/
 # OS cruft
 .DS_Store
 Thumbs.db
+
+# CodeGraph
+.codegraph/

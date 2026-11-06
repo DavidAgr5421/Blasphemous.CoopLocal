@@ -83,6 +83,32 @@ internal static class CrouchDownBehaviour_OnStateEnter_Patch
     }
 }
 
+[HarmonyPatch(typeof(CrouchDownBehaviour), "OnStateUpdate")]
+internal static class CrouchDownBehaviour_OnStateUpdate_Patch
+{
+    private static void Prefix(Animator animator, ref Penitent ____penitent)
+    {
+        Penitent owner = animator.GetComponentInParent<Penitent>();
+        if (owner != null)
+        {
+            ____penitent = owner;
+        }
+    }
+}
+
+[HarmonyPatch(typeof(CrouchDownBehaviour), "OnStateExit")]
+internal static class CrouchDownBehaviour_OnStateExit_Patch
+{
+    private static void Prefix(Animator animator, ref Penitent ____penitent)
+    {
+        Penitent owner = animator.GetComponentInParent<Penitent>();
+        if (owner != null)
+        {
+            ____penitent = owner;
+        }
+    }
+}
+
 // Round 57 - "P2 visually enters the falling/drop pose but stays physically stuck on the
 // platform". JumpOffBehaviour (StateMachineBehaviour on the "JumpOff" animator state - the
 // actual platform-drop-through pose, entered via AnimatorInyector.OnUpdate's own
@@ -120,6 +146,40 @@ internal static class CrouchDownBehaviour_OnStateEnter_Patch
 // and reads off _penitent too, so fixing _penitent first here also fixes _rootMotion for free.
 [HarmonyPatch(typeof(JumpOffBehaviour), "OnStateEnter")]
 internal static class JumpOffBehaviour_OnStateEnter_Patch
+{
+    private static void Prefix(Animator animator, ref Penitent ____penitent, ref Gameplay.GameControllers.Penitent.Gizmos.RootMotionDriver ____rootMotion)
+    {
+        Penitent owner = animator.GetComponentInParent<Penitent>();
+        if (owner != null)
+        {
+            ____penitent = owner;
+            if (____rootMotion == null || ____rootMotion.transform.parent != owner.transform)
+            {
+                ____rootMotion = owner.GetComponentInChildren<Gameplay.GameControllers.Penitent.Gizmos.RootMotionDriver>();
+            }
+        }
+    }
+}
+
+[HarmonyPatch(typeof(JumpOffBehaviour), "OnStateUpdate")]
+internal static class JumpOffBehaviour_OnStateUpdate_Patch
+{
+    private static void Prefix(Animator animator, ref Penitent ____penitent, ref Gameplay.GameControllers.Penitent.Gizmos.RootMotionDriver ____rootMotion)
+    {
+        Penitent owner = animator.GetComponentInParent<Penitent>();
+        if (owner != null)
+        {
+            ____penitent = owner;
+            if (____rootMotion == null || ____rootMotion.transform.parent != owner.transform)
+            {
+                ____rootMotion = owner.GetComponentInChildren<Gameplay.GameControllers.Penitent.Gizmos.RootMotionDriver>();
+            }
+        }
+    }
+}
+
+[HarmonyPatch(typeof(JumpOffBehaviour), "OnStateExit")]
+internal static class JumpOffBehaviour_OnStateExit_Patch
 {
     private static void Prefix(Animator animator, ref Penitent ____penitent)
     {
@@ -222,8 +282,7 @@ internal static class PlatformCharacterInput_Update_Patch
         AccessTools.Field(typeof(PlatformCharacterInput), "<IsJumpOff>k__BackingField");
 
     private static bool player2PressedJumpButton;
-    private static bool player2JumpOffPending;
-    private static float player2JumpOffTimer;
+    private static bool player2PlatformDropDownPulse;
 
     // Round 51: root cause of "P2 entra en carga de ataque cuando P1 mantiene su botón de
     // ataque". IsAttackButtonHold (private-set auto-property) is computed inside vanilla's own
@@ -306,9 +365,33 @@ internal static class PlatformCharacterInput_Update_Patch
             $"(frame {Time.frameCount})");
     }
 
-    private static void Postfix(Penitent ____penitent)
+    private const float ChargedAttackMoveSpeedScale = 0.6f; // 40% slower while charging attack
+
+    private static void Postfix(PlatformCharacterInput __instance, Penitent ____penitent)
     {
-        if (____penitent == null || ____penitent != CoopLocal.Player2)
+        if (____penitent == null)
+        {
+            return;
+        }
+
+        // Ronda 90: Permitir tanto a P1 como a P2 moverse mientras cargan el ataque (IsChargingAttack)
+        // a un 60% de velocidad (40% más lento), manteniendo la animación de carga (ReachAxisThreshold = false).
+        bool isChargingMove = ____penitent.IsChargingAttack && !____penitent.ReleaseChargedAttack && !__instance.IsAttacking;
+        PlatformCharacterController anyCtrl = ____penitent.PlatformCharacterController;
+        if (anyCtrl != null)
+        {
+            if (isChargingMove)
+            {
+                anyCtrl.HorizontalSpeedScale = ChargedAttackMoveSpeedScale;
+                __instance.ReachAxisThreshold = false;
+            }
+            else if (Mathf.Approximately(anyCtrl.HorizontalSpeedScale, ChargedAttackMoveSpeedScale))
+            {
+                anyCtrl.HorizontalSpeedScale = 1f;
+            }
+        }
+
+        if (____penitent != CoopLocal.Player2)
         {
             return;
         }
@@ -330,7 +413,25 @@ internal static class PlatformCharacterInput_Update_Patch
         // Damage correctly stops on its own (PenitentDamageArea.OnUpdate disables the collider once
         // Status.Dead is true - untouched vanilla logic, per-instance already), which is why only
         // the "still moving/attacking" half was reported.
-        bool blocked = PlayerLogicBlocker.IsBlocked(____penitent) || ____penitent.Status.Dead;
+        // Ronda 89-90: Bloquear a P2 únicamente durante la animación de lanzamiento del rezo (AuraTransform / RegresoAPuerto),
+        // durante la curación con matraz biliar (Healing), y cuando PlayerLogicBlocker está activo,
+        // pero NO durante toda la duración de buffs temporales (PrayerCast.IsUsingAbility).
+        bool isPrayerAnimPlaying = false;
+        bool isHealingAnimPlaying = ____penitent.Healing != null && ____penitent.Healing.IsHealing;
+        if (____penitent.Animator != null)
+        {
+            AnimatorStateInfo stateInfo = ____penitent.Animator.GetCurrentAnimatorStateInfo(0);
+            int auraHash = UnityEngine.Animator.StringToHash("AuraTransform");
+            int regresoHash = UnityEngine.Animator.StringToHash("RegresoAPuerto");
+            int healingHash = UnityEngine.Animator.StringToHash("Healing");
+            isPrayerAnimPlaying = stateInfo.shortNameHash == auraHash || stateInfo.shortNameHash == regresoHash;
+            if (stateInfo.shortNameHash == healingHash)
+            {
+                isHealingAnimPlaying = true;
+            }
+        }
+        bool isMenuBlocked = GlobalBlockerTracker.AnyBlockerOtherThanPlayerLogic() || Player2MenuView.IsShowingAnyMenu;
+        bool blocked = PlayerLogicBlocker.IsBlocked(____penitent) || ____penitent.Status.Dead || isPrayerAnimPlaying || isHealingAnimPlaying || isMenuBlocked;
 
         Player2Input.Tick();
 
@@ -403,9 +504,17 @@ internal static class PlatformCharacterInput_Update_Patch
         // The original method itself already blocks Left/Right while crouched (same rule
         // P1 follows) - our own crouch key is the source of truth for that here instead of
         // waiting a frame for Penitent.IsCrouched to catch up.
-        bool canMove = !crouch;
+        bool isHorizontalAttackClamped = ____penitent.Status.IsHurt || ____penitent.IsJumpingOff || ____penitent.Status.Dead || ____penitent.ReleaseChargedAttack || __instance.IsAttacking;
+        bool canMove = !crouch && !blocked && !isHorizontalAttackClamped;
 
         PlatformCharacterController controller = ____penitent.PlatformCharacterController;
+
+        // Ronda 90: Solo frenar HSpeed=0 durante la animación de rezo, curación o ataque en el suelo,
+        // NUNCA en genérico PlayerLogicBlocker.IsBlocked (que incluye Dash y anulaba todo el impulso del Dash).
+        if (isPrayerAnimPlaying || isHealingAnimPlaying || (isHorizontalAttackClamped && controller.IsGrounded && !____penitent.IsDashing))
+        {
+            controller.PlatformCharacterPhysics.HSpeed = 0f;
+        }
 
         // Round 48 - "P2 can't climb ladders unless P1 also holds up/down": this Postfix has only
         // ever overridden Left/Right/Jump. The vanilla PlatformCharacterInput.Update() body (which
@@ -429,8 +538,26 @@ internal static class PlatformCharacterInput_Update_Patch
             DashParryDebugLog.Log($"P2 ladder Up/Down action state: {verticalActionState} (frame {Time.frameCount})");
         }
 
-        controller.SetActionState(eControllerActions.Left, canMove && left);
-        controller.SetActionState(eControllerActions.Right, canMove && right);
+        if (!____penitent.IsDashing)
+        {
+            controller.SetActionState(eControllerActions.Left, canMove && left);
+            controller.SetActionState(eControllerActions.Right, canMove && right);
+        }
+        else if (____penitent.Dash != null)
+        {
+            ____penitent.Dash.AddDashForce();
+        }
+
+        // Round 82 - Ladder jump cooldown: when jumping while climbing, reset threshold so P2 jumps away cleanly instead of regrabbing immediately
+        bool isClimbingLadder = controller.IsClimbing || ____penitent.IsClimbingLadder;
+        if (isClimbingLadder && ____penitent.CanJumpFromLadder)
+        {
+            if (jump && !player2PressedJumpButton && !crouch)
+            {
+                controller.ResetLadderJumpTimeThreshold();
+                DashParryDebugLog.Log($"P2 ladder jump -> ResetLadderJumpTimeThreshold called (frame {Time.frameCount})");
+            }
+        }
 
         // Round 58 - "P2 a veces salta en vez de bajar de la plataforma al soltar Down+Jump juntos".
         // Vanilla's own Jump action-state assignment (decompiled PlatformCharacterInput.Update,
@@ -451,7 +578,7 @@ internal static class PlatformCharacterInput_Update_Patch
         // per-frame timing (leftover m_jumpingTimer from a previous jump, exact frame Down registered
         // as held vs Jump) - hence the inconsistency. Fix: mirror vanilla's !IsJoystickDown()
         // exclusion exactly - never set Jump true for P2 while crouch is also true.
-        bool jumpActionState = jump && !crouch;
+        bool jumpActionState = jump && !crouch && !isChargingMove && !isHorizontalAttackClamped;
         if ((jump && crouch) != lastLoggedJumpSuppressedByCrouch)
         {
             lastLoggedJumpSuppressedByCrouch = jump && crouch;
@@ -471,43 +598,45 @@ internal static class PlatformCharacterInput_Update_Patch
         // vanilla reads, and its own static timer/latch fields for vanilla's private
         // pressedJumpButton/coroutine (which live on the same PlatformCharacterInput instance, but
         // get fed wrong data for P2's instance by vanilla's own Update() body before this Postfix runs).
-        if (player2JumpOffPending)
+        // Round 82 - platform drop-through immediate & reliable trigger
+        if (player2PlatformDropDownPulse)
         {
-            player2JumpOffTimer -= Time.deltaTime;
-            if (player2JumpOffTimer <= 0f)
-            {
-                controller.SetActionState(eControllerActions.PlatformDropDown, true);
-                player2JumpOffPending = false;
-                IsJumpOffBackingField.SetValue(input, false);
-            }
+            // Clear PlatformDropDown after 1 frame so it doesn't stay latched indefinitely
+            controller.SetActionState(eControllerActions.PlatformDropDown, false);
+            player2PlatformDropDownPulse = false;
         }
+
         if (____penitent.Status.IsHurt || ____penitent.Status.IsIdle)
         {
             IsJumpOffBackingField.SetValue(input, false);
         }
-        bool player2IsJumpOff = (bool)IsJumpOffBackingField.GetValue(input);
-        if (jump && !player2IsJumpOff && controller.IsGrounded && ____penitent.isJumpOffReady &&
-            !player2PressedJumpButton && !____penitent.FloorChecker.IsOnFloorPlatform &&
-            !____penitent.StepOnLadder && crouch &&
-            !Core.LevelManager.currentLevel.LevelName.Equals("D24Z01S01"))
+
+        bool onOneWayPlatform = ____penitent.FloorChecker.OneWayDownCollision || !____penitent.FloorChecker.IsOnFloorPlatform;
+        bool jumpPressedThisFrame = jump && !player2PressedJumpButton;
+
+        if (jumpPressedThisFrame && crouch && controller.IsGrounded && onOneWayPlatform &&
+            !____penitent.StepOnLadder && !Core.LevelManager.currentLevel.LevelName.Equals("D24Z01S01"))
         {
             player2PressedJumpButton = true;
             IsJumpOffBackingField.SetValue(input, true);
+            controller.SetActionState(eControllerActions.Jump, false);
+            controller.SetActionState(eControllerActions.PlatformDropDown, true);
+            player2PlatformDropDownPulse = true;
+            ____penitent.Animator?.SetTrigger("JUMP_OFF");
             input.onJumpOff?.Invoke(____penitent.transform.position);
-            controller.SetActionState(eControllerActions.PlatformDropDown, false);
-            player2JumpOffPending = true;
-            player2JumpOffTimer = input.timeToJumpOff;
-            DashParryDebugLog.Log($"P2 platform drop-through triggered (timeToJumpOff={input.timeToJumpOff:F2}, frame {Time.frameCount})");
+            controller.PlatformCharacterPhysics.VSpeed = -2.5f;
+            DashParryDebugLog.Log($"P2 platform drop-through immediate triggered (grounded={controller.IsGrounded}, oneWay={____penitent.FloorChecker.OneWayDownCollision}, frame {Time.frameCount})");
         }
-        else if (!jump)
+        else if (jump)
         {
-            player2PressedJumpButton = false;
+            player2PressedJumpButton = true;
         }
         else
         {
+            player2PressedJumpButton = false;
             IsJumpOffBackingField.SetValue(input, false);
         }
-        input.ReachAxisThreshold = left || right;
+        input.ReachAxisThreshold = !isChargingMove && !isHorizontalAttackClamped && (left || right);
         JumpBackingField.SetValue(input, jump);
 
         // isJoystickDown is what AnimatorInyector actually checks to set Penitent.IsCrouched -
@@ -574,6 +703,27 @@ internal static class PlatformCharacterInput_Update_Patch
             player2Facing = EntityOrientation.Right;
         }
         ____penitent.SetOrientation(player2Facing);
+    }
+}
+
+// Ronda 90: Permitir movimiento horizontal mientras se carga el ataque (IsChargingAttack) tanto para P1 como P2,
+// pero mantener el bloqueo cuando se suelta el golpe cargado (ReleaseChargedAttack / IsAttacking).
+[HarmonyPatch(typeof(PlatformCharacterInput), "IsHorizontalClamped")]
+internal static class PlatformCharacterInput_IsHorizontalClamped_Patch
+{
+    private static bool Prefix(PlatformCharacterInput __instance, Penitent ____penitent, ref bool __result)
+    {
+        if (____penitent == null)
+        {
+            return true;
+        }
+
+        __result = ____penitent.Status.IsHurt
+            || ____penitent.IsJumpingOff
+            || ____penitent.Status.Dead
+            || ____penitent.ReleaseChargedAttack
+            || __instance.IsAttacking;
+        return false;
     }
 }
 
