@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using CreativeSpore.SmartColliders;
 using Framework.FrameworkCore;
 using Framework.Managers;
@@ -22,13 +23,51 @@ public class CoopLocal : BlasMod
     // two visually separate again within a frame or two once movement resumes.
     private static readonly Vector3 P2SpawnOffset = Vector3.zero;
 
-    // Exposed so GamePatches can tell P2's PlatformCharacterInput apart from P1's.
+    // Instancias de jugadores cooperativos
     internal static Penitent Player2 { get; private set; }
+    internal static Penitent Player3 { get; private set; }
+    internal static Penitent Player4 { get; private set; }
+
+    internal static Penitent GetPlayer(int index)
+    {
+        switch (index)
+        {
+            case 0: return Core.Logic != null ? Core.Logic.Penitent : null;
+            case 1: return Player2;
+            case 2: return Player3;
+            case 3: return Player4;
+            default: return null;
+        }
+    }
+
+    internal static IEnumerable<Penitent> GetAllExtraPlayers()
+    {
+        if (Player2 != null) yield return Player2;
+        if (Player3 != null) yield return Player3;
+        if (Player4 != null) yield return Player4;
+    }
+
+    internal static bool IsGuestPlayer(Penitent penitent, out int slotIndex)
+    {
+        slotIndex = -1;
+        if (penitent == null) return false;
+        if (penitent == Player2) { slotIndex = 1; return true; }
+        if (penitent == Player3) { slotIndex = 2; return true; }
+        if (penitent == Player4) { slotIndex = 3; return true; }
+        return false;
+    }
 
     internal CoopLocal() : base(ModInfo.MOD_ID, ModInfo.MOD_NAME, ModInfo.MOD_AUTHOR, ModInfo.MOD_VERSION) { }
 
     protected override void OnInitialize()
     {
+        CoopGameConfig.Load();
+        CoopGameConfig.ApplyToRegistry();
+        if (CoopGameConfig.IsCoopEnabled && Combat.CoopEnemyScaling.ActiveEnemyMultiplier <= 1.01f && Combat.CoopEnemyScaling.ActiveHealthMultiplier <= 1.01f)
+        {
+            Combat.CoopEnemyScaling.SetDefaultsForPlayerCount(Mathf.Clamp(CoopGameConfig.PlayerCount, 2, 4));
+        }
+
         SpawnManager.OnPlayerSpawn += OnPlayerSpawn;
         LevelManager.OnLevelLoaded += OnLevelLoaded;
         Player2HudFadeSync.Initialize();
@@ -82,51 +121,33 @@ public class CoopLocal : BlasMod
     // confirmed via the same log comparison) without needing to special-case any of them by name.
     private void OnLevelLoaded(Level oldLevel, Level newLevel)
     {
-        if (Player2 == null || Core.Logic == null || Core.Logic.Penitent == null)
+        Combat.CoopEnemyScaling.OnLevelLoaded();
+        if (Core.Logic == null || Core.Logic.Penitent == null)
         {
             return;
         }
         PrieDieuCoopSync.Reset();
-        CopyLayersRecursively(Core.Logic.Penitent.transform, Player2.transform);
+        foreach (var extra in GetAllExtraPlayers())
+        {
+            if (extra != null)
+            {
+                CopyLayersRecursively(Core.Logic.Penitent.transform, extra.transform);
+            }
+        }
     }
 
     // Fired by the game every time P1 spawns/respawns: level load, teleport, death respawn, etc.
-    // P2 piggybacks on this instead of hooking every spawn path individually.
     private void OnPlayerSpawn(Penitent p1)
     {
-        if (Player2 != null)
-        {
-            // Drop the outgoing P2's camera target before destroying it - otherwise ProCamera2D
-            // keeps a dangling reference to a destroyed Transform until the next full camera
-            // reset (see GamePatches' CameraManager_UpdateNewCameraParams_Patch).
-            if (CameraManager.Instance != null && CameraManager.Instance.ProCamera2D != null)
-            {
-                CameraManager.Instance.ProCamera2D.RemoveCameraTarget(Player2.transform);
-            }
-            // Save P2's current life/fervour/flasks/currency before it's discarded - P2's whole
-            // EntityStats gets rebuilt from scratch on every respawn, so without this all four
-            // would silently reset every time (see Player2StatsSync.SaveCurrentVitals's own
-            // comment in GamePatches.cs).
-            Player2SkillManager.Persist();
-            Player2InventoryManager.Persist();
-            Player2StatsSync.SaveCurrentVitals(Player2);
-            Object.Destroy(Player2.gameObject);
-            Player2 = null;
-        }
+        Penitent_OnUpdate_P2Death_Patch.IsAllDeadEventLaunched = false;
 
-        // Round 44: SpawnManager.OnPlayerSpawn also fires for the real Penitent instance that
-        // stands in the main menu's background scene (a real level, not a literal menu overlay) -
-        // user reported P2 visibly spawning and falling into the void there, HUD included, before
-        // any save was even chosen. GameModeManager.GAME_MODES.MENU is the same flag the game's
-        // own NewMainMenu.ShowMenu() sets, so it's the authoritative "are we actually in
-        // gameplay" signal - skip creating P2 (and by extension its HUD, which only gets created
-        // alongside it below) entirely while in the menu.
+        CleanupAllExtraPlayers();
+
         if (Core.GameModeManager != null && Core.GameModeManager.IsCurrentMode(GameModeManager.GAME_MODES.MENU))
         {
             return;
         }
 
-        // Si el modo cooperativo está desactivado o la cantidad de jugadores es 1, no generar P2
         if (!CoopGameConfig.IsCoopEnabled || CoopGameConfig.PlayerCount < 2)
         {
             return;
@@ -137,178 +158,147 @@ public class CoopLocal : BlasMod
             return;
         }
 
-        SpawnPlayer2(p1, p1.transform.position + P2SpawnOffset);
+        SpawnAllGuestPlayers(p1);
+    }
+
+    private static void CleanupAllExtraPlayers()
+    {
+        CleanupSinglePlayer(Player2, 1);
+        Player2 = null;
+        CleanupSinglePlayer(Player3, 2);
+        Player3 = null;
+        CleanupSinglePlayer(Player4, 3);
+        Player4 = null;
+    }
+
+    private static void CleanupSinglePlayer(Penitent p, int slot)
+    {
+        if (p == null) return;
+        if (CameraManager.Instance != null && CameraManager.Instance.ProCamera2D != null)
+        {
+            CameraManager.Instance.ProCamera2D.RemoveCameraTarget(p.transform);
+        }
+        if (slot >= 1)
+        {
+            Player2SkillManager.Persist();
+            Player2InventoryManager.Persist();
+            Player2StatsSync.SaveCurrentVitals(p, slot);
+        }
+        Object.Destroy(p.gameObject);
     }
 
     internal static Penitent SpawnPlayer2(Penitent p1, Vector3 spawnPosition)
     {
+        SpawnAllGuestPlayers(p1);
+        return Player2;
+    }
+
+    internal static void SpawnAllGuestPlayers(Penitent p1)
+    {
         if (!CoopGameConfig.IsCoopEnabled || CoopGameConfig.PlayerCount < 2)
         {
-            return null;
+            return;
         }
 
-        Penitent p2Prefab = Resources.Load<Penitent>("Core/Penitent");
-        Player2 = Object.Instantiate(p2Prefab, spawnPosition, Quaternion.identity);
+        int activeCount = Mathf.Clamp(CoopGameConfig.PlayerCount, 2, 4);
 
-        // Round 55 (Player2StatsSync's own vitals-persistence bug): P2 was instantiated as a plain
-        // root object with no scene assignment, which Unity places into whatever scene is currently
-        // *active* - LevelManager.cs sets that to the current room's own scene right before firing
-        // this spawn (SceneManager.SetActiveScene(currentLevel.GetLogicScene().Scene)). Blasphemous
-        // gives (at least some) individual rooms their own scene, unloaded via SceneManager as part
-        // of a real room-to-room LevelManager.ChangeLevel transition (as opposed to the lighter
-        // same-scene reposition path some doors use) - and Unity destroys every non-DontDestroyOnLoad
-        // object living in a scene the instant that scene unloads, with no code of ours involved.
-        // That unload happens *before* the new room's own OnPlayerSpawn fires (old scene must be
-        // gone before the new one loads), so by the time this method's own
-        // "if (Player2 != null) { SaveCurrentVitals(...); Object.Destroy(...); }" block runs for
-        // that transition, Player2 already got silently destroyed by Unity itself - and Unity's
-        // overloaded `== null` on a destroyed UnityEngine.Object returns true, so the whole
-        // save-current-vitals-before-replacing-P2 block was skipped entirely for that transition.
-        // Net effect: Player2StatsSync's on-disk snapshot only ever got updated by transitions that
-        // happened to *not* cross a scene boundary - for any playthrough where most/every room
-        // transition does cross one, the snapshot never advances past whatever
-        // Player2StatsSync.PerformFirstSync wrote once at the very start of the run, which is
-        // exactly "P2's stats reset to the one-time initial copy" as reported. Marking P2
-        // DontDestroyOnLoad (the same pattern Camera/Camera.cs and Player2Input.cs already use for
-        // their own cross-scene singletons) removes the race entirely: P2 now survives every scene
-        // unload on its own, so this method's own explicit save-then-destroy logic is always the one
-        // that runs, deterministically, every single time - not a race against Unity's own teardown.
-        // Safe with respect to physics: Blasphemous loads its additive scenes via the simple
-        // SceneManager.LoadScene(name, LoadSceneMode.Additive) overload (confirmed in the decompiled
-        // LevelManager), never the LoadSceneParameters overload that would opt into a separate
-        // per-scene PhysicsScene2D - so there is only one global 2D physics world for the whole game,
-        // and moving P2 into the DontDestroyOnLoad scene does not remove it from collision/overlap
-        // queries against the current room's geometry.
-        Object.DontDestroyOnLoad(Player2.gameObject);
+        // Spawn P2
+        Vector3 p2Pos = p1.transform.position + new Vector3(-0.6f, 0f, 0f);
+        Player2 = SpawnSingleGuestPlayer(p1, 1, p2Pos);
 
-        // Round 46: found via live log data that P2's wall cliff-ledge grab never once triggered
-        // across ~4500 airborne frames of real testing - _grabbedCliffLede (set purely by
-        // OnTriggerEnter2D's own Unity physics layer filtering, no Penitent-ownership logic
-        // involved at all) stayed null the entire session. A raw Resources.Load<Penitent>(...)
-        // instantiate carries whatever layer the *prefab asset* has serialized in the editor -
-        // P1's real layer, by contrast, is whatever the game's own live spawn/init systems assign
-        // it to at runtime, which is not guaranteed to be the same value (an old comment further
-        // below in this method assumed they matched - "both full Penitent clones on the same
-        // physics layer" - that assumption was never actually verified and this is likely why).
-        // Unity layers aren't inherited by children, so this has to walk the whole hierarchy, not
-        // just the root - copies P1's real layer (and every child's layer) onto every one of P2's
-        // own objects so P2 gets the exact same collision-matrix treatment P1 does for anything
-        // layer-filtered (cliff-lede triggers being the concrete case proven broken so far).
-        // Round 54: per-node copy now, not a single blanket root value - see CopyLayersRecursively
-        // and the comment on OnLevelLoaded above for why (P1's own children aren't all on the same
-        // layer as P1's own root, e.g. "Attack Area" is on "Water" - a blanket stamp silently wiped
-        // that out for P2 and caused real contact-damage cross-talk).
-        CopyLayersRecursively(p1.transform, Player2.transform);
-
-        // P2's input mode (keyboard/gamepad) and the P1/gamepad exclusivity that goes with it
-        // are handled every frame by Player2Input.Tick() (see GamePatches.cs, called from
-        // PlatformCharacterInput_Update_Patch) - nothing to do here at spawn time.
-
-        // P2 doesn't have a shared health pool with P1 yet, so it's made invulnerable for now
-        // instead of wiring up a second death/respawn flow (see Modding/NOTES.md) - but by
-        // patching PenitentDamageArea.TakeDamage (see GamePatches) rather than destroying the
-        // component outright. ~108 places in the game's own code call methods on
-        // Penitent.DamageArea assuming it always exists (Dash's cast start/end among them),
-        // and destroying it turned every one of those into a live landmine for P2.
-
-        // The "Core/Penitent" prefab ships with GravityScale at whatever the editor left it
-        // at (effectively 0) - LevelManager.LoadLevelRoutine only ever sets it to 3 on
-        // Core.Logic.Penitent after the level finishes loading, so a cloned P2 never gets
-        // real gravity unless we set it ourselves too.
-        Player2.PlatformCharacterController.PlatformCharacterPhysics.GravityScale = 3f;
-
-        // One-time (per save slot) clone of P1's current progression (life level, damage/flask
-        // upgrades, etc) onto P2, persisted so it never happens again after the first sync for
-        // this save - see Player2StatsSync's own comment in GamePatches.cs for the full reasoning.
-        Player2StatsSync.EnsureSynced(p1, Player2);
-        Player2SkillManager.EnsureLoadedForCurrentSlot();
-        Player2InventoryManager.EnsureLoadedForCurrentSlot();
-
-        // P1 and P2 are now both on the same physics layer (see SetLayerRecursively above), each
-        // with a real Rigidbody2D (Penitent.RigidBody) - so by default they're solid to each
-        // other under Unity's own automatic collision resolution, same as any two colliders
-        // normally would be. Disabling collision between every Collider2D pair on the two
-        // characters removes that specific interaction (harmless to keep - trigger-based
-        // colliders like damage areas/cliff-lede grabs never physically resolve in the first
-        // place either way).
-        Collider2D[] p1Colliders = p1.GetComponentsInChildren<Collider2D>(includeInactive: true);
-        Collider2D[] p2Colliders = Player2.GetComponentsInChildren<Collider2D>(includeInactive: true);
-        foreach (Collider2D p1Collider in p1Colliders)
+        // Spawn P3
+        if (activeCount >= 3)
         {
-            foreach (Collider2D p2Collider in p2Colliders)
+            Vector3 p3Pos = p1.transform.position + new Vector3(0.6f, 0f, 0f);
+            Player3 = SpawnSingleGuestPlayer(p1, 2, p3Pos);
+        }
+
+        // Spawn P4
+        if (activeCount >= 4)
+        {
+            Vector3 p4Pos = p1.transform.position + new Vector3(1.2f, 0f, 0f);
+            Player4 = SpawnSingleGuestPlayer(p1, 3, p4Pos);
+        }
+
+        // Ignorar colisiones entre todos los jugadores
+        List<Penitent> all = new List<Penitent> { p1 };
+        foreach (var extra in GetAllExtraPlayers())
+        {
+            if (extra != null) all.Add(extra);
+        }
+        for (int i = 0; i < all.Count; i++)
+        {
+            Collider2D[] colsA = all[i].GetComponentsInChildren<Collider2D>(includeInactive: true);
+            for (int j = i + 1; j < all.Count; j++)
             {
-                Physics2D.IgnoreCollision(p1Collider, p2Collider, true);
+                Collider2D[] colsB = all[j].GetComponentsInChildren<Collider2D>(includeInactive: true);
+                foreach (var ca in colsA)
+                {
+                    foreach (var cb in colsB)
+                    {
+                        Physics2D.IgnoreCollision(ca, cb, true);
+                    }
+                }
             }
         }
 
-        // A per-layer fix (Physics2D.IgnoreLayerCollision(penitentLayer, penitentLayer, true) +
-        // forcing CreativeSpore.SmartColliders' cached LayerCollision masks to rebuild - see git
-        // history / NOTES.md "Ronda 12" for the full reasoning, and why it looked promising: the
-        // game's actual character movement/collision runs through that custom raycast-based
-        // asset, not Unity's Rigidbody2D physics, so plain Physics2D.IgnoreCollision above never
-        // touches it) was tried here and reverted - confirmed by the user to break collision
-        // against level geometry entirely. p1.gameObject.layer is evidently not a Penitent-only
-        // layer - something in level geometry shares it - so disabling that layer's self-
-        // collision project-wide took the floor/walls out from under both players too. Do not
-        // reintroduce this without first confirming (via a diagnostic log of the layer's actual
-        // index/name and what else uses it) that the layer is safe to touch, or finding a more
-        // surgical way to separate P1 and P2 specifically instead of an entire layer.
-
+        // Registrar P1 en CoopPlayerRegistry y asignar etiqueta
         CoopPlayerRegistry.RegisterInstance(0, p1);
         AddNameLabel(p1, CoopPlayerRegistry.GetDisplayName(0), CoopPlayerRegistry.GetLabelColor(0), outlineColor: CoopPlayerRegistry.GetOutlineColor(0));
-        CoopPlayerRegistry.RegisterInstance(1, Player2);
-        AddNameLabel(Player2, CoopPlayerRegistry.GetDisplayName(1), CoopPlayerRegistry.GetLabelColor(1), outlineColor: CoopPlayerRegistry.GetOutlineColor(1));
 
-        // Snapshot both players' clean (non-mud) movement stats now, before either could
-        // possibly have touched a MudAreaEffect - see GamePatches for why this is needed.
-        MudAreaEffect_OnExitAreaEffect_Patch.RememberBaseline(p1);
-        MudAreaEffect_OnExitAreaEffect_Patch.RememberBaseline(Player2);
-
-        // Register P2 as a second camera target immediately - covers respawns that don't also
-        // trigger a full CameraManager.UpdateNewCameraParams() reset (see GamePatches).
-        if (CameraManager.Instance != null)
+        // Registrar targets en la cámara
+        if (CameraManager.Instance != null && CameraManager.Instance.ProCamera2D != null)
         {
             CameraManager_UpdateNewCameraParams_Patch.AddPlayer2AsCameraTarget(CameraManager.Instance.ProCamera2D);
         }
 
-        // P2 now has its own real health pool (see PenitentDamageArea patches in GamePatches) -
-        // give it its own HUD health bar too, cloned from P1's.
-        Player2HealthBar.EnsureCreated(Player2);
+        // HUD para P2
+        if (Player2 != null)
+        {
+            Player2HealthBar.EnsureCreated(Player2);
+            Player2FervourBar.EnsureCreated(Player2);
+            Player2PurgePoints.EnsureCreated(Player2);
+            Player2HealthBar.BringToFront();
+            Player2HudFadeSync.ApplyCurrentFadeState();
+        }
+    }
 
-        // Same clone-and-redirect treatment for Fervour, per the user's request.
-        Player2FervourBar.EnsureCreated(Player2);
+    private static Penitent SpawnSingleGuestPlayer(Penitent p1, int slotIndex, Vector3 spawnPosition)
+    {
+        Penitent pPrefab = Resources.Load<Penitent>("Core/Penitent");
+        Penitent guest = Object.Instantiate(pPrefab, spawnPosition, Quaternion.identity);
+        Object.DontDestroyOnLoad(guest.gameObject);
+        CopyLayersRecursively(p1.transform, guest.transform);
+        guest.PlatformCharacterController.PlatformCharacterPhysics.GravityScale = 3f;
 
-        // Same again for the currency (Purge/Tears) counter.
-        Player2PurgePoints.EnsureCreated(Player2);
+        CoopSaveManager.EnsureLoadedForCurrentSlot();
+        CoopSaveManager.ApplyConfigToGame(CoopSaveManager.CurrentSave);
+        Player2StatsSync.EnsureSynced(p1, guest, slotIndex);
+        Player2SkillManager.EnsureLoadedForCurrentSlot();
+        Player2InventoryManager.EnsureLoadedForCurrentSlot();
 
-        // Health must render above Fervour's group (which brings the whole portrait/frame along
-        // with it) - see Player2HealthBar.BringToFront()'s own comment for why this has to run
-        // after all three exist rather than from inside Health's own EnsureCreated.
-        Player2HealthBar.BringToFront();
+        CoopPlayerRegistry.RegisterInstance(slotIndex, guest);
+        AddNameLabel(guest, CoopPlayerRegistry.GetDisplayName(slotIndex), CoopPlayerRegistry.GetLabelColor(slotIndex), outlineColor: CoopPlayerRegistry.GetOutlineColor(slotIndex));
 
-        // Round 56: all three HUD clones above were just (re)created fresh and default to active -
-        // but this whole method can run *during* a room transition's fade to black (OnPlayerSpawn
-        // fires mid-load). If a fade is already covering the screen right now, hide the brand new
-        // clones immediately instead of letting them flash visible until the matching
-        // FadeWidget.OnFadeHidedEnd fires - see Player2HudFadeSync's own class comment.
-        Player2HudFadeSync.ApplyCurrentFadeState();
+        // Aplicar aspecto / skin configurado
+        string skinId = CoopGameConfig.Slots[slotIndex].SkinId;
+        if (string.IsNullOrEmpty(skinId)) skinId = CoopPlayerRegistry.GetSlot(slotIndex).SkinPaletteId;
+        var swapper = guest.GetComponentInChildren<Gameplay.GameControllers.Effects.Player.Recolor.ColorPaletteSwapper>();
+        if (swapper != null && !string.IsNullOrEmpty(skinId))
+        {
+            ColorPaletteSwapper_ForcePlayer2TrueApostasy_Patch.ApplySkinToSwapper(swapper, skinId);
+        }
 
-        // Ronda 48 - debug visual: a translucent overlay tracking P2's real damage hitbox
-        // (PenitentDamageArea's own BoxCollider2D, resized live by ResizeDamageArea() while
-        // crouching/dashing/etc) so it's visible in-game exactly where a hit will actually land,
-        // instead of guessing from the sprite.
-        // Disabled for now (debug-only feature, not meant to ship visible to players) - the
-        // Player2HitboxVisualizer class itself is left untouched so this is a one-line revert.
-        // Player2HitboxVisualizer.EnsureCreated(Player2);
+        MudAreaEffect_OnExitAreaEffect_Patch.RememberBaseline(guest);
 
         if (Main.CoopLocal != null)
         {
             Blasphemous.ModdingAPI.ModLog.Info(
-                $"P2 spawned at {spawnPosition} (p1 was at {p1.transform.position}, offset={P2SpawnOffset}, " +
-                $"actual P2 pos after spawn={Player2.transform.position})",
+                $"Guest P{slotIndex + 1} spawned at {spawnPosition} (p1 at {p1.transform.position})",
                 Main.CoopLocal);
         }
-        return Player2;
+
+        return guest;
     }
 
     // Round 54: replaces the old SetLayerRecursively(Transform, int) - a single layer value
@@ -369,6 +359,31 @@ public class CoopLocal : BlasMod
         }
 
         CreateLabelTextMesh(labelObject, label, color, sortingOrder: 100);
+    }
+
+    internal static void UpdateNameLabel(Penitent penitent, string label, Color32 color, Color? outlineColor = null)
+    {
+        if (penitent == null) return;
+        Transform labelTr = penitent.transform.Find(NameLabelChildName);
+        if (labelTr == null)
+        {
+            AddNameLabel(penitent, label, color, outlineColor);
+            return;
+        }
+
+        var texts = labelTr.GetComponentsInChildren<TMPro.TextMeshPro>(includeInactive: true);
+        foreach (var tm in texts)
+        {
+            tm.text = label;
+            if (tm.gameObject.name.Contains("Outline"))
+            {
+                if (outlineColor.HasValue) tm.color = outlineColor.Value;
+            }
+            else
+            {
+                tm.color = color;
+            }
+        }
     }
 
     // The game's real Latin TMP font (the same one the in-game UI text uses; asset name captured

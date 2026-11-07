@@ -1,39 +1,56 @@
+using Framework.Managers;
 using Gameplay.UI;
 using Gameplay.UI.Widgets;
 using HarmonyLib;
+using UnityEngine;
 
 namespace Blasphemous.CoopLocal;
 
-// Round 56 / Ronda 88: Sincronización de visibilidad del HUD de P2 tanto durante fundidos a negro
-// (transiciones de sala, FadeWidget) como cuando se abre cualquier menú de jugador (Inventario,
-// Árbol de Habilidades, Pausa/Mapa). Evita que la barra de vida, fervor, matraces y lágrimas
-// de P2 se superpongan encima de la interfaz del menú.
+// Sincronización integral de visibilidad del HUD de P2 (salud, fervor, matraces y lágrimas):
+// Se oculta automáticamente cuando el HUD de P1 está oculto por:
+// - Fundidos de pantalla (FadeWidget)
+// - Cinemáticas y Cutscenes (CinematicBars / MustShowGamePlayUI == false)
+// - Diálogos con NPCs (DialogManager.InDialog)
+// - Menús de jugador (Inventario, Árbol de habilidades, Pausa, Mapa)
+// - Escenas no jugables (Menú principal, escenas de atracción)
+// - Ocultamiento parcial o total de la interfaz de gameplay (GameplayWidget.canvas.alpha <= 0.05 / HideLeftPart)
 internal static class Player2HudFadeSync
 {
     private static bool subscribed;
-    private static bool hiddenByMenu;
+    private static bool isP2HudCurrentlyVisible = true;
+
+    private static readonly System.Reflection.FieldInfo CanvasGroupField =
+        AccessTools.Field(typeof(GameplayWidget), "canvas");
+    private static readonly System.Reflection.FieldInfo LeftPartRootField =
+        AccessTools.Field(typeof(GameplayWidget), "leftPartRoot");
+    private static readonly System.Reflection.FieldInfo RightPartRootField =
+        AccessTools.Field(typeof(GameplayWidget), "rightPartRoot");
 
     internal static void Initialize()
     {
-        if (subscribed)
-        {
-            return;
-        }
-        FadeWidget.OnFadeShowStart += HideAll;
-        FadeWidget.OnFadeHidedEnd += ShowAll;
+        if (subscribed) return;
+        FadeWidget.OnFadeShowStart += OnFadeShowStart;
+        FadeWidget.OnFadeHidedEnd += OnFadeHidedEnd;
         subscribed = true;
     }
 
     internal static void Dispose()
     {
-        if (!subscribed)
-        {
-            return;
-        }
-        FadeWidget.OnFadeShowStart -= HideAll;
-        FadeWidget.OnFadeHidedEnd -= ShowAll;
+        if (!subscribed) return;
+        FadeWidget.OnFadeShowStart -= OnFadeShowStart;
+        FadeWidget.OnFadeHidedEnd -= OnFadeHidedEnd;
         subscribed = false;
-        hiddenByMenu = false;
+        isP2HudCurrentlyVisible = true;
+    }
+
+    private static void OnFadeShowStart()
+    {
+        HideAllInstant();
+    }
+
+    private static void OnFadeHidedEnd()
+    {
+        SyncVisibility(instant: false);
     }
 
     private static bool IsScreenFading()
@@ -43,81 +60,127 @@ internal static class Player2HudFadeSync
 
     internal static bool IsMenuBlockingHud()
     {
-        if (UIController.instance == null)
-        {
-            return false;
-        }
-        return UIController.instance.IsShowingMenu || UIController.instance.IsShowingInventory;
+        return UIController.instance != null && (UIController.instance.IsShowingMenu || UIController.instance.IsShowingInventory);
     }
 
-    private static void HideAll()
+    /// <summary>
+    /// Comprueba si el HUD de P1 (vida y fervor) debe estar y está efectivamente visible.
+    /// Si P1 está en cinemática, diálogo, menú o con el HUD oculto, devuelve false.
+    /// </summary>
+    internal static bool ShouldP2HudBeVisible()
     {
-        DashParryDebugLog.Log("Player2HudFadeSync: FadeWidget.OnFadeShowStart -> hiding P2 HUD");
-        Player2HealthBar.SetVisible(false);
-        Player2FervourBar.SetVisible(false);
-        Player2PurgePoints.SetVisible(false);
+        // 1. Fundido activo a negro o cargando
+        if (IsScreenFading()) return false;
+
+        // 2. Menú de inventario / pausa abierto
+        if (IsMenuBlockingHud()) return false;
+
+        // 3. Escenas no jugables (menú inicial, etc.)
+        if (Core.Logic == null || Core.Logic.IsMenuScene() || Core.Logic.IsAttrackScene()) return false;
+
+        // 4. Cinemáticas / cutscenes / eventos según el gestor oficial de UI
+        if (Core.UI == null || !Core.UI.MustShowGamePlayUI()) return false;
+
+        // 5. Diálogo activo con NPCs
+        if (Core.Dialog != null && Core.Dialog.InDialog) return false;
+
+        // 6. Modo cinemático de bandas negras
+        if (Core.UI.Cinematic != null && Core.UI.Cinematic.InCinematicMode) return false;
+
+        // 7. Estado del widget principal de Gameplay de P1
+        GameplayWidget gw = Core.UI.GameplayUI;
+        if (gw != null)
+        {
+            if (CanvasGroupField != null)
+            {
+                var cg = CanvasGroupField.GetValue(gw) as CanvasGroup;
+                if (cg != null && cg.alpha <= 0.05f) return false;
+            }
+            if (!gw.gameObject.activeInHierarchy) return false;
+
+            // Comprobar si la parte izquierda de P1 (vida y fervor) fue ocultada explícitamente
+            if (LeftPartRootField != null)
+            {
+                var leftRoot = LeftPartRootField.GetValue(gw) as GameObject;
+                if (leftRoot != null && !leftRoot.activeInHierarchy) return false;
+            }
+        }
+
+        return true;
     }
 
-    private static void ShowAll()
+    /// <summary>
+    /// Comprueba si la parte de lágrimas/monedas de P1 está visible en pantalla.
+    /// </summary>
+    internal static bool ShouldP2PurgeBeVisible()
     {
-        if (IsMenuBlockingHud())
+        if (!ShouldP2HudBeVisible()) return false;
+        GameplayWidget gw = Core.UI?.GameplayUI;
+        if (gw != null && RightPartRootField != null)
         {
-            HideAllInstant();
-            return;
+            var rightRoot = RightPartRootField.GetValue(gw) as GameObject;
+            if (rightRoot != null && !rightRoot.activeInHierarchy) return false;
         }
-        DashParryDebugLog.Log("Player2HudFadeSync: FadeWidget.OnFadeHidedEnd -> showing P2 HUD");
-        Player2HealthBar.SetVisible(true);
-        Player2FervourBar.SetVisible(true);
-        Player2PurgePoints.SetVisible(true);
+        return true;
     }
 
     internal static void HideAllInstant()
     {
+        isP2HudCurrentlyVisible = false;
         Player2HealthBar.SetVisible(false, instant: true);
         Player2FervourBar.SetVisible(false, instant: true);
         Player2PurgePoints.SetVisible(false, instant: true);
+        Player2ModeIndicator.SetMenuOverlayHidden(true);
     }
 
     internal static void ShowAllInstant()
     {
-        if (IsScreenFading())
-        {
-            return;
-        }
+        if (IsScreenFading()) return;
+        isP2HudCurrentlyVisible = true;
         Player2HealthBar.SetVisible(true, instant: true);
         Player2FervourBar.SetVisible(true, instant: true);
-        Player2PurgePoints.SetVisible(true, instant: true);
+        Player2PurgePoints.SetVisible(ShouldP2PurgeBeVisible(), instant: true);
+        Player2ModeIndicator.SetMenuOverlayHidden(false);
+    }
+
+    internal static void SyncVisibility(bool instant = false)
+    {
+        bool shouldBeVisible = ShouldP2HudBeVisible();
+
+        if (shouldBeVisible != isP2HudCurrentlyVisible)
+        {
+            isP2HudCurrentlyVisible = shouldBeVisible;
+            if (shouldBeVisible)
+            {
+                Player2HealthBar.SetVisible(true, instant);
+                Player2FervourBar.SetVisible(true, instant);
+                Player2PurgePoints.SetVisible(ShouldP2PurgeBeVisible(), instant);
+                Player2ModeIndicator.SetMenuOverlayHidden(false);
+            }
+            else
+            {
+                Player2HealthBar.SetVisible(false, instant);
+                Player2FervourBar.SetVisible(false, instant);
+                Player2PurgePoints.SetVisible(false, instant);
+                Player2ModeIndicator.SetMenuOverlayHidden(true);
+            }
+        }
+        else if (shouldBeVisible)
+        {
+            // Sincronización fina de Purge (monedas) según el estado de rightPartRoot
+            bool purgeVisible = ShouldP2PurgeBeVisible();
+            Player2PurgePoints.SetVisible(purgeVisible, instant);
+        }
     }
 
     internal static void RefreshMenuOcclusion()
     {
-        bool menuOpen = IsMenuBlockingHud();
-        if (menuOpen && !hiddenByMenu)
-        {
-            hiddenByMenu = true;
-            HideAllInstant();
-            Player2ModeIndicator.SetMenuOverlayHidden(true);
-        }
-        else if (!menuOpen && hiddenByMenu)
-        {
-            hiddenByMenu = false;
-            Player2ModeIndicator.SetMenuOverlayHidden(false);
-            if (!IsScreenFading())
-            {
-                ShowAllInstant();
-            }
-        }
+        SyncVisibility(instant: true);
     }
 
     internal static void ApplyCurrentFadeState()
     {
-        if (IsScreenFading() || IsMenuBlockingHud())
-        {
-            hiddenByMenu = IsMenuBlockingHud();
-            HideAllInstant();
-            return;
-        }
-        ShowAll();
+        SyncVisibility(instant: true);
     }
 }
 
@@ -126,6 +189,13 @@ internal static class UIController_HudMenuOcclusion_Patch
 {
     private static void Postfix()
     {
-        Player2HudFadeSync.RefreshMenuOcclusion();
+        try
+        {
+            Player2HudFadeSync.RefreshMenuOcclusion();
+        }
+        catch (System.Exception ex)
+        {
+            if (Main.CoopLocal != null) Blasphemous.ModdingAPI.ModLog.Info("[Player2HudFadeSync] Error in Update: " + ex.Message, Main.CoopLocal);
+        }
     }
 }

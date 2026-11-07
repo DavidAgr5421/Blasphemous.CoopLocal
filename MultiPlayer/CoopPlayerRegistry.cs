@@ -140,6 +140,26 @@ internal static class CoopPlayerRegistry
         return false;
     }
 
+    internal static int GetPlayerIndex(Penitent penitent)
+    {
+        if (penitent == null) return -1;
+        if (TryGetSlot(penitent, out CoopPlayerSlot slot)) return slot.PlayerIndex;
+        if (penitent == CoopLocal.Player2) return 1;
+        if (penitent == CoopLocal.Player3) return 2;
+        if (penitent == CoopLocal.Player4) return 3;
+        if (Core.Logic != null && penitent == Core.Logic.Penitent) return 0;
+        return -1;
+    }
+
+    internal static Penitent GetPenitent(int playerIndex)
+    {
+        if (playerIndex == 0) return Core.Logic != null ? Core.Logic.Penitent : null;
+        if (playerIndex == 1) return CoopLocal.Player2;
+        if (playerIndex == 2) return CoopLocal.Player3;
+        if (playerIndex == 3) return CoopLocal.Player4;
+        return GetSlot(playerIndex)?.Instance;
+    }
+
     internal static string GetDisplayName(int playerIndex) => GetSlot(playerIndex).DisplayName;
     internal static string GetMenuTitle(int playerIndex) => GetSlot(playerIndex).MenuTitle;
     internal static Color32 GetLabelColor(int playerIndex) => GetSlot(playerIndex).LabelColor;

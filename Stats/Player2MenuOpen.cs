@@ -175,8 +175,8 @@ internal static class NewInventoryWidget_Show_P2View_Patch
     {
         if (p_active)
         {
-            bool asP2 = Player2MenuView.ConsumePendingOpenAsP2();
-            Player2MenuView.SetActivePlayer(asP2 ? 1 : 0);
+            int targetPlayer = Player2MenuView.ConsumePendingOpenPlayer();
+            Player2MenuView.SetActivePlayer(targetPlayer > 0 ? targetPlayer : 0);
         }
         else
         {
@@ -208,14 +208,11 @@ internal static class UnlockSkillsMenu_OnEnter_P2_Patch
 {
     private static void Prefix(Tools.Playmaker2.Action.UnlockSkillsMenu __instance)
     {
-        if (CoopLocal.Player2 == null)
-        {
-            return;
-        }
         Gameplay.GameControllers.Penitent.Penitent toucher = UpgradeTouchResolver.Resolve(__instance.Fsm);
-        if (toucher == CoopLocal.Player2)
+        int touchedSlot = CoopPlayerRegistry.GetPlayerIndex(toucher);
+        if (touchedSlot > 0)
         {
-            Player2MenuView.RequestOpenAsP2();
+            Player2MenuView.RequestOpenAsPlayer(touchedSlot);
         }
     }
 }
@@ -230,8 +227,8 @@ internal static class NewInventoryWidget_ShowSkills_P2View_Patch
     {
         if (p_active)
         {
-            bool asP2 = Player2MenuView.ConsumePendingOpenAsP2();
-            Player2MenuView.SetActivePlayer(asP2 ? 1 : 0);
+            int targetPlayer = Player2MenuView.ConsumePendingOpenPlayer();
+            Player2MenuView.SetActivePlayer(targetPlayer > 0 ? targetPlayer : 0);
         }
         else
         {
@@ -288,11 +285,14 @@ internal static class UIController_MenuNavigation_P2_Patch
             return;
         }
 
-        // Si P2 tiene el menú abierto en modo Teclado y presiona LeftShift (su tecla de Dash/Cancelar rápida),
+        // Si un guest tiene el menú abierto y el jugador con teclado presiona LeftShift (su tecla de Dash/Cancelar rápida),
         // permitir volver atrás sin duplicar Escape (que ya maneja Rewired Player 0 en UIController.Update).
         if (Player2MenuView.IsInventoryP2View)
         {
-            if (Player2Input.Mode == Player2InputMode.Keyboard &&
+            int activeIdx = Player2MenuView.ActivePlayerIndex;
+            bool activeUsesKeyboard = (activeIdx == Player2Input.ActiveKeyboardPlayerIndex);
+
+            if (activeUsesKeyboard &&
                 Input.GetKeyDown(KeyCode.LeftShift) &&
                 !Input.GetKeyDown(KeyCode.Escape))
             {
@@ -300,10 +300,10 @@ internal static class UIController_MenuNavigation_P2_Patch
                 return;
             }
 
-            // Permitir que P1 recupere la vista del menú si presiona su propio botón de inventario mientras está abierto en P2
-            bool p1SwitchPressed = Player2Input.Mode == Player2InputMode.Gamepad
-                ? Input.GetKeyDown(KeyCode.I)
-                : Player2Pad.StartDown;
+            // Permitir que P1 recupere la vista del menú si presiona su propio botón de inventario mientras está abierto en un guest
+            bool p1SwitchPressed = (Player2Input.ActiveKeyboardPlayerIndex != 0)
+                ? (Player2Pad.P1Pad != null ? Player2Pad.GetStartDown(Player2Pad.P1Pad) : false)
+                : (Input.GetKeyDown(KeyCode.I) || Input.GetKeyDown(KeyCode.Escape));
 
             if (p1SwitchPressed && Time.frameCount != Player2MenuView.LastMenuToggleFrame)
             {

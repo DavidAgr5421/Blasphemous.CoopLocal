@@ -58,7 +58,7 @@ internal static class Interactable_InteractionTriggered_Patch
 
     private static void Postfix(Tools.Level.Interactable __instance, ref bool __result)
     {
-        if (__result || CoopLocal.Player2 == null || !Player2Input.InteractDown)
+        if (__result)
         {
             return;
         }
@@ -67,15 +67,18 @@ internal static class Interactable_InteractionTriggered_Patch
             return;
         }
         bool interactableWhileJumping = (bool)InteractableWhileJumpingField.GetValue(__instance);
-        if (CoopLocal.Player2.IsJumping && !interactableWhileJumping)
+        foreach (var guest in CoopLocal.GetAllExtraPlayers())
         {
-            return;
+            if (guest == null) continue;
+            int slot = CoopPlayerRegistry.GetPlayerIndex(guest);
+            if (slot > 0 && Player2Input.GetInteractDown(slot))
+            {
+                if (guest.IsJumping && !interactableWhileJumping) continue;
+                if (guest.IsGrabbingCliffLede) continue;
+                __result = true;
+                return;
+            }
         }
-        if (CoopLocal.Player2.IsGrabbingCliffLede)
-        {
-            return;
-        }
-        __result = true;
     }
 }
 

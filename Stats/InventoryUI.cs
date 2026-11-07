@@ -1,3 +1,4 @@
+using Gameplay.GameControllers.Penitent;
 using Framework.Inventory;
 using Framework.Managers;
 using Gameplay.UI.Others.MenuLogic;
@@ -28,8 +29,10 @@ internal static class Grid_ShowLayout_P2_Patch
     {
         if (!Player2MenuView.IsInventoryP2View) return;
 
-        // Actualizar contador de lágrimas de enmienda (Purge) con el valor real de P2
-        if (CoopLocal.Player2 != null && PurgeControlField != null && PurgeTextField != null)
+        // Actualizar contador de lágrimas de enmienda (Purge) con el valor real del jugador activo
+        int activeIdx = Player2MenuView.ActivePlayerIndex;
+        Penitent activePenitent = CoopPlayerRegistry.GetPenitent(activeIdx);
+        if (activePenitent != null && PurgeControlField != null && PurgeTextField != null)
         {
             var purgeControl = PurgeControlField.GetValue(__instance) as PlayerPurgePoints;
             if (purgeControl != null)
@@ -37,7 +40,7 @@ internal static class Grid_ShowLayout_P2_Patch
                 var purgeText = PurgeTextField.GetValue(purgeControl) as Text;
                 if (purgeText != null)
                 {
-                    purgeText.text = ((int)CoopLocal.Player2.Stats.Purge.Current).ToString();
+                    purgeText.text = ((int)activePenitent.Stats.Purge.Current).ToString();
                 }
             }
         }
@@ -69,7 +72,9 @@ internal static class Grid_UpdateEquipped_P2_Patch
         if (!Player2MenuView.IsInventoryP2View) return true; // P1 vanilla
         if (Core.InventoryManager == null) return true;
 
-        int p2BeadSlots = CoopLocal.Player2 != null ? (int)CoopLocal.Player2.Stats.BeadSlots.Final : 2;
+        int activeIdx = Player2MenuView.ActivePlayerIndex;
+        Penitent activePenitent = CoopPlayerRegistry.GetPenitent(activeIdx);
+        int p2BeadSlots = activePenitent != null ? (int)activePenitent.Stats.BeadSlots.Final : 2;
         if (p2BeadSlots <= 0) p2BeadSlots = 2;
         int avail = itemType != InventoryManager.ItemType.Bead ? 9999 : p2BeadSlots;
         AvailableEquipablesField?.SetValue(__instance, avail);

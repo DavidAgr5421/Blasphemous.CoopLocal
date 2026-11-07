@@ -46,24 +46,119 @@ internal static class Penitent_OnEntityDead_P2Fix_Patch
 [HarmonyPatch(typeof(Penitent), "OnUpdate")]
 internal static class Penitent_OnUpdate_P2Death_Patch
 {
+    private static readonly FieldInfo OnDeadField = AccessTools.Field(typeof(Penitent), "OnDead");
+    internal static bool IsAllDeadEventLaunched = false;
+
     private static bool Prefix(Penitent __instance)
     {
-        if (__instance != CoopLocal.Player2)
+        bool isP1 = (Core.Logic != null && __instance == Core.Logic.Penitent);
+        bool isGuest = CoopLocal.IsGuestPlayer(__instance, out int guestSlot);
+
+        if (!isP1 && !isGuest)
         {
             return true;
         }
-        // Solo Status.IsVisibleOnCamera + DeathEventLaunched -> MarkDeadPendingRevive, sin SetState global ni OnDead
+
         __instance.Status.IsVisibleOnCamera = __instance.IsVisible();
         if (!__instance.Status.Dead)
         {
-            return false;
+            // Si P1 está vivo, ejecutar su OnUpdate normal
+            // Si un guest está vivo, saltar OnUpdate de Penitent (se maneja por su controller)
+            return isP1;
         }
+
+        // --- Jugador Muerto ---
         if (!__instance.DeathEventLaunched)
         {
             __instance.DeathEventLaunched = true;
-            Player2DeathState.MarkDeadPendingRevive();
+            if (isGuest)
+            {
+                Player2DeathState.MarkDeadPendingRevive(guestSlot);
+            }
+            else if (isP1)
+            {
+                Player1DeathState.MarkDeadPendingRevive();
+            }
+            CameraTargetDebugToggle.Apply();
         }
+
+        // Comprobar si al menos un jugador sigue con vida en partida cooperativa
+        bool isCoop = CoopGameConfig.IsCoopEnabled && CoopGameConfig.PlayerCount > 1;
+        bool anyOtherAlive = false;
+
+        if (isCoop)
+        {
+            Penitent p1 = Core.Logic != null ? Core.Logic.Penitent : null;
+            if (p1 != null && p1 != __instance && !p1.Status.Dead && !Player1DeathState.IsPendingRevive())
+            {
+                anyOtherAlive = true;
+            }
+            if (!anyOtherAlive)
+            {
+                foreach (var extra in CoopLocal.GetAllExtraPlayers())
+                {
+                    if (extra != null && extra != __instance && !extra.Status.Dead)
+                    {
+                        int extraSlot = CoopPlayerRegistry.GetPlayerIndex(extra);
+                        if (extraSlot > 0 && !Player2DeathState.IsPendingRevive(extraSlot))
+                        {
+                            anyOtherAlive = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (anyOtherAlive)
+        {
+            // Hay al menos un jugador vivo: NO mostrar pantalla de muerte ni cambiar estado a PlayerDead
+            return false;
+        }
+
+        // --- TODOS LOS JUGADORES HAN MUERTO (Fin de partida / Game Over) ---
+        if (!IsAllDeadEventLaunched)
+        {
+            IsAllDeadEventLaunched = true;
+            if (Main.CoopLocal != null)
+            {
+                Blasphemous.ModdingAPI.ModLog.Info("[CoopDeath] All players dead. Triggering Game Over and DeadScreen once.", Main.CoopLocal);
+            }
+
+            if (Core.Logic.CurrentState != LogicStates.PlayerDead)
+            {
+                Core.Logic.SetState(LogicStates.PlayerDead);
+            }
+            Core.Logic.PlayerCurrentLife = -1f;
+
+            if (Core.Logic.Penitent != null)
+            {
+                var del = OnDeadField?.GetValue(Core.Logic.Penitent) as Core.SimpleEvent;
+                del?.Invoke();
+            }
+        }
+
         return false;
+    }
+}
+
+[HarmonyPatch(typeof(Penitent), "Respawn")]
+internal static class Penitent_Respawn_Patch
+{
+    private static void Prefix(Penitent __instance)
+    {
+        Penitent_OnUpdate_P2Death_Patch.IsAllDeadEventLaunched = false;
+        Player1DeathState.ClearPendingRevive();
+        for (int p = 1; p < CoopPlayerRegistry.MaxPlayers; p++)
+        {
+            Player2DeathState.ClearPendingRevive(p);
+        }
+        Player2StatsSync.ResetVitalsForRespawn();
+        CameraTargetDebugToggle.Apply();
+        if (Main.CoopLocal != null)
+        {
+            Blasphemous.ModdingAPI.ModLog.Info("[CoopDeath] Penitent.Respawn called -> wipe reset and revived all players.", Main.CoopLocal);
+        }
     }
 }
 

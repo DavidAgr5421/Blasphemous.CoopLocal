@@ -43,11 +43,13 @@ internal static class CoopGameConfig
     public static bool IsCoopEnabled = true;
     public static int PlayerCount = 2; // 1 a 4
 
-    // Configuración visual del árbol elemental (posición y escala ajustables en vivo)
-    public static float TreeOffsetX = -9999f; // Centinela: se inicializa según el árbol si no está en config
-    public static float TreeOffsetY = 0f;
+    // Configuración visual del árbol elemental (posición y escala calibradas por el usuario)
+    public static float TreeOffsetX = -2.0f;
+    public static float TreeOffsetY = 4.0f;
     public static float TreeScale = 1.10f;
     public static float SkillTextScale = 1.0f; // Escala del texto de descripciones ({ aumenta, } disminuye)
+    public static float ElementalBranchSpacing = 178f; // Distancia horizontal entre rama Veneno y Sangrado (calibrado)
+    public static float ElementalNodeVerticalSpacing = 51f; // Distancia vertical entre niveles I, II y III
 
     public static readonly PlayerSlotConfig[] Slots = new PlayerSlotConfig[4]
     {
@@ -248,6 +250,11 @@ internal static class CoopGameConfig
             sb.AppendLine($"TreeOffsetY={TreeOffsetY.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
             sb.AppendLine($"TreeScale={TreeScale.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
             sb.AppendLine($"SkillTextScale={SkillTextScale.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+            sb.AppendLine($"ElementalBranchSpacing={ElementalBranchSpacing.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+            sb.AppendLine($"ElementalNodeVerticalSpacing={ElementalNodeVerticalSpacing.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+            sb.AppendLine($"EnemyMultiplier={Combat.CoopEnemyScaling.ActiveEnemyMultiplier.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+            sb.AppendLine($"EnemyHealthMultiplier={Combat.CoopEnemyScaling.ActiveHealthMultiplier.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+            sb.AppendLine($"BossResistanceFactor={Combat.CoopEnemyScaling.ActiveBossResistanceFactor.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
             for (int i = 0; i < Slots.Length; i++)
             {
                 sb.AppendLine($"P{i}_Name={Slots[i].Name}");
@@ -256,6 +263,13 @@ internal static class CoopGameConfig
                 sb.AppendLine($"P{i}_Skin={Slots[i].SkinId}");
             }
             File.WriteAllText(ConfigPath, sb.ToString());
+            int currentSlot = CoopSaveManager.CurrentSlot;
+            if (currentSlot >= 0)
+            {
+                var slotData = CoopSaveManager.GetSlotData(currentSlot);
+                CoopSaveManager.SyncConfigFromGame(slotData);
+                CoopSaveManager.SaveSlot(currentSlot);
+            }
         }
         catch { }
     }
@@ -298,6 +312,26 @@ internal static class CoopGameConfig
                 else if (key.Equals("SkillTextScale", StringComparison.OrdinalIgnoreCase))
                 {
                     if (float.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float ts)) SkillTextScale = Mathf.Clamp(ts, 0.5f, 3.5f);
+                }
+                else if (key.Equals("ElementalBranchSpacing", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (float.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float bs)) ElementalBranchSpacing = Mathf.Clamp(bs, 10f, 1500f);
+                }
+                else if (key.Equals("ElementalNodeVerticalSpacing", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (float.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float vs)) ElementalNodeVerticalSpacing = Mathf.Clamp(vs, 15f, 100f);
+                }
+                else if (key.Equals("EnemyMultiplier", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (float.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float em)) Combat.CoopEnemyScaling.ActiveEnemyMultiplier = em;
+                }
+                else if (key.Equals("EnemyHealthMultiplier", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (float.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float ehm)) Combat.CoopEnemyScaling.ActiveHealthMultiplier = ehm;
+                }
+                else if (key.Equals("BossResistanceFactor", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (float.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float brf)) Combat.CoopEnemyScaling.ActiveBossResistanceFactor = brf;
                 }
                 else if (key.StartsWith("P") && key.Length >= 4)
                 {

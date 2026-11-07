@@ -49,6 +49,25 @@ internal static class PrieDieu_ShallowActivationLogic_HealPlayer2_Patch
 {
     private static void Postfix()
     {
+        if (Player1DeathState.IsPendingRevive())
+        {
+            Player1DeathState.ClearPendingRevive();
+            Penitent p1 = Core.Logic.Penitent;
+            if (p1 != null)
+            {
+                p1.Status.Dead = false;
+                p1.DeathEventLaunched = false;
+                p1.Stats.Life.SetToCurrentMax();
+                PlayerDeathFixShared.EnableAbilitiesMethod?.Invoke(p1, new object[] { true });
+                PlayerDeathFixShared.EnableTraitsMethod?.Invoke(p1, new object[] { true });
+                if (p1.DamageArea != null)
+                {
+                    p1.DamageArea.IncludeEnemyLayer(true);
+                }
+                p1.Animator.Play("Idle");
+            }
+        }
+
         if (Player2DeathState.IsPendingRevive())
         {
             Player2DeathState.ClearPendingRevive();

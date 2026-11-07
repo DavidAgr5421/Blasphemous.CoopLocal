@@ -76,7 +76,7 @@ internal static class CameraManager_UpdateNewCameraParams_Patch
 
     internal static void AddPlayer2AsCameraTarget(ProCamera2D proCamera2D)
     {
-        if (proCamera2D == null || CoopLocal.Player2 == null)
+        if (proCamera2D == null)
         {
             return;
         }
@@ -86,41 +86,14 @@ internal static class CameraManager_UpdateNewCameraParams_Patch
             proCamera2D.gameObject.AddComponent<ProCamera2DZoomToFitTargets>();
         }
 
-        // Round 55: the user reported normal Coop mode (both targets, the default - not an F10
-        // debug state) sits too high vertically, not centering on the pair, cutting off the bottom
-        // of vertical rooms - the exact same *symptom* ronda 53 found and fixed for F10's own
-        // mid-room target switch, but that fix (proCamera2D.Reset() after a target actually
-        // changes) only ever got triggered from CameraTargetDebugToggle.Apply(), called below,
-        // *after* P2 has already been added directly a few lines above. By the time Apply() runs,
-        // GetCameraTarget(P2) already returns non-null (just added), so its own "did anything
-        // actually change" check sees no change and never calls Reset() - meaning the *original*,
-        // primary code path that first turns the camera from single-target (P1 alone, vanilla) into
-        // two-target coop framing has *never* re-centered/resynced the camera's internal follow
-        // state once P2 joins the target list, since this method was first written (rondas
-        // pre-F10) - not something the F10 feature introduced. The same mechanism ronda 53
-        // diagnosed applies here: ProCamera2D.Move()'s own smoothing + boundary-clamping
-        // (ProCamera2DGeometryBoundaries) then has to bridge, unassisted, whatever gap opened up
-        // between "camera snapped to P1 alone" (vanilla's own CameraManager.UpdateNewCameraParams
-        // body, which runs immediately before this Postfix) and "the real P1+P2 weighted midpoint"
-        // the instant P2 is added - which can leave it stuck too high if that gap happens to be
-        // downward (P2 lower than P1) and boundary-clamping can't fully resolve it on its own.
-        // Fixed the same way as ronda 53: explicitly re-center once, right when P2 genuinely
-        // becomes a target for the first time (tracked here directly, not inferred from Apply()'s
-        // own already-too-late check).
         bool addedNow = false;
-        if (proCamera2D.GetCameraTarget(CoopLocal.Player2.transform) == null)
+        foreach (var extra in CoopLocal.GetAllExtraPlayers())
         {
-            // Ronda 77: Vector2.zero. Vanilla hace AddCameraTarget(P1, ..., new Vector2(0,6))
-            // en CameraManager.UpdateNewCameraParams() pero en el mismo frame de carga
-            // LevelManager.UpdateNewCameraParams() llama a
-            // CameraPlayerOffset.UpdateNewParams()->SetCameraTarget() que zerea el TargetOffset
-            // del primer target "Penitent" (P1) a Vector2.zero; el offset vertical estable
-            // vanilla vive en ProCamera2D.OverallOffset (baked en el prefab/escena, nunca
-            // escrito por codigo), no en CameraTarget.TargetOffset. Copiar (0,6) a P2 lo
-            // dejaba permanentemente desplazado +6u tras cada carga normal (P1 ya zerado,
-            // Postfix corre antes de SetCameraTarget) y con (0,6) en ambos tras un ciclo F10.
-            proCamera2D.AddCameraTarget(CoopLocal.Player2.transform, 1f, 1f, 0f, Vector2.zero);
-            addedNow = true;
+            if (extra != null && proCamera2D.GetCameraTarget(extra.transform) == null)
+            {
+                proCamera2D.AddCameraTarget(extra.transform, 1f, 1f, 0f, Vector2.zero);
+                addedNow = true;
+            }
         }
 
         if (addedNow)
@@ -146,19 +119,15 @@ internal static class CameraManager_UpdateNewCameraParams_Patch
 // player's own control scheme.
 internal enum CameraDebugTargetMode
 {
-    Coop,
-    P1Only,
-    P2Only,
+    Coop = -1,
+    P1Only = 0,
+    P2Only = 1,
+    P3Only = 2,
+    P4Only = 3,
 }
 
 internal static class CameraTargetDebugToggle
 {
-    // Ronda 77: Vector2.zero. Ver nota en AddPlayer2AsCameraTarget arriba:
-    // el (0,6) de CameraManager.UpdateNewCameraParams es transitorio (zerado en el mismo
-    // frame por CameraPlayerOffset.SetCameraTarget sobre el primer "Penitent"); el offset
-    // vertical real y estable es ProCamera2D.OverallOffset (global, nunca escrito por
-    // codigo). Re-agregar con (0,6) desde el toggle F10 sin que SetCameraTarget vuelva a
-    // correr dejaba ambos targets en (0,6) y el salto de +6u reportado.
     private static readonly Vector2 TargetOffset = Vector2.zero;
 
     private static GameObject driverObject;
@@ -178,69 +147,111 @@ internal static class CameraTargetDebugToggle
 
     internal static void CycleMode()
     {
-        switch (Mode)
+        int playerCount = Mathf.Clamp(CoopGameConfig.PlayerCount, 1, 4);
+
+        if (Mode == CameraDebugTargetMode.Coop)
         {
-            case CameraDebugTargetMode.Coop:
-                Mode = CameraDebugTargetMode.P1Only;
-                break;
-            case CameraDebugTargetMode.P1Only:
-                Mode = CameraDebugTargetMode.P2Only;
-                break;
-            default:
-                Mode = CameraDebugTargetMode.Coop;
-                break;
+            Mode = CameraDebugTargetMode.P1Only;
         }
+        else if (Mode == CameraDebugTargetMode.P1Only)
+        {
+            Mode = (playerCount >= 2) ? CameraDebugTargetMode.P2Only : CameraDebugTargetMode.Coop;
+        }
+        else if (Mode == CameraDebugTargetMode.P2Only)
+        {
+            Mode = (playerCount >= 3) ? CameraDebugTargetMode.P3Only : CameraDebugTargetMode.Coop;
+        }
+        else if (Mode == CameraDebugTargetMode.P3Only)
+        {
+            Mode = (playerCount >= 4) ? CameraDebugTargetMode.P4Only : CameraDebugTargetMode.Coop;
+        }
+        else
+        {
+            Mode = CameraDebugTargetMode.Coop;
+        }
+
         Apply();
         CameraTargetModeIndicator.Show(Mode);
         if (Main.CoopLocal != null)
         {
-            Blasphemous.ModdingAPI.ModLog.Info($"[CameraDebug] camera target mode -> {Mode}", Main.CoopLocal);
+            Blasphemous.ModdingAPI.ModLog.Info($"[CameraDebug] camera target mode -> {Mode} (session players: {playerCount})", Main.CoopLocal);
         }
     }
 
-    // Re-applies the current Mode against the camera's actual target list - safe to call any
-    // number of times (SetTargetPresent below only adds/removes when the current state doesn't
-    // already match), including right after something else just rebuilt the target list from
-    // scratch (see the Postfix above and CoopLocal.OnPlayerSpawn).
-    //
-    // Round 53: the user reported that switching target mid-room (or re-selecting the same target
-    // again) leaves the camera "misplaced" - rises too high, doesn't center, cuts off the bottom
-    // of vertical rooms - but a room entered *already* in P1-only/P2-only mode is fine. The
-    // difference is that a normal room load never just mutates ProCamera2D.CameraTargets on its
-    // own - CameraManager.UpdateNewCameraParams() also directly snaps ProCamera2D.transform's
-    // position to the target and (for one second) zeroes Horizontal/VerticalFollowSmoothness, so
-    // the follow/boundary-clamping pipeline (ProCamera2D.Move(), CreativeSpore's own smoothing +
-    // ProCamera2DGeometryBoundaries' raycast-based delta clamp against level colliders) never has
-    // to bridge a large one-frame jump. AddCameraTarget/RemoveCameraTarget called on their own
-    // (what this class used to do) change ProCamera2D.CameraTargets - and therefore the raw
-    // targets-weighted midpoint Move() computes every frame - instantly, but never touch any of
-    // the camera's own internal follow/zoom state, so the very next Move() call tries to smoothly
-    // (and boundary-clamp-limited) approach a target that may have jumped many world units in one
-    // frame, through whatever level geometry happens to be nearby - exactly the kind of jump that
-    // can leave MoveInColliderBoundaries' raycast-based clamping stuck against the wrong edge.
-    // ProCamera2D.Reset(bool centerOnTargets = true) is the SDK's own built-in fix for precisely
-    // this situation - it re-centers instantly on the current target list's weighted midpoint via
-    // MoveCameraInstantlyToPosition (which also calls ResetMovement(), resyncing the internal
-    // smoothed-position state to match instead of leaving it stale), resets zoom back to the
-    // level's base size (ResetSize()), and fires the ProCamera2D.OnReset event - which
-    // ProCamera2DZoomToFitTargets.OnReset() is subscribed to (via BasePC2D.Enable()) and uses to
-    // reset its own _zoomVelocity/_targetCamSize/_targetCamSizeSmoothed back to _initialCamSize.
-    // Only called when SetTargetPresent below actually changed something, so a normal level-load
-    // call in Coop mode (where nothing needs to change) never disturbs vanilla's own positioning.
     internal static void Apply()
     {
         ProCamera2D proCamera2D = CameraManager.Instance != null ? CameraManager.Instance.ProCamera2D : null;
         Penitent p1 = Core.Logic != null ? Core.Logic.Penitent : null;
-        Penitent p2 = CoopLocal.Player2;
         if (proCamera2D == null || p1 == null)
         {
             return;
         }
 
-        bool changed = SetTargetPresent(proCamera2D, p1.transform, Mode != CameraDebugTargetMode.P2Only);
-        if (p2 != null)
+        int playerCount = Mathf.Clamp(CoopGameConfig.PlayerCount, 1, 4);
+
+        bool[] isAlive = new bool[playerCount];
+        Penitent[] players = new Penitent[playerCount];
+
+        players[0] = p1;
+        isAlive[0] = (p1 != null && !p1.Status.Dead && !Player1DeathState.IsPendingRevive());
+        int livingCount = isAlive[0] ? 1 : 0;
+
+        for (int i = 1; i < playerCount; i++)
         {
-            changed |= SetTargetPresent(proCamera2D, p2.transform, Mode != CameraDebugTargetMode.P1Only);
+            Penitent extra = CoopLocal.GetPlayer(i);
+            players[i] = extra;
+            isAlive[i] = (extra != null && !extra.Status.Dead && !Player2DeathState.IsPendingRevive(i));
+            if (isAlive[i]) livingCount++;
+        }
+
+        bool changed = false;
+
+        if (Mode == CameraDebugTargetMode.Coop)
+        {
+            // Modo Coop: la cámara sigue a TODOS los jugadores vivos en la sesión.
+            // Si un jugador muere, se retira inmediatamente del target de la cámara.
+            for (int i = 0; i < playerCount; i++)
+            {
+                if (players[i] == null) continue;
+                bool shouldInclude = (livingCount > 0) ? isAlive[i] : (i == 0);
+                changed |= SetTargetPresent(proCamera2D, players[i].transform, shouldInclude);
+            }
+        }
+        else
+        {
+            // Modo de target único (P1, P2, P3 o P4)
+            int targetIdx = (int)Mode;
+            bool targetAlive = targetIdx >= 0 && targetIdx < playerCount && isAlive[targetIdx];
+
+            for (int i = 0; i < playerCount; i++)
+            {
+                if (players[i] == null) continue;
+                bool shouldInclude;
+                if (targetAlive)
+                {
+                    shouldInclude = (i == targetIdx);
+                }
+                else if (livingCount > 0)
+                {
+                    // Si el jugador objetivo murió, enfocar a los vivos
+                    shouldInclude = isAlive[i];
+                }
+                else
+                {
+                    shouldInclude = (i == 0);
+                }
+                changed |= SetTargetPresent(proCamera2D, players[i].transform, shouldInclude);
+            }
+        }
+
+        // Quitar targets de jugadores que no estén en la sesión activa
+        for (int i = playerCount; i < CoopPlayerRegistry.MaxPlayers; i++)
+        {
+            Penitent extra = CoopLocal.GetPlayer(i);
+            if (extra != null)
+            {
+                changed |= SetTargetPresent(proCamera2D, extra.transform, false);
+            }
         }
 
         if (changed)
@@ -259,8 +270,6 @@ internal static class CameraTargetDebugToggle
         }
         if (!present && isPresent)
         {
-            // duration=0 removes immediately (no fade-out coroutine) - same as the drop-target
-            // call CoopLocal.OnPlayerSpawn already makes when P2 is destroyed on respawn.
             proCamera2D.RemoveCameraTarget(target);
             return true;
         }
@@ -276,13 +285,11 @@ internal class CameraTargetDebugToggleDriver : MonoBehaviour
         {
             CameraTargetDebugToggle.CycleMode();
         }
+
+        CameraTargetDebugToggle.Apply();
     }
 }
 
-// On-screen indicator for the current CameraDebugTargetMode - same Canvas/TextMeshProUGUI
-// screen-space pattern Player2ModeIndicator (Input/Player2Input.cs) already established for F9's
-// indicator, just anchored directly below it (Player2ModeIndicator sits at anchoredPosition
-// (-16,-16) with a 40px-tall box) so the two never overlap.
 internal static class CameraTargetModeIndicator
 {
     private const string GameFontName = "MajesticExtended_FullLatin";
@@ -295,20 +302,26 @@ internal static class CameraTargetModeIndicator
         if (label != null)
         {
             label.text = "target: " + ModeLabel(mode);
+            int idx = (int)mode;
+            if (idx >= 0 && idx < CoopPlayerRegistry.MaxPlayers)
+            {
+                label.color = CoopPlayerRegistry.GetLabelColor(idx);
+            }
+            else
+            {
+                label.color = Color.white;
+            }
         }
     }
 
     private static string ModeLabel(CameraDebugTargetMode mode)
     {
-        switch (mode)
+        int idx = (int)mode;
+        if (idx >= 0 && idx < CoopPlayerRegistry.MaxPlayers)
         {
-            case CameraDebugTargetMode.P1Only:
-                return "P1";
-            case CameraDebugTargetMode.P2Only:
-                return "P2";
-            default:
-                return "coop";
+            return $"P{idx + 1} ({CoopPlayerRegistry.GetDisplayName(idx)})";
         }
+        return "coop";
     }
 
     private static void EnsureCreated()
@@ -348,14 +361,6 @@ internal static class CameraTargetModeIndicator
     }
 }
 
-// Ronda 78: CameraPlayerOffset forward-focus horizontal. Vanilla stores _penitent = Core.Logic.Penitent
-// once in UpdateNewParams() (called only on real level loads via LevelManager.UpdateNewCameraParams)
-// and then LateUpdate() every frame reads _penitent.Status.Orientation to tween
-// ProCamera2D.OverallOffset.x (XOffset=1.5) via DOTween "ForwardFocus". No code path ever
-// reassigns _penitent based on which CameraTarget the camera actually follows, so in F10
-// P2Only the horizontal offset follows P1 orientation and displaces P2 ~1.5u, and in Coop
-// it stays biased to P1. Fix keeps P1Only vanilla, makes P2Only track P2, and centers Coop
-// (OverallOffset.x -> 0, no forward tracking).
 [HarmonyPatch(typeof(CameraPlayerOffset), nameof(CameraPlayerOffset.UpdateNewParams))]
 internal static class CameraPlayerOffset_UpdateNewParams_Patch
 {
@@ -382,39 +387,40 @@ internal static class CameraPlayerOffset_UpdateNewParams_Patch
             return;
         }
 
-        if (mode == CameraDebugTargetMode.P2Only && CoopLocal.Player2 != null)
+        int targetIdx = (int)mode;
+        if (targetIdx >= 0)
         {
-            Penitent p2 = CoopLocal.Player2;
-            PenitentField.SetValue(__instance, p2);
-            EntityOrientation orientation = p2.Status.Orientation;
-            if (PlayerCurrentOrientationField != null)
+            Penitent targetPenitent = CoopLocal.GetPlayer(targetIdx);
+            if (targetPenitent != null)
             {
-                PlayerCurrentOrientationField.SetValue(__instance, orientation);
-            }
-            if (PlayerLastOrientationField != null)
-            {
-                PlayerLastOrientationField.SetValue(__instance, orientation);
-            }
-            if (DOTween.IsTweening("ForwardFocus"))
-            {
-                DOTween.Kill("ForwardFocus");
-            }
-            float targetX = (orientation == EntityOrientation.Left) ? -__instance.XOffset : __instance.XOffset;
-            // Replicate SetCameraXOffset with immediate (0f) tween as vanilla does on load
-            if (__instance.PlayerTarget != null)
-            {
-                DOTween.To(() => proCamera2D.OverallOffset.x, x => proCamera2D.OverallOffset.x = x, targetX, 0f)
-                    .SetEase(Ease.OutSine).SetId("ForwardFocus");
-                // Ensure immediate value in case 0-duration tween does not apply synchronously
-                Vector2 offset = proCamera2D.OverallOffset;
-                offset.x = targetX;
-                proCamera2D.OverallOffset = offset;
-            }
-            // Keep DefaultTargetOffset in sync with the new OverallOffset (vanilla sets it to OverallOffset after tween)
-            var prop = AccessTools.Property(typeof(CameraPlayerOffset), "DefaultTargetOffset");
-            if (prop != null)
-            {
-                prop.SetValue(__instance, proCamera2D.OverallOffset, null);
+                PenitentField.SetValue(__instance, targetPenitent);
+                EntityOrientation orientation = targetPenitent.Status.Orientation;
+                if (PlayerCurrentOrientationField != null)
+                {
+                    PlayerCurrentOrientationField.SetValue(__instance, orientation);
+                }
+                if (PlayerLastOrientationField != null)
+                {
+                    PlayerLastOrientationField.SetValue(__instance, orientation);
+                }
+                if (DOTween.IsTweening("ForwardFocus"))
+                {
+                    DOTween.Kill("ForwardFocus");
+                }
+                float targetX = (orientation == EntityOrientation.Left) ? -__instance.XOffset : __instance.XOffset;
+                if (__instance.PlayerTarget != null)
+                {
+                    DOTween.To(() => proCamera2D.OverallOffset.x, x => proCamera2D.OverallOffset.x = x, targetX, 0f)
+                        .SetEase(Ease.OutSine).SetId("ForwardFocus");
+                    Vector2 offset = proCamera2D.OverallOffset;
+                    offset.x = targetX;
+                    proCamera2D.OverallOffset = offset;
+                }
+                var prop = AccessTools.Property(typeof(CameraPlayerOffset), "DefaultTargetOffset");
+                if (prop != null)
+                {
+                    prop.SetValue(__instance, proCamera2D.OverallOffset, null);
+                }
             }
         }
         else if (mode == CameraDebugTargetMode.Coop)
@@ -436,12 +442,7 @@ internal static class CameraPlayerOffset_UpdateNewParams_Patch
             {
                 prop.SetValue(__instance, proCamera2D.OverallOffset, null);
             }
-            // Disable forward tracking for Coop: LateUpdate will early-return and stay centered
             PenitentField.SetValue(__instance, null);
-        }
-        else
-        {
-            // P1Only: leave vanilla (P1) as-is
         }
     }
 }
@@ -455,23 +456,26 @@ internal static class CameraPlayerOffset_LateUpdate_Patch
     {
         CameraDebugTargetMode mode = CameraTargetDebugToggle.Mode;
 
-        if (mode == CameraDebugTargetMode.P2Only && CoopLocal.Player2 != null)
+        int targetIdx = (int)mode;
+        if (targetIdx >= 0)
         {
-            // Ensure vanilla LateUpdate tracks P2 instead of stale P1
-            if (PenitentField != null)
+            Penitent targetPenitent = CoopLocal.GetPlayer(targetIdx);
+            if (targetPenitent != null)
             {
-                object current = PenitentField.GetValue(__instance);
-                if (!ReferenceEquals(current, CoopLocal.Player2))
+                if (PenitentField != null)
                 {
-                    PenitentField.SetValue(__instance, CoopLocal.Player2);
+                    object current = PenitentField.GetValue(__instance);
+                    if (!ReferenceEquals(current, targetPenitent))
+                    {
+                        PenitentField.SetValue(__instance, targetPenitent);
+                    }
                 }
+                return true;
             }
-            return true; // run vanilla logic with corrected _penitent
         }
 
         if (mode == CameraDebugTargetMode.Coop)
         {
-            // Centered, no forward focus in Coop: keep OverallOffset.x at 0
             ProCamera2D proCamera2D = __instance.GetComponent<ProCamera2D>();
             if (proCamera2D != null && Mathf.Abs(proCamera2D.OverallOffset.x) > 0.001f)
             {
@@ -482,24 +486,9 @@ internal static class CameraPlayerOffset_LateUpdate_Patch
                 DOTween.To(() => proCamera2D.OverallOffset.x, x => proCamera2D.OverallOffset.x = x, 0f, __instance.ElapsedTime)
                     .SetEase(Ease.OutSine).SetId("ForwardFocus");
             }
-            // Skip vanilla P1 tracking entirely for Coop
             return false;
         }
 
-        // P1Only or fallback: ensure _penitent is P1 if it was nulled for Coop
-        if (mode == CameraDebugTargetMode.P1Only)
-        {
-            Penitent p1 = Core.Logic != null ? Core.Logic.Penitent : null;
-            if (p1 != null && PenitentField != null)
-            {
-                object current = PenitentField.GetValue(__instance);
-                if (!ReferenceEquals(current, p1))
-                {
-                    PenitentField.SetValue(__instance, p1);
-                }
-            }
-        }
         return true;
     }
 }
-

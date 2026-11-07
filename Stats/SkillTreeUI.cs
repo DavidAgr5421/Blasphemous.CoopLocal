@@ -1,3 +1,4 @@
+using Gameplay.GameControllers.Penitent;
 using Framework.Managers;
 using Gameplay.UI.Others.MenuLogic;
 using Gameplay.UI.Others.UIGameLogic;
@@ -37,11 +38,13 @@ internal static class SkillTreeUIHelper
     {
         if (string.IsNullOrEmpty(skillId) || Core.SkillManager == null) return false;
         var skill = Core.SkillManager.GetSkill(skillId);
-        if (skill == null || Player2SkillManager.IsUnlocked(skillId)) return false;
-        float mea = CoopLocal.Player2 != null ? CoopLocal.Player2.Stats.MeaCulpa.Final : 0f;
+        int activeIdx = Player2MenuView.ActivePlayerIndex;
+        if (skill == null || Player2SkillManager.IsUnlocked(activeIdx, skillId)) return false;
+        Penitent activePenitent = CoopPlayerRegistry.GetPenitent(activeIdx);
+        float mea = activePenitent != null ? activePenitent.Stats.MeaCulpa.Final : 0f;
         if (mea < skill.tier) return false;
         string parent = skill.GetParentSkill();
-        if (!string.IsNullOrEmpty(parent) && !Player2SkillManager.IsUnlocked(parent)) return false;
+        if (!string.IsNullOrEmpty(parent) && !Player2SkillManager.IsUnlocked(activeIdx, parent)) return false;
         return true;
     }
 
@@ -49,13 +52,17 @@ internal static class SkillTreeUIHelper
     {
         if (!CanUnlockNoPointsP2(skillId)) return false;
         var skill = Core.SkillManager.GetSkill(skillId);
-        if (skill == null || CoopLocal.Player2 == null) return false;
-        return CoopLocal.Player2.Stats.Purge.Current >= skill.cost;
+        int activeIdx = Player2MenuView.ActivePlayerIndex;
+        Penitent activePenitent = CoopPlayerRegistry.GetPenitent(activeIdx);
+        if (skill == null || activePenitent == null) return false;
+        return activePenitent.Stats.Purge.Current >= skill.cost;
     }
 
     internal static void RefreshP2PurgeDisplay(NewInventory_LayoutSkill instance)
     {
-        if (instance == null || CoopLocal.Player2 == null || PurgeControlField == null || PurgeTextField == null)
+        int activeIdx = Player2MenuView.ActivePlayerIndex;
+        Penitent activePenitent = CoopPlayerRegistry.GetPenitent(activeIdx);
+        if (instance == null || activePenitent == null || PurgeControlField == null || PurgeTextField == null)
         {
             return;
         }
@@ -65,7 +72,7 @@ internal static class SkillTreeUIHelper
             var purgeText = PurgeTextField.GetValue(purgeControl) as Text;
             if (purgeText != null)
             {
-                purgeText.text = ((int)CoopLocal.Player2.Stats.Purge.Current).ToString();
+                purgeText.text = ((int)activePenitent.Stats.Purge.Current).ToString();
             }
         }
     }
@@ -78,18 +85,18 @@ internal static class SkillLayout_ShowLayout_P2_Patch
     {
         if (tabType != NewInventoryWidget.TabType.Abilities)
         {
-            SwordElementalUpgrades.UpdateDebugBanner(__instance, visible: false);
             return;
         }
 
         SwordElementalUpgrades.EnsureSkillTreeNodesInjected(__instance);
-        SwordElementalUpgrades.UpdateDebugBanner(__instance, visible: true);
 
         var maxTier = SkillTreeUIHelper.MaxTierField?.GetValue(__instance) as Text;
         if (maxTier != null)
         {
-            float mea = Player2MenuView.IsSkillP2View && CoopLocal.Player2 != null
-                ? CoopLocal.Player2.Stats.MeaCulpa.Final
+            int activeIdx = Player2MenuView.ActivePlayerIndex;
+            Penitent activePenitent = CoopPlayerRegistry.GetPenitent(activeIdx);
+            float mea = Player2MenuView.IsSkillP2View && activePenitent != null
+                ? activePenitent.Stats.MeaCulpa.Final
                 : Core.SkillManager.GetCurrentMeaCulpa();
             maxTier.text = $"{Player2MenuView.CurrentBracketTag} {(int)mea}";
         }
@@ -163,7 +170,10 @@ internal static class SkillLayout_Update_P2_Patch
 
         if (canUnlock)
         {
-            bool holdingBuy = (rewired != null && rewired.GetButton(52)) || Player2Input.AttackHeld;
+            int activeIdx = Player2MenuView.ActivePlayerIndex;
+            Penitent activePenitent = CoopPlayerRegistry.GetPenitent(activeIdx);
+            bool guestAttackHeld = Player2Input.GetAttackHeld(activeIdx);
+            bool holdingBuy = (rewired != null && rewired.GetButton(52)) || guestAttackHeld;
             if (holdingBuy)
             {
                 timePressing += Time.unscaledDeltaTime;
@@ -175,19 +185,19 @@ internal static class SkillLayout_Update_P2_Patch
                     SkillTreeUIHelper.TimePressingField.SetValue(__instance, 0f);
                     var skill = Core.SkillManager.GetSkill(skillId);
                     float cost = skill != null ? skill.cost : 0f;
-                    if (CoopLocal.Player2 != null && CoopLocal.Player2.Stats.Purge.Current >= cost)
+                    if (activePenitent != null && activePenitent.Stats.Purge.Current >= cost)
                     {
-                        CoopLocal.Player2.Stats.Purge.Current -= cost;
+                        activePenitent.Stats.Purge.Current -= cost;
                     }
-                    Player2SkillManager.SetUnlocked(skillId, true);
+                    Player2SkillManager.SetUnlocked(activeIdx, skillId, true);
                     Player2SkillManager.Persist();
                     if (SwordElementalUpgrades.IsElementalSkill(skillId))
                     {
-                        SwordElementalUpgrades.GrantMatchingHeartOnUnlock(skillId, isPlayer2: true);
+                        SwordElementalUpgrades.GrantMatchingHeartOnUnlock(skillId, isPlayer2: true, playerIndex: activeIdx);
                     }
-                    if (CoopLocal.Player2 != null)
+                    if (activePenitent != null)
                     {
-                        Player2StatsSync.SaveCurrentVitals(CoopLocal.Player2);
+                        Player2StatsSync.SaveCurrentVitals(activePenitent, activeIdx);
                     }
                     SkillTreeUIHelper.RefreshP2PurgeDisplay(__instance);
                     SkillTreeUIHelper.UpdateAllSkillsMethod?.Invoke(__instance, null);
@@ -254,15 +264,18 @@ internal static class SkillItem_UpdateStatus_P2_Patch
 
         if (skillImage != null && skill != null) skillImage.sprite = skill.smallImage;
 
+        int activeIdx = Player2MenuView.ActivePlayerIndex;
+        Penitent activePenitent = CoopPlayerRegistry.GetPenitent(activeIdx);
+
         bool isUnlocked = isP2View
-            ? Player2SkillManager.IsUnlocked(skillId)
+            ? Player2SkillManager.IsUnlocked(activeIdx, skillId)
             : (Core.SkillManager != null && Core.SkillManager.IsSkillUnlocked(skillId));
 
         bool canUnlock = false;
         if (!isUnlocked && skill != null)
         {
-            float mea = isP2View && CoopLocal.Player2 != null
-                ? CoopLocal.Player2.Stats.MeaCulpa.Final
+            float mea = isP2View && activePenitent != null
+                ? activePenitent.Stats.MeaCulpa.Final
                 : (Core.SkillManager != null ? Core.SkillManager.GetCurrentMeaCulpa() : 1f);
 
             if (mea >= skill.tier)
@@ -275,7 +288,7 @@ internal static class SkillItem_UpdateStatus_P2_Patch
                 else
                 {
                     canUnlock = isP2View
-                        ? Player2SkillManager.IsUnlocked(parent)
+                        ? Player2SkillManager.IsUnlocked(activeIdx, parent)
                         : (Core.SkillManager != null && Core.SkillManager.IsSkillUnlocked(parent));
                 }
             }
@@ -326,9 +339,10 @@ internal static class SkillItem_SetFocus_P2_Patch
         var normalColor = (Color)NormalColorField.GetValue(__instance);
         var disabledColor = (Color)DisabledColorField.GetValue(__instance);
 
+        int activeIdx = Player2MenuView.ActivePlayerIndex;
         var skill = Core.SkillManager.GetSkill(skillId);
         bool canNoPoints = SkillTreeUIHelper.CanUnlockNoPointsP2(skillId);
-        bool showCost = bFocus && !Player2SkillManager.IsUnlocked(skillId) && (editMode || canNoPoints);
+        bool showCost = bFocus && !Player2SkillManager.IsUnlocked(activeIdx, skillId) && (editMode || canNoPoints);
         if (focus != null) focus.SetActive(bFocus);
         if (cost != null) cost.SetActive(showCost);
         if (costText != null) costText.gameObject.SetActive(showCost);

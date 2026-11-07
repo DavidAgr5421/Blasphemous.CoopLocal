@@ -28,44 +28,76 @@ internal static class SelectSaveSlots_OnAcceptSlots_CoopSetup_Patch
         if (slots != null && idxSlot >= 0 && idxSlot < slots.Count)
         {
             SaveSlot targetSlot = slots[idxSlot];
-            // Si el slot está vacío -> Es una NUEVA PARTIDA
-            if (targetSlot.IsEmpty)
-            {
-                int capturedSlot = idxSlot;
-                SelectSaveSlots instance = __instance;
+            int capturedSlot = idxSlot;
+            SelectSaveSlots instance = __instance;
 
-                CoopGameSetupUI.Show(
-                    onConfirm: () =>
-                    {
-                        BypassIntercept = true;
-                        SwordElementalUpgrades.ResetElementalPath(false);
-                        SwordElementalUpgrades.ResetElementalPath(true);
-                        instance.OnAcceptSlots(capturedSlot);
-                        BypassIntercept = false;
-                    },
-                    onCancel: () =>
-                    {
-                        // Suprimir los próximos frames para que la tecla ESC no cierre el menú de slots original
-                        SuppressVanillaSaveSlotsFrames = 4;
-                        instance.IsShowing = true;
-                        // Restaurar selección visual en la lista de slots
-                        try
-                        {
-                            var parentField = AccessTools.Field(typeof(SelectSaveSlots), "parentMainMenu");
-                            var parentMenu = parentField?.GetValue(instance) as NewMainMenu;
-                            var modeField = AccessTools.Field(typeof(SelectSaveSlots), "CurrentSlotsMode");
-                            var mode = modeField != null ? (SelectSaveSlots.SlotsModes)modeField.GetValue(instance) : 0;
-                            if (parentMenu != null)
-                            {
-                                instance.SetAllData(parentMenu, mode);
-                            }
-                        }
-                        catch { }
-                        instance.OnSelectedSlots(capturedSlot);
-                    }
-                );
-                return false; // Interceptamos para mostrar la pantalla de configuración antes de crear la partida
+            // Si la partida ya está iniciada (slot no vacío):
+            // NO pedir configuración ni mostrar menús. Entrar DIRECTAMENTE con la config guardada de este slot.
+            if (!targetSlot.IsEmpty)
+            {
+                CoopSaveManager.TargetSetupSlot = idxSlot;
+                var slotData = CoopSaveManager.GetSlotData(idxSlot);
+                CoopSaveManager.ApplyConfigToGame(slotData);
+
+                // Si no tiene mandos configurados, asignar P1 Mando 1 y P2 Teclado por defecto
+                if (CoopGameConfig.Slots[0].Device == CoopDeviceType.Unassigned)
+                    CoopGameConfig.Slots[0].Device = CoopDeviceType.Gamepad1;
+                if (CoopGameConfig.Slots[1].Device == CoopDeviceType.Unassigned)
+                    CoopGameConfig.Slots[1].Device = CoopDeviceType.Keyboard;
+                CoopGameConfig.ApplyToRegistry();
+
+                int activePlayers = Mathf.Clamp(CoopGameConfig.PlayerCount, 2, 4);
+                if (Combat.CoopEnemyScaling.ActiveEnemyMultiplier <= 1.01f && Combat.CoopEnemyScaling.ActiveHealthMultiplier <= 1.01f)
+                {
+                    Combat.CoopEnemyScaling.SetDefaultsForPlayerCount(activePlayers);
+                }
+
+                return true;
             }
+
+            // Si el slot está vacío (NUEVA PARTIDA) -> Mostrar CoopGameSetupUI para configurar desde cero
+            CoopSaveManager.TargetSetupSlot = capturedSlot;
+            CoopGameSetupUI.Show(
+                onConfirm: () =>
+                {
+                    BypassIntercept = true;
+                    Player2SlotResetHelper.ResetAllSlotData(capturedSlot);
+
+                    // Guardar la configuración seleccionada en el archivo unificado de la ranura
+                    var slotData = CoopSaveManager.GetSlotData(capturedSlot);
+                    CoopSaveManager.SyncConfigFromGame(slotData);
+                    slotData.HasCompletedSetup = true;
+                    CoopSaveManager.SaveSlot(capturedSlot);
+
+                    instance.OnAcceptSlots(capturedSlot);
+                    BypassIntercept = false;
+                },
+                onCancel: () =>
+                {
+                    SuppressVanillaSaveSlotsFrames = 4;
+                    try
+                    {
+                        var isShowingProp = AccessTools.Property(typeof(SelectSaveSlots), "IsShowing");
+                        isShowingProp?.SetValue(instance, true, null);
+                    }
+                    catch { }
+
+                    try
+                    {
+                        var parentField = AccessTools.Field(typeof(SelectSaveSlots), "parentMainMenu");
+                        var parentMenu = parentField?.GetValue(instance) as NewMainMenu;
+                        var modeField = AccessTools.Field(typeof(SelectSaveSlots), "CurrentSlotsMode");
+                        var mode = modeField != null ? (SelectSaveSlots.SlotsModes)modeField.GetValue(instance) : 0;
+                        if (parentMenu != null)
+                        {
+                            instance.SetAllData(parentMenu, mode);
+                        }
+                    }
+                    catch { }
+                    instance.OnSelectedSlots(capturedSlot);
+                }
+            );
+            return false;
         }
         return true;
     }
@@ -96,6 +128,23 @@ internal static class SelectSaveSlots_BlockUpdate_WhenCoopSetupOpen_Patch
 }
 
 /// <summary>
+/// Carga la configuración del slot correspondiente cada vez que el usuario resalta una ranura en el menú.
+/// </summary>
+[HarmonyPatch(typeof(SelectSaveSlots), nameof(SelectSaveSlots.OnSelectedSlots))]
+internal static class SelectSaveSlots_OnSelectedSlots_LoadConfig_Patch
+{
+    private static void Postfix(int idxSlot)
+    {
+        if (idxSlot >= 0)
+        {
+            CoopSaveManager.TargetSetupSlot = idxSlot;
+            var slotData = CoopSaveManager.GetSlotData(idxSlot);
+            CoopSaveManager.ApplyConfigToGame(slotData);
+        }
+    }
+}
+
+/// <summary>
 /// Permite pulsar la tecla 'C' o F4 en la pantalla de selección de slots para abrir
 /// la configuración de cooperativo en cualquier momento.
 /// </summary>
@@ -109,9 +158,23 @@ internal static class SelectSaveSlots_Update_CoopSetup_Shortcut_Patch
         if (Input.GetKeyDown(KeyCode.C) || Input.GetKeyDown(KeyCode.F4))
         {
             int curSlot = __instance.SelectedSlot;
+            CoopSaveManager.TargetSetupSlot = curSlot;
+            if (curSlot >= 0)
+            {
+                var slotData = CoopSaveManager.GetSlotData(curSlot);
+                CoopSaveManager.ApplyConfigToGame(slotData);
+            }
+
             CoopGameSetupUI.Show(
                 onConfirm: () =>
                 {
+                    if (curSlot >= 0)
+                    {
+                        var slotData = CoopSaveManager.GetSlotData(curSlot);
+                        CoopSaveManager.SyncConfigFromGame(slotData);
+                        slotData.HasCompletedSetup = true;
+                        CoopSaveManager.SaveSlot(curSlot);
+                    }
                     SelectSaveSlots_OnAcceptSlots_CoopSetup_Patch.SuppressVanillaSaveSlotsFrames = 3;
                     if (curSlot >= 0) __instance.OnSelectedSlots(curSlot);
                 },
@@ -126,83 +189,42 @@ internal static class SelectSaveSlots_Update_CoopSetup_Shortcut_Patch
 }
 
 /// <summary>
-/// Sincronización automática de partidas guardadas entre perfiles de Steam.
-/// Si Steam cambia de cuenta o se inicia en un perfil sin partidas existentes,
-/// busca automáticamente en las otras carpetas de Savegames y restaura las partidas
-/// para que el usuario nunca pierda el acceso a su progreso.
+/// Limpieza y reset de datos de P2 y estados del mod cuando se borra un slot o se inicia una nueva partida.
 /// </summary>
-[HarmonyPatch(typeof(Framework.Managers.PersistentManager), nameof(Framework.Managers.PersistentManager.GetSaveGameFile))]
-internal static class PersistentManager_GetSaveGameFile_MultiProfileSync_Patch
+internal static class Player2SlotResetHelper
 {
-    private static void Postfix(int slot, ref string __result)
+    internal static void ResetAllSlotData(int slot)
     {
         try
         {
-            if (string.IsNullOrEmpty(__result)) return;
+            CoopSaveManager.ResetSlot(slot);
+            SwordElementalUpgrades.ResetElementalPath(false);
+            SwordElementalUpgrades.ResetElementalPath(true);
 
-            if (!File.Exists(__result))
+            if (Main.CoopLocal != null)
             {
-                // El archivo no existe en el SteamID activo.
-                string activeDir = Path.GetDirectoryName(__result);
-                string savegamesRoot = Path.GetDirectoryName(activeDir);
-
-                if (Directory.Exists(savegamesRoot))
-                {
-                    string targetFileName = Path.GetFileName(__result);
-                    string[] profileDirs = Directory.GetDirectories(savegamesRoot);
-
-                    foreach (string dir in profileDirs)
-                    {
-                        if (string.Equals(dir, activeDir, StringComparison.OrdinalIgnoreCase))
-                            continue;
-
-                        string candidateFile = Path.Combine(dir, targetFileName);
-                        if (File.Exists(candidateFile) && new FileInfo(candidateFile).Length > 0)
-                        {
-                            if (!Directory.Exists(activeDir))
-                            {
-                                Directory.CreateDirectory(activeDir);
-                            }
-
-                            File.Copy(candidateFile, __result, true);
-                            Debug.LogWarning($"[CoopLocal] Partida restaurada desde perfil alternativo: {candidateFile} -> {__result}");
-
-                            // Copiar también el archivo de backup si existe
-                            string backupCand = candidateFile + "_backup";
-                            if (File.Exists(backupCand))
-                            {
-                                File.Copy(backupCand, __result + "_backup", true);
-                            }
-
-                            // Copiar subdirectorio de datos adicionales si existe
-                            string subDirCand = Path.Combine(dir, Path.GetFileNameWithoutExtension(targetFileName));
-                            if (Directory.Exists(subDirCand))
-                            {
-                                string destSub = Path.Combine(activeDir, Path.GetFileNameWithoutExtension(targetFileName));
-                                CopyDirectoryRecursive(subDirCand, destSub);
-                            }
-                            break;
-                        }
-                    }
-                }
+                Blasphemous.ModdingAPI.ModLog.Info($"[CoopLocal] Datos de slot {slot} reseteados limpiamente desde cero.", Main.CoopLocal);
             }
         }
         catch (Exception ex)
         {
-            Debug.LogError($"[CoopLocal] Error sincronizando partidas guardadas: {ex.Message}");
+            Debug.LogError($"[CoopLocal] Error reseteando slot {slot}: {ex.Message}");
         }
     }
+}
 
-    private static void CopyDirectoryRecursive(string sourceDir, string targetDir)
+/// <summary>
+/// Al borrar una partida en el menú vanilla, borrar también todos los archivos asociados de P2 y del mod.
+/// </summary>
+[HarmonyPatch(typeof(SelectSaveSlots), nameof(SelectSaveSlots.OnConfirmationDelete))]
+internal static class SelectSaveSlots_OnConfirmationDelete_CoopCleanup_Patch
+{
+    private static void Prefix(SelectSaveSlots __instance)
     {
-        Directory.CreateDirectory(targetDir);
-        foreach (string file in Directory.GetFiles(sourceDir))
+        if (!__instance.IsConfirmingUpgrade)
         {
-            File.Copy(file, Path.Combine(targetDir, Path.GetFileName(file)), true);
-        }
-        foreach (string directory in Directory.GetDirectories(sourceDir))
-        {
-            CopyDirectoryRecursive(directory, Path.Combine(targetDir, Path.GetFileName(directory)));
+            int slot = __instance.SelectedSlot;
+            Player2SlotResetHelper.ResetAllSlotData(slot);
         }
     }
 }

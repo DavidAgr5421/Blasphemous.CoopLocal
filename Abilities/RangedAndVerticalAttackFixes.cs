@@ -88,13 +88,13 @@ internal static class VerticalAttack_OnUpdate_P2_TimedPress_Patch
     {
         VerticalAttack self = currentInstance;
         Penitent owner = self != null ? self.EntityOwner as Penitent : null;
-        if (owner == null || owner != CoopLocal.Player2)
+        if (owner == null || !CoopLocal.IsGuestPlayer(owner, out int guestSlot))
         {
             // P1 (or anything else driving this component) - untouched vanilla behavior.
             return player.GetButtonTimedPress(actionName, time);
         }
 
-        bool heldNow = Player2Input.AttackHeld;
+        bool heldNow = Player2Input.GetAttackHeld(guestSlot);
         if (!heldNow)
         {
             player2HoldTimer = 0f;
@@ -231,7 +231,7 @@ internal static class RangeAttack_OnStart_P2_Patch
     private static void Postfix(RangeAttack __instance)
     {
         Penitent owner = RangeAttackP2Shared.OwnerOf(__instance);
-        if (owner == null || owner != CoopLocal.Player2)
+        if (owner == null || !CoopLocal.IsGuestPlayer(owner, out _))
         {
             return;
         }
@@ -250,7 +250,7 @@ internal static class RangeAttack_OnUpdate_P2_Patch
     private static bool Prefix(RangeAttack __instance)
     {
         Penitent owner = RangeAttackP2Shared.OwnerOf(__instance);
-        if (owner == null || owner != CoopLocal.Player2)
+        if (owner == null || !CoopLocal.IsGuestPlayer(owner, out int guestSlot))
         {
             RangeAttackP2Shared.LogButton57NameOnce(__instance);
             return true;
@@ -267,12 +267,12 @@ internal static class RangeAttack_OnUpdate_P2_Patch
         }
 
         bool pressedKeyDown = (bool)RangeAttackP2Shared.PressedKeyDownField.GetValue(__instance);
-        if (Player2Input.AttackDown && !pressedKeyDown)
+        if (Player2Input.GetAttackDown(guestSlot) && !pressedKeyDown)
         {
             pressedKeyDown = true;
             RangeAttackP2Shared.PressedKeyDownField.SetValue(__instance, true);
         }
-        bool buttonUp = Player2Input.AttackUp;
+        bool buttonUp = Player2Input.GetAttackUp(guestSlot);
 
         if (Core.Input.InputBlocked)
         {
@@ -317,7 +317,7 @@ internal static class RangeAttack_CastRangeAttack_P2_Patch
     private static bool Prefix(RangeAttack __instance)
     {
         Penitent owner = RangeAttackP2Shared.OwnerOf(__instance);
-        if (owner == null || owner != CoopLocal.Player2)
+        if (owner == null || !CoopLocal.IsGuestPlayer(owner, out _))
         {
             return true;
         }
@@ -348,7 +348,7 @@ internal static class RangeAttack_OnCastStart_P2_Patch
     private static void Postfix(RangeAttack __instance)
     {
         Penitent owner = RangeAttackP2Shared.OwnerOf(__instance);
-        if (owner == null || owner != CoopLocal.Player2)
+        if (owner == null || !CoopLocal.IsGuestPlayer(owner, out _))
         {
             return;
         }
@@ -365,7 +365,7 @@ internal static class RangeAttack_InstanceProjectile_P2_Patch
     private static bool Prefix(RangeAttack __instance)
     {
         Penitent owner = RangeAttackP2Shared.OwnerOf(__instance);
-        if (owner == null || owner != CoopLocal.Player2)
+        if (owner == null || !CoopLocal.IsGuestPlayer(owner, out _))
         {
             return true;
         }
@@ -394,7 +394,7 @@ internal static class VerticalAttack_OnUpdate_SkillLog_Patch
     private static void Postfix(VerticalAttack __instance)
     {
         Penitent owner = __instance.EntityOwner as Penitent;
-        if (owner == null || owner != CoopLocal.Player2) return;
+        if (owner == null || !CoopLocal.IsGuestPlayer(owner, out _)) return;
         // Solo loguear cuando intenta vertical attack (cerca de gate) para no spamear
         // Chequeamos si está en aire y con input relevante
         if (!owner.Status.IsGrounded && owner.PlatformCharacterInput != null && owner.PlatformCharacterInput.isJoystickDown)
@@ -428,7 +428,7 @@ internal static class AnimatorInyector_ChargeAttackTriggered_SkillLog_Patch
     private static void Prefix(Gameplay.GameControllers.Penitent.Animator.AnimatorInyector __instance)
     {
         Penitent penitent = PenitentField.GetValue(__instance) as Penitent;
-        if (penitent == null || penitent != CoopLocal.Player2) return;
+        if (penitent == null || !CoopLocal.IsGuestPlayer(penitent, out _)) return;
         var chargedAttack = penitent.ChargedAttack;
         string curId = "null";
         bool available = false;

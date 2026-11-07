@@ -62,7 +62,7 @@ internal static class ShieldSystemPrayer_InstantiateShield_Patch
     private static void Postfix(ShieldSystemPrayer __instance, GameObject ____instantiatedShield)
     {
         Penitent caster = PrayerCasterTracker.LastCaster;
-        if (caster != null && caster == CoopLocal.Player2 && ____instantiatedShield != null)
+        if (caster != null && CoopLocal.IsGuestPlayer(caster, out _) && ____instantiatedShield != null)
         {
             ____instantiatedShield.transform.position = caster.transform.position;
             PenitentShieldSystem system = ____instantiatedShield.GetComponentInChildren<PenitentShieldSystem>();
@@ -81,7 +81,7 @@ internal static class PenitentShieldSystem_FollowPlayer_Patch
     private static bool Prefix(PenitentShieldSystem __instance, Vector2 ___OffSetPosition, float ___FollowSpeed)
     {
         Entity owner = ShieldOwnerTracker.GetOwner(__instance);
-        if (owner == null || owner != CoopLocal.Player2)
+        if (owner == null || !CoopLocal.IsGuestPlayer(owner as Penitent, out _))
         {
             return true;
         }
@@ -123,7 +123,7 @@ internal static class AlliedCherubPrayer_InstantiateCherubs_Patch
     private static void Postfix(AlliedCherubPrayer __instance, GameObject ____instantiatedAlliedCherubSystem)
     {
         Penitent caster = PrayerCasterTracker.LastCaster;
-        if (caster != null && caster == CoopLocal.Player2 && ____instantiatedAlliedCherubSystem != null)
+        if (caster != null && CoopLocal.IsGuestPlayer(caster, out _) && ____instantiatedAlliedCherubSystem != null)
         {
             ____instantiatedAlliedCherubSystem.transform.position = caster.transform.position;
             AlliedCherubSystem system = ____instantiatedAlliedCherubSystem.GetComponentInChildren<AlliedCherubSystem>();
@@ -146,7 +146,7 @@ internal static class AlliedCherub_Deploy_Patch
         AlliedCherubSystem cherubSystem)
     {
         Entity owner = CherubOwnerTracker.GetOwner(cherubSystem);
-        if (owner != null && owner == CoopLocal.Player2)
+        if (owner != null && CoopLocal.IsGuestPlayer(owner as Penitent, out _))
         {
             AllyProp.SetValue(__instance, owner, null);
             FlyingPosProp.SetValue(__instance, owner.transform.position + (Vector3)cherubSlot.Offset, null);
@@ -160,7 +160,7 @@ internal static class AlliedCherubSystem_DistanceToEnemy_Patch
     private static bool Prefix(AlliedCherubSystem __instance, Enemy enemy, ref float __result)
     {
         Entity owner = CherubOwnerTracker.GetOwner(__instance);
-        if (owner != null && owner == CoopLocal.Player2 && enemy != null)
+        if (owner != null && CoopLocal.IsGuestPlayer(owner as Penitent, out _) && enemy != null)
         {
             __result = Vector2.Distance(owner.transform.position, enemy.transform.position);
             return false;
@@ -192,7 +192,7 @@ internal static class PenitentAreaAttack_OnApplyEffect_P2_Patch
     private static bool Prefix(PenitentAreaAttack __instance, ref bool __result)
     {
         Penitent caster = PrayerCasterTracker.LastCaster;
-        if (caster == null || caster != CoopLocal.Player2)
+        if (caster == null || !CoopLocal.IsGuestPlayer(caster, out _))
         {
             return true;
         }
@@ -297,7 +297,7 @@ internal static class HeavyAttackPrayerEffect_OnApplyEffect_P2_Patch
     private static bool Prefix(HeavyAttackPrayerEffect __instance, ref bool __result)
     {
         Penitent caster = PrayerCasterTracker.LastCaster;
-        if (caster == null || caster != CoopLocal.Player2)
+        if (caster == null || !CoopLocal.IsGuestPlayer(caster, out _))
         {
             return true;
         }
@@ -315,7 +315,7 @@ internal static class HeavyAttackPrayerEffect_OnRemoveEffect_P2_Patch
     private static bool Prefix(HeavyAttackPrayerEffect __instance)
     {
         Penitent caster = PrayerCasterTracker.LastCaster;
-        if (caster == null || caster != CoopLocal.Player2)
+        if (caster == null || !CoopLocal.IsGuestPlayer(caster, out _))
         {
             return true;
         }
@@ -337,7 +337,7 @@ internal static class PenitentGuardianEffect_OnApplyEffect_P2_Patch
     private static void Prefix(PenitentGuardianEffect __instance)
     {
         Penitent caster = PrayerCasterTracker.LastCaster;
-        if (caster != null && caster == CoopLocal.Player2)
+        if (caster != null && CoopLocal.IsGuestPlayer(caster, out _))
         {
             OwnerField.SetValue(__instance, caster);
         }
@@ -353,7 +353,7 @@ internal static class PenitentGuardianEffect_InstantiateGuardian_P2_Patch
     private static bool Prefix(PenitentGuardianEffect __instance)
     {
         Penitent owner = (Penitent)OwnerField.GetValue(__instance);
-        if (owner == null || owner != CoopLocal.Player2)
+        if (owner == null || !CoopLocal.IsGuestPlayer(owner as Penitent, out _))
         {
             return true;
         }
@@ -396,7 +396,7 @@ internal static class PenitentGuardianEffect_Update_P2_Patch
     private static bool Prefix(PenitentGuardianEffect __instance)
     {
         Penitent owner = (Penitent)OwnerField.GetValue(__instance);
-        if (owner == null || owner != CoopLocal.Player2)
+        if (owner == null || !CoopLocal.IsGuestPlayer(owner as Penitent, out _))
         {
             return true;
         }
@@ -448,7 +448,7 @@ internal static class ZambraTearsHarvestEffect_OnApplyEffect_P2_Patch
     private static bool Prefix(ZambraTearsHarvestEffect __instance, ref bool __result)
     {
         Penitent caster = PrayerCasterTracker.LastCaster;
-        if (caster == null || caster != CoopLocal.Player2)
+        if (caster == null || !CoopLocal.IsGuestPlayer(caster, out _))
         {
             return true;
         }
@@ -476,7 +476,7 @@ internal static class TearHarvestEffect_LateUpdate_P2_Patch
     private static bool Prefix(TearHarvestEffect __instance)
     {
         Penitent caster = ZambraCasterTracker.LastCaster;
-        if (caster == null || caster != CoopLocal.Player2)
+        if (caster == null || !CoopLocal.IsGuestPlayer(caster, out _))
         {
             return true;
         }
@@ -498,7 +498,7 @@ internal static class PrayerGhostGuardian_InstantiateGuardian_P2_Patch
     private static bool Prefix(PrayerGhostGuardian __instance)
     {
         Penitent caster = PrayerCasterTracker.LastCaster;
-        if (caster == null || caster != CoopLocal.Player2)
+        if (caster == null || !CoopLocal.IsGuestPlayer(caster, out _))
         {
             return true;
         }
@@ -568,7 +568,7 @@ internal static class PrayerMiriam_InstantiatePortal_P2_Patch
     private static bool Prefix(PrayerMiriam __instance)
     {
         Penitent caster = PrayerCasterTracker.LastCaster;
-        if (caster == null || caster != CoopLocal.Player2)
+        if (caster == null || !CoopLocal.IsGuestPlayer(caster, out _))
         {
             return true;
         }
@@ -619,9 +619,9 @@ internal static class PrayerMiriam_OnUpdate_P2_Patch
     private static bool Prefix(PrayerMiriam __instance)
     {
         Penitent caster = PrayerCasterTracker.LastCaster;
-        if (caster != null && caster == CoopLocal.Player2)
+        if (caster != null && CoopLocal.IsGuestPlayer(caster, out int guestSlot))
         {
-            var p2Prayer = Player2InventoryManager.GetEquippedPrayerObj();
+            var p2Prayer = Player2InventoryManager.GetEquippedPrayerObj(guestSlot);
             if (p2Prayer == null || p2Prayer.id != "PR201")
             {
                 __instance.DisposePortal();
@@ -645,7 +645,7 @@ internal static class PR203ElmFireLoopEffect_OnApplyEffect_P2_Patch
     private static bool Prefix(PR203ElmFireLoopEffect __instance, ref bool __result)
     {
         Penitent caster = PrayerCasterTracker.LastCaster;
-        if (caster == null || caster != CoopLocal.Player2)
+        if (caster == null || !CoopLocal.IsGuestPlayer(caster, out _))
         {
             return true;
         }
@@ -676,7 +676,7 @@ internal static class PenitentTeleportToPriedieu_OnApplyEffect_P2_Patch
     private static bool Prefix(PenitentTeleportToPriedieu __instance, ref bool __result)
     {
         Penitent caster = PrayerCasterTracker.LastCaster;
-        if (caster == null || caster != CoopLocal.Player2)
+        if (caster == null || !CoopLocal.IsGuestPlayer(caster, out _))
         {
             return true;
         }
@@ -734,7 +734,7 @@ internal static class ObjectEffect_Stat_OnApplyEffect_P2_Patch
     {
         Penitent caster = ResolveEffectTarget(__instance);
         ObjectEffectCasterTracker.SetCaster(__instance, caster);
-        if (caster == null || caster != CoopLocal.Player2)
+        if (caster == null || !CoopLocal.IsGuestPlayer(caster, out _))
         {
             return true;
         }
@@ -808,7 +808,8 @@ internal static class ObjectEffect_Stat_OnApplyEffect_P2_Patch
         }
         if (Player2MenuView.IsInventoryP2View)
         {
-            return CoopLocal.Player2;
+            int activeIdx = Player2MenuView.ActivePlayerIndex;
+            return CoopPlayerRegistry.GetPenitent(activeIdx) ?? CoopLocal.Player2;
         }
         return PrayerCasterTracker.LastCaster;
     }
@@ -823,7 +824,7 @@ internal static class ObjectEffect_Stat_OnRemoveEffect_P2_Patch
     private static bool Prefix(ObjectEffect_Stat __instance)
     {
         Penitent caster = ObjectEffectCasterTracker.GetCaster(__instance);
-        if (caster == null || caster != CoopLocal.Player2)
+        if (caster == null || !CoopLocal.IsGuestPlayer(caster, out _))
         {
             return true;
         }
@@ -865,7 +866,7 @@ internal static class ItemGhostTrail_OnApplyEffect_P2_Patch
     {
         Penitent caster = ObjectEffect_Stat_OnApplyEffect_P2_Patch.ResolveEffectTarget(__instance);
         ObjectEffectCasterTracker.SetCaster(__instance, caster);
-        if (caster == null || caster != CoopLocal.Player2)
+        if (caster == null || !CoopLocal.IsGuestPlayer(caster, out _))
         {
             return true;
         }
@@ -895,7 +896,7 @@ internal static class ItemGhostTrail_OnUpdate_P2_Patch
     private static bool Prefix(ItemGhostTrail __instance)
     {
         Penitent caster = ObjectEffectCasterTracker.GetCaster(__instance);
-        if (caster == null || caster != CoopLocal.Player2)
+        if (caster == null || !CoopLocal.IsGuestPlayer(caster, out _))
         {
             return true;
         }
@@ -925,7 +926,7 @@ internal static class ItemTemporalEffect_OnApplyEffect_P2_Patch
     {
         Penitent caster = ObjectEffect_Stat_OnApplyEffect_P2_Patch.ResolveEffectTarget(__instance);
         ObjectEffectCasterTracker.SetCaster(__instance, caster);
-        if (caster == null || caster != CoopLocal.Player2)
+        if (caster == null || !CoopLocal.IsGuestPlayer(caster, out _))
         {
             return true;
         }
@@ -971,7 +972,7 @@ internal static class ItemTemporalEffect_OnRemoveEffect_P2_Patch
     private static bool Prefix(ItemTemporalEffect __instance)
     {
         Penitent caster = ObjectEffectCasterTracker.GetCaster(__instance);
-        if (caster == null || caster != CoopLocal.Player2)
+        if (caster == null || !CoopLocal.IsGuestPlayer(caster, out _))
         {
             return true;
         }
@@ -1012,7 +1013,7 @@ internal static class PrayerUseVfx_InstantiateEffect_P2_Patch
     private static bool Prefix(PrayerUseVfx __instance)
     {
         Penitent caster = ObjectEffect_Stat_OnApplyEffect_P2_Patch.ResolveEffectTarget(__instance);
-        if (caster == null || caster != CoopLocal.Player2)
+        if (caster == null || !CoopLocal.IsGuestPlayer(caster, out _))
         {
             return true;
         }
@@ -1033,7 +1034,7 @@ internal static class ProtectionDomeEffect_InstantiateProtectionDome_P2_Patch
     {
         Penitent caster = ObjectEffect_Stat_OnApplyEffect_P2_Patch.ResolveEffectTarget(__instance);
         ObjectEffectCasterTracker.SetCaster(__instance, caster);
-        if (caster == null || caster != CoopLocal.Player2)
+        if (caster == null || !CoopLocal.IsGuestPlayer(caster, out _))
         {
             return true;
         }
@@ -1060,7 +1061,7 @@ internal static class ProtectionDomeEffect_OnUpdate_P2_Patch
     private static bool Prefix(ProtectionDomeEffect __instance)
     {
         Penitent caster = ObjectEffectCasterTracker.GetCaster(__instance);
-        if (caster == null || caster != CoopLocal.Player2)
+        if (caster == null || !CoopLocal.IsGuestPlayer(caster, out _))
         {
             return true;
         }
@@ -1097,7 +1098,7 @@ internal static class ToxicCloudEffect_InstantiateToxicCloud_P2_Patch
     private static bool Prefix(ToxicCloudEffect __instance)
     {
         Penitent caster = ObjectEffectCasterTracker.GetCaster(__instance);
-        if (caster == null || caster != CoopLocal.Player2)
+        if (caster == null || !CoopLocal.IsGuestPlayer(caster, out _))
         {
             return true;
         }
@@ -1131,7 +1132,7 @@ internal static class ZambraTearsHarvestPrayer_InstantiateEffect_P2_Patch
     private static bool Prefix(ZambraTearsHarvestPrayer __instance)
     {
         Penitent owner = __instance.GetComponentInParent<Penitent>();
-        if (owner == null || owner != CoopLocal.Player2)
+        if (owner == null || !CoopLocal.IsGuestPlayer(owner as Penitent, out _))
         {
             return true;
         }

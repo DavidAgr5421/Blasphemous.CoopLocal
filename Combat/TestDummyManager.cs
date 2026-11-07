@@ -98,8 +98,12 @@ internal static class TestDummyManager
             colliderField.SetValue(dmgArea, boxCol);
         }
 
-        // Configuración de vida masiva (1,000,000 HP) y texto visual
-        dummy.Setup(1000000f);
+        AccessTools.Field(typeof(Entity), "entityDamageArea")?.SetValue(dummy, dmgArea);
+        dummy.SetDamageArea(dmgArea);
+
+        // Configuración de vida masiva excesiva (10,000,000 HP) para pruebas de escalado elemental
+        dummy.Setup(10000000f);
+        dummyObj.AddComponent<EnemyElementalStatusController>();
         activeDummy = dummy;
 
         Core.Audio?.PlayOneShot("event:/SFX/UI/EquipItem");
@@ -107,7 +111,7 @@ internal static class TestDummyManager
 
         if (Main.CoopLocal != null)
         {
-            Blasphemous.ModdingAPI.ModLog.Info($"[TestDummy] Muñeco de pruebas creado en {spawnPos} con 1,000,000 HP (Layer: {enemyLayer}).", Main.CoopLocal);
+            Blasphemous.ModdingAPI.ModLog.Info($"[TestDummy] Muñeco de pruebas creado en {spawnPos} con 10,000,000 HP (Layer: {enemyLayer}).", Main.CoopLocal);
         }
     }
 
@@ -271,7 +275,8 @@ internal sealed class TestDummyEnemy : Enemy, IDamageable
     private SpriteRenderer sr;
     private TextMesh hpTextMesh;
     private GameObject hpLabelObj;
-    private float maxHp = 1000000f;
+    private EnemyDamageArea damageArea;
+    private float maxHp = 10000000f;
     private float lastLife;
     private float flashTimer;
 
@@ -284,6 +289,11 @@ internal sealed class TestDummyEnemy : Enemy, IDamageable
     internal void SetSpriteRenderer(SpriteRenderer renderer)
     {
         sr = renderer;
+    }
+
+    internal void SetDamageArea(EnemyDamageArea area)
+    {
+        damageArea = area;
     }
 
     internal void Setup(float hp)
@@ -319,6 +329,12 @@ internal sealed class TestDummyEnemy : Enemy, IDamageable
             Status.Dead = false;
         }
         UpdateHpText();
+
+        var ctrl = GetComponent<EnemyElementalStatusController>();
+        if (ctrl != null)
+        {
+            ctrl.ResetAllStatuses();
+        }
     }
 
     private void CreateHpDisplay()
@@ -327,7 +343,7 @@ internal sealed class TestDummyEnemy : Enemy, IDamageable
 
         hpLabelObj = new GameObject("DummyHpLabel");
         hpLabelObj.transform.SetParent(transform, false);
-        hpLabelObj.transform.localPosition = new Vector3(0f, 2.35f, 0f);
+        hpLabelObj.transform.localPosition = new Vector3(0f, 2.1f, 0f);
 
         hpTextMesh = hpLabelObj.AddComponent<TextMesh>();
         hpTextMesh.characterSize = 0.09f;
@@ -370,9 +386,22 @@ internal sealed class TestDummyEnemy : Enemy, IDamageable
             Damage(dmg, hit.HitSoundId);
         }
 
+        if (damageArea != null)
+        {
+            try { damageArea.TakeDamage(hit, false); } catch { }
+        }
+
         if (EnemyDamageArea.OnDamagedGlobal != null)
         {
             EnemyDamageArea.OnDamagedGlobal(gameObject, hit);
+        }
+
+        Penitent attacker = hit.AttackingEntity?.GetComponent<Penitent>()
+            ?? hit.AttackingEntity?.GetComponentInParent<Penitent>()
+            ?? Core.Logic?.Penitent;
+        if (attacker != null)
+        {
+            SwordElementalCombatBridge.TryApplyElementalStatus(this, attacker);
         }
     }
 

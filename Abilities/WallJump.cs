@@ -159,7 +159,7 @@ internal static class WallJump_OnUpdate_P2_Patch
     private static bool Prefix(WallJump __instance)
     {
         Penitent owner = __instance.EntityOwner as Penitent;
-        if (owner == null || owner != CoopLocal.Player2)
+        if (owner == null || !CoopLocal.IsGuestPlayer(owner, out int guestSlot))
         {
             return true;
         }
@@ -194,7 +194,7 @@ internal static class WallJump_OnUpdate_P2_Patch
         WallHitField.SetValue(__instance, wallHit);
 
         bool endStickCoolDown = stickCoolDownTimer < 0f;
-        if (Player2Input.AttackHeld && !controller.IsGrounded && wallHit.collider != null && !stickToWall && endStickCoolDown)
+        if (Player2Input.GetAttackHeld(guestSlot) && !controller.IsGrounded && wallHit.collider != null && !stickToWall && endStickCoolDown)
         {
             if (!_loggedCandidateHashTable)
             {
@@ -343,7 +343,7 @@ internal static class WallJump_OnUpdate_P2_Patch
             _stuckRetryFrames = 0;
         }
 
-        if (Player2Input.JumpDown && stickToWall && jumpOffCoolDownTimer < 0f && owner.Animator.GetBool("STICK_ON_WALL") && !Gameplay.UI.UIController.instance.IsShowingMenu)
+        if (Player2Input.GetJumpHeld(guestSlot) && stickToWall && jumpOffCoolDownTimer < 0f && owner.Animator.GetBool("STICK_ON_WALL") && !Gameplay.UI.UIController.instance.IsShowingMenu)
         {
             DOTween.Kill(owner.transform);
             __instance.ToogleAbilities(true);
@@ -481,7 +481,7 @@ internal static class AnimatorInyector_AirAttack_OrderDebugLogger_Patch
     private static void Postfix(object __instance)
     {
         Penitent penitent = PenitentField.GetValue(__instance) as Penitent;
-        if (penitent != CoopLocal.Player2)
+        if (!CoopLocal.IsGuestPlayer(penitent, out _))
         {
             return;
         }

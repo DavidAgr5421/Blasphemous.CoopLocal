@@ -21,25 +21,59 @@ internal static class PrieDieuCoopSync
 
     internal static void OnPrieDieuStart(Interactable interactable, Animator interactorAnimator)
     {
-        if (Player2DeathState.IsPendingRevive())
+        if (Player1DeathState.IsPendingRevive())
         {
-            Player2DeathState.ClearPendingRevive();
-            if (CoopLocal.Player2 == null)
+            Player1DeathState.ClearPendingRevive();
+            Penitent p1 = Core.Logic.Penitent;
+            if (p1 != null)
             {
-                CoopLocal.SpawnPlayer2(Core.Logic.Penitent, Core.Logic.Penitent.transform.position);
+                p1.Status.Dead = false;
+                p1.DeathEventLaunched = false;
+                p1.Stats.Life.SetToCurrentMax();
+                if (interactorAnimator != null)
+                {
+                    p1.transform.position = interactorAnimator.transform.position;
+                }
+                PlayerDeathFixShared.EnableAbilitiesMethod?.Invoke(p1, new object[] { true });
+                PlayerDeathFixShared.EnableTraitsMethod?.Invoke(p1, new object[] { true });
+                if (p1.DamageArea != null)
+                {
+                    p1.DamageArea.IncludeEnemyLayer(true);
+                }
+                p1.Animator.Play("Idle");
             }
+        }
+
+        bool anyPending = false;
+        for (int p = 1; p < CoopPlayerRegistry.MaxPlayers; p++)
+        {
+            if (Player2DeathState.IsPendingRevive(p))
+            {
+                Player2DeathState.ClearPendingRevive(p);
+                anyPending = true;
+            }
+        }
+        if (anyPending && CoopLocal.Player2 == null && Core.Logic?.Penitent != null)
+        {
+            CoopLocal.SpawnPlayer2(Core.Logic.Penitent, Core.Logic.Penitent.transform.position);
+        }
+
+        foreach (var extra in CoopLocal.GetAllExtraPlayers())
+        {
+            if (extra == null) continue;
+            if (extra.Status.Dead)
+            {
+                extra.Status.Dead = false;
+                extra.Stats.Life.SetToCurrentMax();
+            }
+            int slot = CoopPlayerRegistry.GetPlayerIndex(extra);
+            Player2StatsSync.HealAtPrieDieu(extra, healFervour: true, slotIndex: slot);
         }
 
         Penitent p2 = CoopLocal.Player2;
         if (p2 == null || interactorAnimator == null)
         {
             return;
-        }
-
-        if (p2.Status.Dead)
-        {
-            p2.Status.Dead = false;
-            p2.Stats.Life.SetToCurrentMax();
         }
 
         Vector3 targetPos = interactorAnimator.transform.position + new Vector3(1.2f, 0f, 0f);
@@ -148,21 +182,20 @@ internal static class PrieDieuCoopSync
 
     internal static void OnPrieDieuEnd(Interactable interactable, Animator interactorAnimator)
     {
-        Penitent p2 = CoopLocal.Player2;
-        if (p2 != null)
+        foreach (var extra in CoopLocal.GetAllExtraPlayers())
         {
-            p2.SpriteRenderer.enabled = true;
-            if (p2.DamageArea != null)
+            if (extra == null) continue;
+            extra.SpriteRenderer.enabled = true;
+            if (extra.DamageArea != null)
             {
-                p2.DamageArea.enabled = true;
+                extra.DamageArea.enabled = true;
             }
-            PlayerLogicBlocker.SetBlocked(p2, false);
-
+            PlayerLogicBlocker.SetBlocked(extra, false);
             if (interactorAnimator != null)
             {
-                p2.transform.position = interactorAnimator.transform.position + new Vector3(1.2f, 0f, 0f);
+                extra.transform.position = interactorAnimator.transform.position + new Vector3(1.2f, 0f, 0f);
             }
-            p2.SetOrientation(EntityOrientation.Left);
+            extra.SetOrientation(EntityOrientation.Left);
         }
 
         if (p2KneelVisual != null)

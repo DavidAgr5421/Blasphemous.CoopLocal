@@ -80,18 +80,18 @@ internal static class PrayerUse_P2Input_Patch
     private static void Postfix(PrayerUse __instance)
     {
         Penitent owner = __instance.GetComponentInParent<Penitent>();
-        if (owner == null || owner != CoopLocal.Player2)
+        if (owner == null) return;
+        int slotIndex = CoopPlayerRegistry.GetPlayerIndex(owner);
+        if (slotIndex <= 0) return;
+
+        if (Player2Input.GetPrayerActivateDown(slotIndex))
         {
-            return;
-        }
-        if (Player2Input.PrayerActivateDown)
-        {
-            Framework.Inventory.Prayer p2Prayer = Player2InventoryManager.GetEquippedPrayerObj();
-            if (p2Prayer == null)
+            Framework.Inventory.Prayer playerPrayer = Player2InventoryManager.GetEquippedPrayerObj(slotIndex);
+            if (playerPrayer == null)
             {
-                return; // P2 has no prayer equipped
+                return;
             }
-            float cost = (float)p2Prayer.fervourNeeded + owner.Stats.PrayerCostAddition.Final;
+            float cost = (float)playerPrayer.fervourNeeded + owner.Stats.PrayerCostAddition.Final;
             if (owner.Stats.Fervour.Current < cost)
             {
                 Gameplay.UI.UIController.instance?.NotEnoughFervour();
@@ -102,7 +102,6 @@ internal static class PrayerUse_P2Input_Patch
             {
                 return;
             }
-            // Inicia la animación AuraTransform y bloquea de inmediato a P2 igual que P1.
             PlayerLogicBlocker.SetBlocked(owner, true);
             if (owner.PlatformCharacterController != null && owner.PlatformCharacterController.PlatformCharacterPhysics != null)
             {
@@ -112,7 +111,7 @@ internal static class PrayerUse_P2Input_Patch
             if (Main.CoopLocal != null)
             {
                 Blasphemous.ModdingAPI.ModLog.Info(
-                    $"[PrayerUse] P2 PrayerActivateDown -> started AuraTransform anim (equippedPrayer={p2Prayer.name}, cost={cost:F1})",
+                    $"[PrayerUse] P{slotIndex + 1} PrayerActivateDown -> started AuraTransform anim (equippedPrayer={playerPrayer.name}, cost={cost:F1})",
                     Main.CoopLocal);
             }
         }
@@ -155,7 +154,7 @@ internal static class AuraTransformBehaviour_OnStateEnter_Patch
     private static bool Prefix(Animator animator, ref Penitent ____penitent, ref PrayerUse ____prayer)
     {
         Penitent owner = animator.GetComponentInParent<Penitent>();
-        if (owner == null || owner != CoopLocal.Player2)
+        if (owner == null || !CoopLocal.IsGuestPlayer(owner, out _))
         {
             return true;
         }
@@ -173,7 +172,7 @@ internal static class AuraTransformBehaviour_OnStateExit_Patch
     private static bool Prefix(Animator animator, Penitent ____penitent)
     {
         Penitent owner = animator.GetComponentInParent<Penitent>() ?? ____penitent;
-        if (owner == null || owner != CoopLocal.Player2)
+        if (owner == null || !CoopLocal.IsGuestPlayer(owner, out _))
         {
             return true;
         }
@@ -191,11 +190,10 @@ internal static class PrayerUse_GetEquippedPrayer_P2_Patch
     private static bool Prefix(PrayerUse __instance, ref Framework.Inventory.Prayer __result)
     {
         Penitent owner = __instance.EntityOwner as Penitent ?? __instance.GetComponentInParent<Penitent>();
-        if (owner == null || owner != CoopLocal.Player2)
-        {
-            return true;
-        }
-        __result = Player2InventoryManager.GetEquippedPrayerObj();
+        if (owner == null) return true;
+        int slotIndex = CoopPlayerRegistry.GetPlayerIndex(owner);
+        if (slotIndex <= 0) return true;
+        __result = Player2InventoryManager.GetEquippedPrayerObj(slotIndex);
         return false;
     }
 }
@@ -207,11 +205,10 @@ internal static class PrayerUse_CanUsePrayer_P2_Patch
     private static bool Prefix(PrayerUse __instance, ref bool __result, Penitent ____penitent)
     {
         Penitent owner = ____penitent ?? __instance.EntityOwner as Penitent ?? __instance.GetComponentInParent<Penitent>();
-        if (owner == null || owner != CoopLocal.Player2)
-        {
-            return true;
-        }
-        Framework.Inventory.Prayer prayer = Player2InventoryManager.GetEquippedPrayerObj();
+        if (owner == null) return true;
+        int slotIndex = CoopPlayerRegistry.GetPlayerIndex(owner);
+        if (slotIndex <= 0) return true;
+        Framework.Inventory.Prayer prayer = Player2InventoryManager.GetEquippedPrayerObj(slotIndex);
         if (prayer == null)
         {
             __result = false;
@@ -272,7 +269,7 @@ internal static class PrayerAlliedCherubEffect_OnApplyEffect_P2_Patch
     private static bool Prefix(Framework.Inventory.PrayerAlliedCherubEffect __instance, ref bool __result)
     {
         Penitent caster = PrayerCasterTracker.LastCaster;
-        if (caster == null || caster != CoopLocal.Player2)
+        if (caster == null || !CoopLocal.IsGuestPlayer(caster, out _))
         {
             return true;
         }
@@ -293,7 +290,7 @@ internal static class PrayerAlliedCherubEffect_OnRemoveEffect_P2_Patch
     private static bool Prefix(Framework.Inventory.PrayerAlliedCherubEffect __instance)
     {
         Penitent caster = PrayerCasterTracker.LastCaster;
-        if (caster == null || caster != CoopLocal.Player2)
+        if (caster == null || !CoopLocal.IsGuestPlayer(caster, out _))
         {
             return true;
         }
@@ -313,7 +310,7 @@ internal static class PrayerShieldEffect_OnApplyEffect_P2_Patch
     private static bool Prefix(Framework.Inventory.PrayerShieldEffect __instance, ref bool __result)
     {
         Penitent caster = PrayerCasterTracker.LastCaster;
-        if (caster == null || caster != CoopLocal.Player2)
+        if (caster == null || !CoopLocal.IsGuestPlayer(caster, out _))
         {
             return true;
         }
@@ -334,7 +331,7 @@ internal static class PrayerShieldEffect_OnRemoveEffect_P2_Patch
     private static bool Prefix(Framework.Inventory.PrayerShieldEffect __instance)
     {
         Penitent caster = PrayerCasterTracker.LastCaster;
-        if (caster == null || caster != CoopLocal.Player2)
+        if (caster == null || !CoopLocal.IsGuestPlayer(caster, out _))
         {
             return true;
         }
@@ -363,7 +360,7 @@ internal static class PenitentLightBeamEffect_OnApplyEffect_P2_Patch
     private static bool Prefix(Tools.Items.PenitentLightBeamEffect __instance, ref bool __result)
     {
         Penitent caster = PrayerCasterTracker.LastCaster;
-        if (caster == null || caster != CoopLocal.Player2)
+        if (caster == null || !CoopLocal.IsGuestPlayer(caster, out _))
         {
             return true;
         }
@@ -460,7 +457,7 @@ internal static class PrayerUse_OnUpdate_P2_AuraTransform_Patch
     {
         PrayerUse self = currentInstance;
         Penitent owner = self != null ? self.EntityOwner as Penitent : null;
-        if (owner == null || owner != CoopLocal.Player2)
+        if (owner == null || !CoopLocal.IsGuestPlayer(owner, out _))
         {
             // P1 - untouched vanilla behavior.
             return player.GetButtonTimedPressDown(actionId, time);
@@ -513,7 +510,7 @@ internal static class PenitentCrawlerOrbsEffect_OnApplyEffect_P2_Patch
     private static bool Prefix(Tools.Items.PenitentCrawlerOrbsEffect __instance, ref bool __result)
     {
         Penitent caster = PrayerCasterTracker.LastCaster;
-        if (caster == null || caster != CoopLocal.Player2)
+        if (caster == null || !CoopLocal.IsGuestPlayer(caster, out _))
         {
             return true;
         }
@@ -537,7 +534,7 @@ internal static class PenitentDivineLightEffect_OnApplyEffect_P2_Patch
     private static bool Prefix(Tools.Items.PenitentDivineLightEffect __instance, ref bool __result)
     {
         Penitent caster = PrayerCasterTracker.LastCaster;
-        if (caster == null || caster != CoopLocal.Player2)
+        if (caster == null || !CoopLocal.IsGuestPlayer(caster, out _))
         {
             return true;
         }
@@ -558,7 +555,7 @@ internal static class PenitentFlamePillarsEffect_OnApplyEffect_P2_Patch
     private static bool Prefix(Tools.Items.PenitentFlamePillarsEffect __instance, ref bool __result)
     {
         Penitent caster = PrayerCasterTracker.LastCaster;
-        if (caster == null || caster != CoopLocal.Player2)
+        if (caster == null || !CoopLocal.IsGuestPlayer(caster, out _))
         {
             return true;
         }
@@ -579,7 +576,7 @@ internal static class PenitentMultishotEffect_OnApplyEffect_P2_Patch
     private static bool Prefix(Tools.Items.PenitentMultishotEffect __instance, ref bool __result)
     {
         Penitent caster = PrayerCasterTracker.LastCaster;
-        if (caster == null || caster != CoopLocal.Player2)
+        if (caster == null || !CoopLocal.IsGuestPlayer(caster, out _))
         {
             return true;
         }
@@ -618,7 +615,7 @@ internal static class StuntPrayerEffect_OnApplyEffect_P2_Patch
     private static bool Prefix(Tools.Items.StuntPrayerEffect __instance, ref bool __result)
     {
         Penitent caster = PrayerCasterTracker.LastCaster;
-        if (caster == null || caster != CoopLocal.Player2)
+        if (caster == null || !CoopLocal.IsGuestPlayer(caster, out _))
         {
             return true;
         }

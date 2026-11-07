@@ -281,8 +281,6 @@ internal static class PlatformCharacterInput_Update_Patch
     private static readonly FieldInfo IsJumpOffBackingField =
         AccessTools.Field(typeof(PlatformCharacterInput), "<IsJumpOff>k__BackingField");
 
-    private static bool player2PressedJumpButton;
-    private static bool player2PlatformDropDownPulse;
 
     // Round 51: root cause of "P2 entra en carga de ataque cuando P1 mantiene su botón de
     // ataque". IsAttackButtonHold (private-set auto-property) is computed inside vanilla's own
@@ -303,15 +301,19 @@ internal static class PlatformCharacterInput_Update_Patch
     private static readonly FieldInfo IsAttackButtonHoldBackingField =
         AccessTools.Field(typeof(PlatformCharacterInput), "<IsAttackButtonHold>k__BackingField");
 
-    private static float player2AttackHoldTimer;
-    private static bool player2AttackButtonHold;
+    private static readonly float[] guestAttackHoldTimer = new float[4];
+    private static readonly bool[] guestAttackButtonHold = new bool[4];
+    private static readonly EntityOrientation[] guestFacing = new EntityOrientation[4] {
+        EntityOrientation.Right, EntityOrientation.Right, EntityOrientation.Right, EntityOrientation.Right
+    };
+    private static readonly bool[] guestPressedJumpButton = new bool[4];
+    private static readonly bool[] guestPlatformDropDownPulse = new bool[4];
 
-    // The original Update() also calls SetOrientation(horizontalAxis) using P1's shared
-    // axis - harmless while P2 is actively pressing its own left/right (we override right
-    // after), but when P2 is idle and P1 moves, that call still goes through unopposed and
-    // flips P2's sprite. So P2's facing is tracked here and reasserted every frame, not just
-    // while a direction key is held.
-    private static EntityOrientation player2Facing = EntityOrientation.Right;
+    private static float player2AttackHoldTimer { get => guestAttackHoldTimer[1]; set => guestAttackHoldTimer[1] = value; }
+    private static bool player2AttackButtonHold { get => guestAttackButtonHold[1]; set => guestAttackButtonHold[1] = value; }
+    private static EntityOrientation player2Facing { get => guestFacing[1]; set => guestFacing[1] = value; }
+    private static bool player2PressedJumpButton { get => guestPressedJumpButton[1]; set => guestPressedJumpButton[1] = value; }
+    private static bool player2PlatformDropDownPulse { get => guestPlatformDropDownPulse[1]; set => guestPlatformDropDownPulse[1] = value; }
 
     // Debug only (see DashParryDebugLog): edge-triggered raw-hardware-key logger for exactly the
     // key P2's crouch reads. Animation-clip logging showed P2 dropping into "Player_crouch_down"
@@ -391,7 +393,7 @@ internal static class PlatformCharacterInput_Update_Patch
             }
         }
 
-        if (____penitent != CoopLocal.Player2)
+        if (!CoopLocal.IsGuestPlayer(____penitent, out int slotIndex))
         {
             return;
         }
@@ -435,16 +437,16 @@ internal static class PlatformCharacterInput_Update_Patch
 
         Player2Input.Tick();
 
-        bool rawDown = Player2Input.Down;
-        bool left = !blocked && Player2Input.Left;
-        bool right = !blocked && Player2Input.Right;
-        bool rawJumpKey = Player2Input.JumpHeld;
+        bool rawDown = Player2Input.GetDown(slotIndex);
+        bool left = !blocked && Player2Input.GetLeft(slotIndex);
+        bool right = !blocked && Player2Input.GetRight(slotIndex);
+        bool rawJumpKey = Player2Input.GetJumpHeld(slotIndex);
         bool jump = !blocked && rawJumpKey;
         bool crouch = !blocked && rawDown;
-        bool attackUp = !blocked && Player2Input.Up;
-        bool rawAttackKeyDown = Player2Input.AttackDown;
+        bool attackUp = !blocked && Player2Input.GetUp(slotIndex);
+        bool rawAttackKeyDown = Player2Input.GetAttackDown(slotIndex);
         bool attack = !blocked && rawAttackKeyDown;
-        bool rawDashKeyDown = Player2Input.DashDown;
+        bool rawDashKeyDown = Player2Input.GetDashDown(slotIndex);
         bool dash = !blocked && rawDashKeyDown;
         if (rawDashKeyDown)
         {
@@ -599,11 +601,11 @@ internal static class PlatformCharacterInput_Update_Patch
         // pressedJumpButton/coroutine (which live on the same PlatformCharacterInput instance, but
         // get fed wrong data for P2's instance by vanilla's own Update() body before this Postfix runs).
         // Round 82 - platform drop-through immediate & reliable trigger
-        if (player2PlatformDropDownPulse)
+        if (guestPlatformDropDownPulse[slotIndex])
         {
             // Clear PlatformDropDown after 1 frame so it doesn't stay latched indefinitely
             controller.SetActionState(eControllerActions.PlatformDropDown, false);
-            player2PlatformDropDownPulse = false;
+            guestPlatformDropDownPulse[slotIndex] = false;
         }
 
         if (____penitent.Status.IsHurt || ____penitent.Status.IsIdle)
@@ -612,28 +614,28 @@ internal static class PlatformCharacterInput_Update_Patch
         }
 
         bool onOneWayPlatform = ____penitent.FloorChecker.OneWayDownCollision || !____penitent.FloorChecker.IsOnFloorPlatform;
-        bool jumpPressedThisFrame = jump && !player2PressedJumpButton;
+        bool jumpPressedThisFrame = jump && !guestPressedJumpButton[slotIndex];
 
         if (jumpPressedThisFrame && crouch && controller.IsGrounded && onOneWayPlatform &&
             !____penitent.StepOnLadder && !Core.LevelManager.currentLevel.LevelName.Equals("D24Z01S01"))
         {
-            player2PressedJumpButton = true;
+            guestPressedJumpButton[slotIndex] = true;
             IsJumpOffBackingField.SetValue(input, true);
             controller.SetActionState(eControllerActions.Jump, false);
             controller.SetActionState(eControllerActions.PlatformDropDown, true);
-            player2PlatformDropDownPulse = true;
+            guestPlatformDropDownPulse[slotIndex] = true;
             ____penitent.Animator?.SetTrigger("JUMP_OFF");
             input.onJumpOff?.Invoke(____penitent.transform.position);
             controller.PlatformCharacterPhysics.VSpeed = -2.5f;
-            DashParryDebugLog.Log($"P2 platform drop-through immediate triggered (grounded={controller.IsGrounded}, oneWay={____penitent.FloorChecker.OneWayDownCollision}, frame {Time.frameCount})");
+            DashParryDebugLog.Log($"P{slotIndex + 1} platform drop-through immediate triggered (grounded={controller.IsGrounded}, oneWay={____penitent.FloorChecker.OneWayDownCollision}, frame {Time.frameCount})");
         }
         else if (jump)
         {
-            player2PressedJumpButton = true;
+            guestPressedJumpButton[slotIndex] = true;
         }
         else
         {
-            player2PressedJumpButton = false;
+            guestPressedJumpButton[slotIndex] = false;
             IsJumpOffBackingField.SetValue(input, false);
         }
         input.ReachAxisThreshold = !isChargingMove && !isHorizontalAttackClamped && (left || right);
@@ -672,37 +674,37 @@ internal static class PlatformCharacterInput_Update_Patch
         // of the shared Rewired button. Also gated on `blocked` (PlayerLogicBlocker/dead), same
         // rationale as every other raw read in this Postfix - P2 shouldn't charge-attack while its
         // own dash/parry/ladder lock is active any more than P1 can while blocked.
-        bool attackHeldNow = !blocked && Player2Input.AttackHeld;
+        bool attackHeldNow = !blocked && Player2Input.GetAttackHeld(slotIndex);
         if (____penitent.Status.Dead || !____penitent.Status.IsGrounded)
         {
-            player2AttackHoldTimer = 0f;
-            player2AttackButtonHold = false;
+            guestAttackHoldTimer[slotIndex] = 0f;
+            guestAttackButtonHold[slotIndex] = false;
         }
         if (attackHeldNow)
         {
-            player2AttackHoldTimer += Time.deltaTime;
-            if (player2AttackHoldTimer >= input.timeInputAttackHold && !player2AttackButtonHold)
+            guestAttackHoldTimer[slotIndex] += Time.deltaTime;
+            if (guestAttackHoldTimer[slotIndex] >= input.timeInputAttackHold && !guestAttackButtonHold[slotIndex])
             {
-                player2AttackHoldTimer = 0f;
-                player2AttackButtonHold = true;
+                guestAttackHoldTimer[slotIndex] = 0f;
+                guestAttackButtonHold[slotIndex] = true;
             }
         }
         else
         {
-            player2AttackHoldTimer = 0f;
-            player2AttackButtonHold = false;
+            guestAttackHoldTimer[slotIndex] = 0f;
+            guestAttackButtonHold[slotIndex] = false;
         }
-        IsAttackButtonHoldBackingField.SetValue(input, player2AttackButtonHold);
+        IsAttackButtonHoldBackingField.SetValue(input, guestAttackButtonHold[slotIndex]);
 
         if (left)
         {
-            player2Facing = EntityOrientation.Left;
+            guestFacing[slotIndex] = EntityOrientation.Left;
         }
         else if (right)
         {
-            player2Facing = EntityOrientation.Right;
+            guestFacing[slotIndex] = EntityOrientation.Right;
         }
-        ____penitent.SetOrientation(player2Facing);
+        ____penitent.SetOrientation(guestFacing[slotIndex]);
     }
 }
 

@@ -11,16 +11,28 @@ internal static class Player2MenuView
 
     internal static int ActivePlayerIndex => InventoryViewPlayer != 0 ? InventoryViewPlayer : SkillViewPlayer;
 
-    internal static bool PendingOpenAsP2 { get; set; }
+    internal static int PendingOpenPlayer { get; set; } = -1;
+    internal static bool PendingOpenAsP2
+    {
+        get => PendingOpenPlayer == 1;
+        set => PendingOpenPlayer = value ? 1 : -1;
+    }
     internal static int LastMenuToggleFrame { get; set; } = -1;
 
-    internal static void RequestOpenAsP2() => PendingOpenAsP2 = true;
+    internal static void RequestOpenAsPlayer(int playerIndex) => PendingOpenPlayer = playerIndex;
+    internal static void RequestOpenAsP2() => RequestOpenAsPlayer(1);
+
+    internal static int ConsumePendingOpenPlayer()
+    {
+        int value = PendingOpenPlayer;
+        PendingOpenPlayer = -1;
+        return value;
+    }
 
     internal static bool ConsumePendingOpenAsP2()
     {
-        bool value = PendingOpenAsP2;
-        PendingOpenAsP2 = false;
-        return value;
+        int p = ConsumePendingOpenPlayer();
+        return p > 0;
     }
 
     internal static void SetActivePlayer(int playerIndex)
@@ -33,15 +45,23 @@ internal static class Player2MenuView
         Gameplay.UI.UIController.instance != null &&
         (Gameplay.UI.UIController.instance.IsShowingMenu || Gameplay.UI.UIController.instance.IsShowingInventory);
 
-    internal static bool IsSkillP2View =>
-        SkillViewPlayer == 1 &&
+    internal static bool IsGuestView =>
+        ActivePlayerIndex > 0 &&
         Gameplay.UI.UIController.instance != null &&
         Gameplay.UI.UIController.instance.IsShowingInventory;
 
-    internal static bool IsInventoryP2View =>
-        InventoryViewPlayer == 1 &&
+    internal static bool IsSkillGuestView =>
+        SkillViewPlayer > 0 &&
         Gameplay.UI.UIController.instance != null &&
         Gameplay.UI.UIController.instance.IsShowingInventory;
+
+    internal static bool IsInventoryGuestView =>
+        InventoryViewPlayer > 0 &&
+        Gameplay.UI.UIController.instance != null &&
+        Gameplay.UI.UIController.instance.IsShowingInventory;
+
+    internal static bool IsSkillP2View => IsSkillGuestView;
+    internal static bool IsInventoryP2View => IsInventoryGuestView;
 
     internal static string CurrentMenuTitle =>
         CoopPlayerRegistry.GetMenuTitle(ActivePlayerIndex);

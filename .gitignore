@@ -15,3 +15,7 @@ Thumbs.db
 
 # CodeGraph
 .codegraph/
+
+# Temp / Scratchpad
+scratchpad/
+__pycache__/

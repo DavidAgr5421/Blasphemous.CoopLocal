@@ -105,34 +105,48 @@ internal static class Player2Pad
     private const int AxisLeftStickY = 1;
     private const float AxisThreshold = 0.5f;
 
-    internal static Rewired.Joystick Pad
+    internal static Rewired.Joystick GetPadForSlot(int slotIndex)
     {
-        get
-        {
-            var joysticks = Rewired.ReInput.controllers.Joysticks;
-            if (joysticks == null || joysticks.Count == 0)
-            {
-                return null;
-            }
+        if (!Rewired.ReInput.isReady || Rewired.ReInput.controllers == null) return null;
+        var joysticks = Rewired.ReInput.controllers.Joysticks;
+        if (joysticks == null || joysticks.Count == 0) return null;
 
-            int joyIndex = 0;
-            switch (CoopGameConfig.Slots[1].Device)
+        int joyIndex = 0;
+        if (slotIndex >= 0 && slotIndex < CoopGameConfig.Slots.Length)
+        {
+            switch (CoopGameConfig.Slots[slotIndex].Device)
             {
                 case CoopDeviceType.Gamepad1: joyIndex = 0; break;
                 case CoopDeviceType.Gamepad2: joyIndex = 1; break;
                 case CoopDeviceType.Gamepad3: joyIndex = 2; break;
                 case CoopDeviceType.Gamepad4: joyIndex = 3; break;
                 default:
-                    // Si P2 está sin asignar o en teclado, devolver el siguiente joystick disponible si P1 usa el 0
-                    joyIndex = CoopGameConfig.Slots[0].Device == CoopDeviceType.Gamepad1 ? 1 : 0;
-                    break;
+                    return null;
             }
+        }
+        else
+        {
+            joyIndex = slotIndex > 0 ? (slotIndex - 1) : 0;
+        }
 
-            if (joyIndex >= 0 && joyIndex < joysticks.Count)
-            {
-                return joysticks[joyIndex];
-            }
+        if (joyIndex >= 0 && joyIndex < joysticks.Count)
+        {
+            return joysticks[joyIndex];
+        }
+        return null;
+    }
 
+    internal static Rewired.Joystick Pad
+    {
+        get
+        {
+            var joysticks = (Rewired.ReInput.isReady && Rewired.ReInput.controllers != null) ? Rewired.ReInput.controllers.Joysticks : null;
+            if (joysticks == null || joysticks.Count == 0) return null;
+            Rewired.Joystick slotPad = GetPadForSlot(1);
+            if (slotPad != null) return slotPad;
+
+            int joyIndex = CoopGameConfig.Slots[0].Device == CoopDeviceType.Gamepad1 ? 1 : 0;
+            if (joyIndex >= 0 && joyIndex < joysticks.Count) return joysticks[joyIndex];
             return joysticks[0];
         }
     }
@@ -141,56 +155,81 @@ internal static class Player2Pad
     {
         get
         {
-            var joysticks = Rewired.ReInput.controllers.Joysticks;
-            if (joysticks == null || joysticks.Count == 0)
-            {
-                return null;
-            }
-
-            int joyIndex = 0;
-            switch (CoopGameConfig.Slots[0].Device)
-            {
-                case CoopDeviceType.Gamepad1: joyIndex = 0; break;
-                case CoopDeviceType.Gamepad2: joyIndex = 1; break;
-                case CoopDeviceType.Gamepad3: joyIndex = 2; break;
-                case CoopDeviceType.Gamepad4: joyIndex = 3; break;
-                default: joyIndex = 0; break;
-            }
-
-            if (joyIndex >= 0 && joyIndex < joysticks.Count)
-            {
-                return joysticks[joyIndex];
-            }
-
+            var joysticks = (Rewired.ReInput.isReady && Rewired.ReInput.controllers != null) ? Rewired.ReInput.controllers.Joysticks : null;
+            if (joysticks == null || joysticks.Count == 0) return null;
+            Rewired.Joystick slotPad = GetPadForSlot(0);
+            if (slotPad != null) return slotPad;
             return joysticks[0];
         }
     }
 
-    // Round 46: left stick only originally - user explicitly asked for the D-Pad to also work as
-    // a fixed digital movement option alongside the analog stick, not replacing it. The pad's own
-    // "known gamepad buttons" log (confirmed earlier this session) lists "D-Pad Up/Right/Down/
-    // Left" as real button names, same by-name resolution as every other digital button here.
-    internal static bool Left => (Pad != null && Pad.GetAxis(AxisLeftStickX) <= -AxisThreshold) || ButtonHeld("D-Pad Left", "DPad Left", "Dpad Left");
-    internal static bool Right => (Pad != null && Pad.GetAxis(AxisLeftStickX) >= AxisThreshold) || ButtonHeld("D-Pad Right", "DPad Right", "Dpad Right");
-    internal static bool Up => (Pad != null && Pad.GetAxis(AxisLeftStickY) >= AxisThreshold) || ButtonHeld("D-Pad Up", "DPad Up", "Dpad Up");
-    internal static bool Down => (Pad != null && Pad.GetAxis(AxisLeftStickY) <= -AxisThreshold) || ButtonHeld("D-Pad Down", "DPad Down", "Dpad Down");
+    internal static bool GetLeft(Rewired.Joystick pad) =>
+        pad != null && ((pad.GetAxis(AxisLeftStickX) <= -AxisThreshold) || ButtonHeld(pad, "D-Pad Left", "DPad Left", "Dpad Left"));
 
-    internal static bool JumpHeld => ButtonHeld("A Button", "A");
-    internal static bool AttackDown => ButtonDown("X Button", "X");
-    internal static bool AttackUp => ButtonUp("X Button", "X");
-    internal static bool AttackHeld => ButtonHeld("X Button", "X");
-    internal static bool ParryDown => ButtonDown("Left Bumper", "LB", "L1", "Left Shoulder");
-    internal static bool HealDown => ButtonDown("Right Bumper", "RB", "R1", "Right Shoulder");
-    internal static bool InteractDown => ButtonDown("Y Button", "Y");
-    internal static bool StartDown => ButtonDown("Start", "Back", "Select");
+    internal static bool GetRight(Rewired.Joystick pad) =>
+        pad != null && ((pad.GetAxis(AxisLeftStickX) >= AxisThreshold) || ButtonHeld(pad, "D-Pad Right", "DPad Right", "Dpad Right"));
 
-    internal static bool CancelDown => ButtonDown("B Button", "B");
-    internal static bool LoreDown => ButtonDown("Y Button", "Y");
-    internal static bool SelectDown => ButtonDown("A Button", "A");
+    internal static bool GetUp(Rewired.Joystick pad) =>
+        pad != null && ((pad.GetAxis(AxisLeftStickY) >= AxisThreshold) || ButtonHeld(pad, "D-Pad Up", "DPad Up", "Dpad Up"));
 
-    internal static bool DashDown => AxisDown("DashTrigger", "Right Trigger", "RT", "R2");
-    internal static bool PrayerActivateDown => AxisDown("PrayerTrigger", "Left Trigger", "LT", "L2");
-    internal static bool PrayerActivateUp => AxisUp("PrayerTrigger", "Left Trigger", "LT", "L2");
+    internal static bool GetDown(Rewired.Joystick pad) =>
+        pad != null && ((pad.GetAxis(AxisLeftStickY) <= -AxisThreshold) || ButtonHeld(pad, "D-Pad Down", "DPad Down", "Dpad Down"));
+
+    internal static bool GetJumpHeld(Rewired.Joystick pad) =>
+        ButtonHeld(pad, "A Button", "Button A", "Action Button 1", "Cross", "Button 0", "A");
+
+    internal static bool GetSelectDown(Rewired.Joystick pad) =>
+        ButtonDown(pad, "A Button", "Button A", "Action Button 1", "Cross", "Button 0", "A");
+
+    internal static bool GetAttackDown(Rewired.Joystick pad) =>
+        ButtonDown(pad, "X Button", "Button X", "Action Button 3", "Square", "Button 2", "X");
+
+    internal static bool GetAttackUp(Rewired.Joystick pad) =>
+        ButtonUp(pad, "X Button", "Button X", "Action Button 3", "Square", "Button 2", "X");
+
+    internal static bool GetAttackHeld(Rewired.Joystick pad) =>
+        ButtonHeld(pad, "X Button", "Button X", "Action Button 3", "Square", "Button 2", "X");
+
+    internal static bool GetParryDown(Rewired.Joystick pad) =>
+        ButtonDown(pad, "Left Bumper", "LB", "L1", "Left Shoulder");
+
+    internal static bool GetHealDown(Rewired.Joystick pad) =>
+        ButtonDown(pad, "Right Bumper", "RB", "R1", "Right Shoulder");
+
+    internal static bool GetInteractDown(Rewired.Joystick pad) =>
+        ButtonDown(pad, "Y Button", "Button Y", "Action Button 4", "Triangle", "Button 3", "Y");
+
+    internal static bool GetDashDown(Rewired.Joystick pad) =>
+        AxisDown(pad, "DashTrigger", "Right Trigger", "RT", "R2");
+
+    internal static bool GetPrayerActivateDown(Rewired.Joystick pad) =>
+        AxisDown(pad, "PrayerTrigger", "Left Trigger", "LT", "L2");
+
+    internal static bool GetPrayerActivateUp(Rewired.Joystick pad) =>
+        AxisUp(pad, "PrayerTrigger", "Left Trigger", "LT", "L2");
+
+    internal static bool Left => GetLeft(Pad);
+    internal static bool Right => GetRight(Pad);
+    internal static bool Up => GetUp(Pad);
+    internal static bool Down => GetDown(Pad);
+
+    internal static bool JumpHeld => GetJumpHeld(Pad);
+    internal static bool AttackDown => GetAttackDown(Pad);
+    internal static bool AttackUp => GetAttackUp(Pad);
+    internal static bool AttackHeld => GetAttackHeld(Pad);
+    internal static bool ParryDown => GetParryDown(Pad);
+    internal static bool HealDown => GetHealDown(Pad);
+    internal static bool InteractDown => GetInteractDown(Pad);
+    internal static bool GetStartDown(Rewired.Joystick pad) => ButtonDown(pad, "Start", "Options", "Menu");
+    internal static bool StartDown => GetStartDown(Pad);
+
+    internal static bool CancelDown => ButtonDown(Pad, "B Button", "Button B", "Action Button 2", "Circle", "Button 1", "B");
+    internal static bool LoreDown => ButtonDown(Pad, "Y Button", "Button Y", "Action Button 4", "Triangle", "Button 3", "Y");
+    internal static bool SelectDown => GetSelectDown(Pad);
+
+    internal static bool DashDown => GetDashDown(Pad);
+    internal static bool PrayerActivateDown => GetPrayerActivateDown(Pad);
+    internal static bool PrayerActivateUp => GetPrayerActivateUp(Pad);
 
     private static readonly Dictionary<string, int> resolvedButtonIds = new Dictionary<string, int>();
     private static readonly Dictionary<string, int> resolvedAxisIds = new Dictionary<string, int>();
@@ -198,120 +237,113 @@ internal static class Player2Pad
     private static bool loggedKnownButtons;
     private static bool loggedKnownAxes;
 
-    private static bool ButtonHeld(params string[] candidateNames)
+    private static bool ButtonHeld(Rewired.Joystick pad, params string[] candidateNames)
     {
-        int id = ResolveButtonId(candidateNames);
-        return id >= 0 && Pad.GetButtonById(id);
+        if (pad == null) return false;
+        int id = ResolveButtonId(pad, candidateNames);
+        return id >= 0 && pad.GetButtonById(id);
     }
 
-    private static bool ButtonDown(params string[] candidateNames)
+    private static bool ButtonHeld(params string[] candidateNames) => ButtonHeld(Pad, candidateNames);
+
+    private static bool ButtonDown(Rewired.Joystick pad, params string[] candidateNames)
     {
-        int id = ResolveButtonId(candidateNames);
-        return id >= 0 && Pad.GetButtonDownById(id);
+        if (pad == null) return false;
+        int id = ResolveButtonId(pad, candidateNames);
+        return id >= 0 && pad.GetButtonDownById(id);
     }
 
-    private static bool ButtonUp(params string[] candidateNames)
+    private static bool ButtonDown(params string[] candidateNames) => ButtonDown(Pad, candidateNames);
+
+    private static bool ButtonUp(Rewired.Joystick pad, params string[] candidateNames)
     {
-        int id = ResolveButtonId(candidateNames);
-        return id >= 0 && Pad.GetButtonUpById(id);
+        if (pad == null) return false;
+        int id = ResolveButtonId(pad, candidateNames);
+        return id >= 0 && pad.GetButtonUpById(id);
     }
 
-    // cacheKey is a stable name for this *action* (not itself a candidate to match against),
-    // since the same physical axis can back both a Down and an Up read (PrayerActivate) and both
-    // need to observe the exact same edge-tracking state.
-    private static bool AxisDown(string cacheKey, params string[] candidateNames)
+    private static bool ButtonUp(params string[] candidateNames) => ButtonUp(Pad, candidateNames);
+
+    private static bool AxisDown(Rewired.Joystick pad, string cacheKey, params string[] candidateNames)
     {
-        return TrackAxisEdge(cacheKey, candidateNames) == 1;
+        return TrackAxisEdge(pad, cacheKey, candidateNames) == 1;
     }
 
-    private static bool AxisUp(string cacheKey, params string[] candidateNames)
+    private static bool AxisDown(string cacheKey, params string[] candidateNames) => AxisDown(Pad, cacheKey, candidateNames);
+
+    private static bool AxisUp(Rewired.Joystick pad, string cacheKey, params string[] candidateNames)
     {
-        return TrackAxisEdge(cacheKey, candidateNames) == -1;
+        return TrackAxisEdge(pad, cacheKey, candidateNames) == -1;
     }
 
-    // Returns 1 on the press edge, -1 on the release edge, 0 otherwise (held or not-pressed).
-    private static int TrackAxisEdge(string cacheKey, string[] candidateNames)
+    private static bool AxisUp(string cacheKey, params string[] candidateNames) => AxisUp(Pad, cacheKey, candidateNames);
+
+    private static int TrackAxisEdge(Rewired.Joystick pad, string cacheKey, string[] candidateNames)
     {
-        int id = ResolveAxisId(cacheKey, candidateNames);
+        if (pad == null) return 0;
+        int id = ResolveAxisId(pad, cacheKey, candidateNames);
         bool wasPressed;
-        lastAxisState.TryGetValue(cacheKey, out wasPressed);
-        bool isPressed = id >= 0 && Mathf.Abs(Pad.GetAxisById(id)) >= AxisThreshold;
-        lastAxisState[cacheKey] = isPressed;
-        if (isPressed && !wasPressed)
-        {
-            return 1;
-        }
-        if (!isPressed && wasPressed)
-        {
-            return -1;
-        }
+        string key = $"{pad.id}_{cacheKey}";
+        lastAxisState.TryGetValue(key, out wasPressed);
+        bool isPressed = id >= 0 && Mathf.Abs(pad.GetAxisById(id)) >= AxisThreshold;
+        lastAxisState[key] = isPressed;
+        if (isPressed && !wasPressed) return 1;
+        if (!isPressed && wasPressed) return -1;
         return 0;
     }
 
-    private static int ResolveButtonId(string[] candidateNames)
+    private static int ResolveButtonId(Rewired.Joystick pad, string[] candidateNames)
     {
-        Rewired.Joystick pad = Pad;
-        if (pad == null)
-        {
-            return -1;
-        }
-
-        string cacheKey = candidateNames[0];
+        if (pad == null) return -1;
+        string cacheKey = $"{pad.id}_{candidateNames[0]}";
         int cached;
-        if (resolvedButtonIds.TryGetValue(cacheKey, out cached))
-        {
-            return cached;
-        }
+        if (resolvedButtonIds.TryGetValue(cacheKey, out cached)) return cached;
 
         LogKnownButtonsOnce(pad);
-
         int resolved = FindElementId(pad.ButtonElementIdentifiers, candidateNames);
         resolvedButtonIds[cacheKey] = resolved;
-        if (resolved < 0 && Main.CoopLocal != null)
-        {
-            Blasphemous.ModdingAPI.ModLog.Info(
-                $"[Player2Pad] could not find a gamepad BUTTON named like '{string.Join("/", candidateNames)}' - " +
-                "see the button list above/below and add the real name to the candidates.",
-                Main.CoopLocal);
-        }
         return resolved;
     }
 
-    private static int ResolveAxisId(string cacheKey, string[] candidateNames)
-    {
-        Rewired.Joystick pad = Pad;
-        if (pad == null)
-        {
-            return -1;
-        }
+    private static int ResolveButtonId(string[] candidateNames) => ResolveButtonId(Pad, candidateNames);
 
+    private static int ResolveAxisId(Rewired.Joystick pad, string cacheKey, string[] candidateNames)
+    {
+        if (pad == null) return -1;
+        string key = $"{pad.id}_{cacheKey}";
         int cached;
-        if (resolvedAxisIds.TryGetValue(cacheKey, out cached))
-        {
-            return cached;
-        }
+        if (resolvedAxisIds.TryGetValue(key, out cached)) return cached;
 
         LogKnownAxesOnce(pad);
-
         int resolved = FindElementId(pad.AxisElementIdentifiers, candidateNames);
-        resolvedAxisIds[cacheKey] = resolved;
-        if (resolved < 0 && Main.CoopLocal != null)
-        {
-            Blasphemous.ModdingAPI.ModLog.Info(
-                $"[Player2Pad] could not find a gamepad AXIS named like '{string.Join("/", candidateNames)}' - " +
-                "see the axis list above/below and add the real name to the candidates.",
-                Main.CoopLocal);
-        }
+        resolvedAxisIds[key] = resolved;
         return resolved;
     }
+
+    private static int ResolveAxisId(string cacheKey, string[] candidateNames) => ResolveAxisId(Pad, cacheKey, candidateNames);
 
     private static int FindElementId(System.Collections.Generic.IList<Rewired.ControllerElementIdentifier> identifiers, string[] candidateNames)
     {
+        if (identifiers == null) return -1;
+
+        // 1. Coincidencia exacta primero (para evitar que "A" o "X" coincidan con "D-Pad Down" o "Start")
         foreach (Rewired.ControllerElementIdentifier identifier in identifiers)
         {
             foreach (string candidate in candidateNames)
             {
-                if (identifier.name.IndexOf(candidate, StringComparison.OrdinalIgnoreCase) >= 0)
+                if (string.Equals(identifier.name, candidate, StringComparison.OrdinalIgnoreCase))
+                {
+                    return identifier.id;
+                }
+            }
+        }
+
+        // 2. Coincidencia por subcadena solo para nombres con longitud >= 3 (ej. "D-Pad", "Bumper", "Trigger")
+        foreach (Rewired.ControllerElementIdentifier identifier in identifiers)
+        {
+            foreach (string candidate in candidateNames)
+            {
+                if (candidate.Length >= 3 && identifier.name.IndexOf(candidate, StringComparison.OrdinalIgnoreCase) >= 0)
                 {
                     return identifier.id;
                 }
@@ -429,7 +461,161 @@ internal static class Player2Input
 {
     private const KeyCode ToggleKey = KeyCode.F9;
 
+    internal static int ActiveKeyboardPlayerIndex { get; private set; } = 0; // 0=P1, 1=P2, 2=P3, 3=P4
+
     internal static Player2InputMode Mode { get; set; } = Player2InputMode.Gamepad;
+
+    internal static void CycleKeyboardPlayer()
+    {
+        int activeCount = CoopGameConfig.IsCoopEnabled ? Mathf.Clamp(CoopGameConfig.PlayerCount, 2, 4) : 1;
+        if (activeCount <= 1)
+        {
+            ApplyKeyboardPlayer(0);
+            return;
+        }
+
+        ActiveKeyboardPlayerIndex = (ActiveKeyboardPlayerIndex + 1) % activeCount;
+        ApplyKeyboardPlayer(ActiveKeyboardPlayerIndex);
+    }
+
+    internal static void ApplyKeyboardPlayer(int playerIndex)
+    {
+        int activeCount = CoopGameConfig.IsCoopEnabled ? Mathf.Clamp(CoopGameConfig.PlayerCount, 2, 4) : 1;
+        if (playerIndex >= activeCount)
+        {
+            playerIndex = 0;
+        }
+        ActiveKeyboardPlayerIndex = Mathf.Clamp(playerIndex, 0, activeCount - 1);
+
+        int gamepadNum = 1;
+        for (int i = 0; i < 4; i++)
+        {
+            if (i == ActiveKeyboardPlayerIndex)
+            {
+                CoopGameConfig.Slots[i].Device = CoopDeviceType.Keyboard;
+            }
+            else
+            {
+                CoopGameConfig.Slots[i].Device = (CoopDeviceType)(gamepadNum + 1); // Gamepad1..4
+                gamepadNum++;
+            }
+        }
+
+        // P2 lee teclado si ActiveKeyboardPlayerIndex >= 1
+        Mode = (ActiveKeyboardPlayerIndex >= 1) ? Player2InputMode.Keyboard : Player2InputMode.Gamepad;
+
+        ApplyExclusiveDevices();
+
+        string pName = CoopGameConfig.Slots[ActiveKeyboardPlayerIndex].Name;
+        if (string.IsNullOrEmpty(pName))
+        {
+            pName = CoopPlayerRegistry.GetDisplayName(ActiveKeyboardPlayerIndex);
+        }
+
+        Player2ModeIndicator.ShowPlayer(ActiveKeyboardPlayerIndex, pName);
+
+        Framework.Managers.Core.Audio?.PlayOneShot("event:/SFX/UI/ChangeTab");
+        LogModeAndControllers($"F9 -> Teclado asignado a P{ActiveKeyboardPlayerIndex + 1} ({pName})");
+    }
+
+    // Métodos para consultar input por ranura de jugador (P2=1, P3=2, P4=3)
+    internal static bool GetLeft(int slotIndex)
+    {
+        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKey(Player2Keys.Left);
+        var pad = Player2Pad.GetPadForSlot(slotIndex);
+        return Player2Pad.GetLeft(pad);
+    }
+
+    internal static bool GetRight(int slotIndex)
+    {
+        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKey(Player2Keys.Right);
+        var pad = Player2Pad.GetPadForSlot(slotIndex);
+        return Player2Pad.GetRight(pad);
+    }
+
+    internal static bool GetUp(int slotIndex)
+    {
+        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKey(Player2Keys.Up);
+        var pad = Player2Pad.GetPadForSlot(slotIndex);
+        return Player2Pad.GetUp(pad);
+    }
+
+    internal static bool GetDown(int slotIndex)
+    {
+        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKey(Player2Keys.Down);
+        var pad = Player2Pad.GetPadForSlot(slotIndex);
+        return Player2Pad.GetDown(pad);
+    }
+
+    internal static bool GetJumpHeld(int slotIndex)
+    {
+        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKey(Player2Keys.Jump);
+        var pad = Player2Pad.GetPadForSlot(slotIndex);
+        return Player2Pad.GetJumpHeld(pad);
+    }
+
+    internal static bool GetAttackDown(int slotIndex)
+    {
+        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKeyDown(Player2Keys.Attack);
+        var pad = Player2Pad.GetPadForSlot(slotIndex);
+        return Player2Pad.GetAttackDown(pad);
+    }
+
+    internal static bool GetAttackUp(int slotIndex)
+    {
+        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKeyUp(Player2Keys.Attack);
+        var pad = Player2Pad.GetPadForSlot(slotIndex);
+        return Player2Pad.GetAttackUp(pad);
+    }
+
+    internal static bool GetAttackHeld(int slotIndex)
+    {
+        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKey(Player2Keys.Attack);
+        var pad = Player2Pad.GetPadForSlot(slotIndex);
+        return Player2Pad.GetAttackHeld(pad);
+    }
+
+    internal static bool GetDashDown(int slotIndex)
+    {
+        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKeyDown(Player2Keys.Dash);
+        var pad = Player2Pad.GetPadForSlot(slotIndex);
+        return Player2Pad.GetDashDown(pad);
+    }
+
+    internal static bool GetParryDown(int slotIndex)
+    {
+        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKeyDown(Player2Keys.Parry);
+        var pad = Player2Pad.GetPadForSlot(slotIndex);
+        return Player2Pad.GetParryDown(pad);
+    }
+
+    internal static bool GetHealDown(int slotIndex)
+    {
+        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKeyDown(Player2Keys.Heal);
+        var pad = Player2Pad.GetPadForSlot(slotIndex);
+        return Player2Pad.GetHealDown(pad);
+    }
+
+    internal static bool GetInteractDown(int slotIndex)
+    {
+        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKeyDown(Player2Keys.Interact);
+        var pad = Player2Pad.GetPadForSlot(slotIndex);
+        return Player2Pad.GetInteractDown(pad);
+    }
+
+    internal static bool GetPrayerActivateDown(int slotIndex)
+    {
+        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKeyDown(Player2Keys.PrayerActivate);
+        var pad = Player2Pad.GetPadForSlot(slotIndex);
+        return Player2Pad.GetPrayerActivateDown(pad);
+    }
+
+    internal static bool GetPrayerActivateUp(int slotIndex)
+    {
+        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKeyUp(Player2Keys.PrayerActivate);
+        var pad = Player2Pad.GetPadForSlot(slotIndex);
+        return Player2Pad.GetPrayerActivateUp(pad);
+    }
 
     internal static bool Left => Mode == Player2InputMode.Gamepad ? Player2Pad.Left : Input.GetKey(Player2Keys.Left);
     internal static bool Right => Mode == Player2InputMode.Gamepad ? Player2Pad.Right : Input.GetKey(Player2Keys.Right);
@@ -455,11 +641,14 @@ internal static class Player2Input
     internal static bool PrayerActivateDown => Mode == Player2InputMode.Gamepad ? Player2Pad.PrayerActivateDown : Input.GetKeyDown(Player2Keys.PrayerActivate);
     internal static bool PrayerActivateUp => Mode == Player2InputMode.Gamepad ? Player2Pad.PrayerActivateUp : Input.GetKeyUp(Player2Keys.PrayerActivate);
 
-    // Keyboard-only - opening the shared inventory/prayer menu isn't gamepad-mapped (not asked
-    // for), so this is a plain false in Gamepad mode rather than a guessed button.
-    internal static bool MenuDown => Mode == Player2InputMode.Keyboard
-        ? Input.GetKeyDown(Player2Keys.Menu)
-        : Player2Pad.StartDown;
+    internal static bool GetMenuDown(int slotIndex)
+    {
+        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKeyDown(Player2Keys.Menu);
+        var pad = Player2Pad.GetPadForSlot(slotIndex);
+        return pad != null && Player2Pad.GetStartDown(pad);
+    }
+
+    internal static bool MenuDown => GetMenuDown(1);
 
     private static bool everTicked;
 
@@ -474,18 +663,21 @@ internal static class Player2Input
         if (!everTicked)
         {
             everTicked = true;
-            ApplyExclusiveDevices();
-            Player2ModeIndicator.Show(Mode);
-            LogModeAndControllers($"P2 input mode starting as -> {Mode}");
+            int initialKb = 0;
+            for (int i = 0; i < 4; i++)
+            {
+                if (CoopGameConfig.Slots[i].Device == CoopDeviceType.Keyboard)
+                {
+                    initialKb = i;
+                    break;
+                }
+            }
+            ApplyKeyboardPlayer(initialKb);
         }
 
         if (Input.GetKeyDown(ToggleKey))
         {
-            Mode = Mode == Player2InputMode.Gamepad ? Player2InputMode.Keyboard : Player2InputMode.Gamepad;
-            ApplyExclusiveDevices();
-            Player2ModeIndicator.Show(Mode);
-            string suffix = Mode == Player2InputMode.Gamepad && Player2Pad.Pad == null ? " (no gamepad detected!)" : "";
-            LogModeAndControllers($"P2 input mode -> {Mode}{suffix}");
+            CycleKeyboardPlayer();
         }
         else
         {
@@ -499,11 +691,7 @@ internal static class Player2Input
             // Ronda 89: Atajo en F6 y F7 (en Gamepad) — además se evalúa globalmente abajo.
         }
 
-        // Ronda 92: Atajo de Debug F8 para alternar/probar sendas elementales (Veneno / Sangrado) y ciclar rezos de prueba
-        if (Input.GetKeyDown(KeyCode.F8))
-        {
-            SwordElementalUpgrades.CycleDebugElementalAndPrayers();
-        }
+        // Ronda 92: Atajo F8 reservado para depuración de estadísticas / guardado de layout en árbol
 
         // Ronda 93: Atajo F5 para invocar o reiniciar un enemigo Dummy de pruebas frente al jugador
         if (Input.GetKeyDown(KeyCode.F5))
@@ -530,30 +718,37 @@ internal static class Player2Input
                 Blasphemous.ModdingAPI.ModLog.Info("[FervourShortcut] F6/F7 pressed -> P1 & P2 Fervour set to CurrentMax", Main.CoopLocal);
             }
         }
-        if (MenuDown && Gameplay.UI.UIController.instance != null && Time.frameCount != Player2MenuView.LastMenuToggleFrame)
+        int activeGuestCount = Mathf.Clamp(CoopGameConfig.PlayerCount, 2, 4);
+        for (int p = 1; p < activeGuestCount; p++)
         {
-            NewInventoryWidget widget = NewInventoryMenuField.GetValue(Gameplay.UI.UIController.instance) as NewInventoryWidget;
-            bool alreadyOpenAsP1 = widget != null && widget.currentlyActive && !Player2MenuView.IsInventoryP2View;
-            if (alreadyOpenAsP1)
+            if (GetMenuDown(p) && Gameplay.UI.UIController.instance != null && Time.frameCount != Player2MenuView.LastMenuToggleFrame)
             {
-                // Ya abierto mostrando P1 - cambiar a vista P2 sin cerrar el menú.
-                Player2MenuView.SkillViewPlayer = 1;
-                Player2MenuView.InventoryViewPlayer = 1;
-                object currentTab = CurrentTabTypeField.GetValue(widget);
-                SelectTabMethod.Invoke(widget, new object[] { currentTab, false });
-                RefreshDeviceAssignment();
-                CoopMenuOwnerBanner.Refresh();
-                Player2MenuView.LastMenuToggleFrame = Time.frameCount;
-            }
-            else
-            {
-                // Cerrado (abrir como P2) o ya abierto mostrando P2 (cerrar normal, toggle).
-                if (widget == null || !widget.currentlyActive)
+                NewInventoryWidget widget = NewInventoryMenuField.GetValue(Gameplay.UI.UIController.instance) as NewInventoryWidget;
+                bool isMenuOpen = widget != null && widget.currentlyActive;
+                if (!isMenuOpen)
                 {
-                    Player2MenuView.RequestOpenAsP2();
+                    // Menú cerrado: abrir directamente para el jugador p
+                    Player2MenuView.RequestOpenAsPlayer(p);
+                    Player2MenuView.LastMenuToggleFrame = Time.frameCount;
+                    Gameplay.UI.UIController.instance.ToggleInventoryMenu();
                 }
-                Player2MenuView.LastMenuToggleFrame = Time.frameCount;
-                Gameplay.UI.UIController.instance.ToggleInventoryMenu();
+                else if (Player2MenuView.ActivePlayerIndex == p)
+                {
+                    // Ya está viendo este jugador: cerrar menú
+                    Player2MenuView.LastMenuToggleFrame = Time.frameCount;
+                    Gameplay.UI.UIController.instance.ToggleInventoryMenu();
+                }
+                else
+                {
+                    // Menú ya abierto en otro jugador: cambiar la vista directamente al jugador p
+                    Player2MenuView.SetActivePlayer(p);
+                    object currentTab = CurrentTabTypeField.GetValue(widget);
+                    SelectTabMethod.Invoke(widget, new object[] { currentTab, false });
+                    RefreshDeviceAssignment();
+                    CoopMenuOwnerBanner.Refresh(widget);
+                    Player2MenuView.LastMenuToggleFrame = Time.frameCount;
+                }
+                break;
             }
         }
 // Ronda 49: ocultado a pedido del usuario - el tuner interactivo usa flechas/./-/+, las
@@ -586,15 +781,17 @@ Player2PurgePoints.Tick();
     {
         get
         {
-            bool p2Driving = Player2MenuView.IsInventoryP2View;
-            if (Mode == Player2InputMode.Gamepad)
+            bool guestDriving = Player2MenuView.IsInventoryP2View;
+            if (guestDriving)
             {
-                return p2Driving ? Rewired.ControllerType.Keyboard : Rewired.ControllerType.Joystick;
+                int drivingPlayer = Player2MenuView.ActivePlayerIndex;
+                bool isKeyboardPlayer = (drivingPlayer == ActiveKeyboardPlayerIndex);
+                return isKeyboardPlayer ? Rewired.ControllerType.Joystick : Rewired.ControllerType.Keyboard;
             }
-            else
-            {
-                return p2Driving ? Rewired.ControllerType.Joystick : Rewired.ControllerType.Keyboard;
-            }
+
+            // Si P1 tiene el teclado (ActiveKeyboardPlayerIndex == 0), excluimos Joystick de Player 0.
+            // Si P2, P3 o P4 tienen el teclado (ActiveKeyboardPlayerIndex != 0), excluimos Teclado de Player 0.
+            return (ActiveKeyboardPlayerIndex == 0) ? Rewired.ControllerType.Joystick : Rewired.ControllerType.Keyboard;
         }
     }
 
@@ -626,7 +823,10 @@ Player2PurgePoints.Tick();
         }
         else
         {
-            Rewired.Joystick pad = Player2MenuView.IsInventoryP2View ? Player2Pad.Pad : Player2Pad.P1Pad;
+            int drivingPlayer = Player2MenuView.ActivePlayerIndex;
+            Rewired.Joystick pad = (drivingPlayer > 0)
+                ? Player2Pad.GetPadForSlot(drivingPlayer)
+                : Player2Pad.P1Pad;
             if (pad != null && !p1Rewired.controllers.ContainsController(pad))
             {
                 p1Rewired.controllers.AddController(pad, false);
@@ -707,12 +907,25 @@ internal static class Player2ModeIndicator
         }
     }
 
+    internal static void ShowPlayer(int playerIndex, string playerName)
+    {
+        EnsureCreated();
+        if (label != null)
+        {
+            int total = CoopGameConfig.IsCoopEnabled ? Mathf.Clamp(CoopGameConfig.PlayerCount, 2, 4) : 1;
+            label.text = $"[F9] Teclado: P{playerIndex + 1} ({playerName}) [Partida: {total}P]";
+            label.color = CoopPlayerRegistry.GetLabelColor(playerIndex);
+        }
+    }
+
     internal static void Show(Player2InputMode mode)
     {
         EnsureCreated();
         if (label != null)
         {
-            label.text = mode == Player2InputMode.Gamepad ? "Controller mode" : "Keyboard mode";
+            int kbIdx = Player2Input.ActiveKeyboardPlayerIndex;
+            string pName = CoopPlayerRegistry.GetDisplayName(kbIdx);
+            ShowPlayer(kbIdx, pName);
         }
     }
 
@@ -736,7 +949,7 @@ internal static class Player2ModeIndicator
         rect.anchorMax = new Vector2(1f, 1f);
         rect.pivot = new Vector2(1f, 1f);
         rect.anchoredPosition = new Vector2(-16f, -16f);
-        rect.sizeDelta = new Vector2(320f, 40f);
+        rect.sizeDelta = new Vector2(480f, 40f);
 
         label = textObject.AddComponent<TMPro.TextMeshProUGUI>();
         TMPro.TMP_FontAsset gameFont = Array.Find(

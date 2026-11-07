@@ -57,12 +57,12 @@ internal static class Parry_ParryInput_Patch
     private static bool Prefix(Parry __instance, ref bool __result)
     {
         Penitent owner = __instance.GetComponentInParent<Penitent>();
-        if (owner == null || owner != CoopLocal.Player2)
+        if (owner == null || !CoopLocal.IsGuestPlayer(owner, out int guestSlot))
         {
             return true;
         }
 
-        __result = Player2Input.ParryDown;
+        __result = Player2Input.GetParryDown(guestSlot);
         return false;
     }
 }
@@ -86,18 +86,12 @@ internal static class Healing_GetHealingInput_Patch
     private static bool Prefix(Healing __instance, ref bool __result)
     {
         Penitent owner = __instance.GetComponentInParent<Penitent>();
-        if (owner == null || owner != CoopLocal.Player2)
+        if (owner == null || !CoopLocal.IsGuestPlayer(owner, out int guestSlot))
         {
             return true;
         }
 
-        // The vanilla method's own second gate - !GetActionState((eControllerActions)16) - is
-        // deliberately NOT enforced here. It's untested against P2's own controller state (only
-        // ever checked, in vanilla, against the hardcoded Core.Logic.Penitent/P1), and the user
-        // reported Heal not firing for P2 at all - this gate being permanently true for P2 for
-        // some unrelated reason is the prime suspect, so it's dropped rather than risk it silently
-        // blocking every press again. Still logged (once per press) so this can be confirmed.
-        bool healPressed = Player2Input.HealDown;
+        bool healPressed = Player2Input.GetHealDown(guestSlot);
         if (healPressed && Main.CoopLocal != null)
         {
             bool vanillaGateWasBlocking = owner.PlatformCharacterController.GetActionState((eControllerActions)16);
@@ -302,7 +296,7 @@ internal static class GroundUpwardAttackBehaviour_FixSkippedInit_P2_Patch
 
     private static void Postfix(GroundUpwardAttackBehaviour __instance, Penitent ____penitent)
     {
-        if (____penitent == null || ____penitent != CoopLocal.Player2)
+        if (____penitent == null || !CoopLocal.IsGuestPlayer(____penitent, out _))
         {
             return;
         }
@@ -375,7 +369,7 @@ internal static class FallingOverBehaviour_FixSkippedInit_P2_Patch
 
     private static void Postfix(FallingOverBehaviour __instance, Penitent ____penitent)
     {
-        if (____penitent == null || ____penitent != CoopLocal.Player2)
+        if (____penitent == null || !CoopLocal.IsGuestPlayer(____penitent, out _))
         {
             return;
         }
@@ -394,7 +388,7 @@ internal static class GroundingOverBehaviour_FixSkippedInit_P2_Patch
 
     private static void Postfix(GroundingOverBehaviour __instance, Penitent ____penitent)
     {
-        if (____penitent == null || ____penitent != CoopLocal.Player2)
+        if (____penitent == null || !CoopLocal.IsGuestPlayer(____penitent, out _))
         {
             return;
         }

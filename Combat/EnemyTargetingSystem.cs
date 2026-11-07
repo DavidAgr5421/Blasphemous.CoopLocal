@@ -251,20 +251,6 @@ internal static class Entity_Update_Targeting_Patch
     }
 }
 
-/// <summary>
-/// Parche adicional en Enemy.OnUpdate para respaldar a las clases de enemigos que sí llaman a base.OnUpdate().
-/// </summary>
-[HarmonyPatch(typeof(Enemy), "OnUpdate")]
-internal static class Enemy_OnUpdate_Targeting_Patch
-{
-    private static void Postfix(Enemy __instance)
-    {
-        if (__instance != null && !__instance.Status.Dead)
-        {
-            EnemyTargetingSystem.UpdateEnemyTarget(__instance);
-        }
-    }
-}
 
 /// <summary>
 /// Parche en EnemyBehaviour.GetTarget: intercepta las consultas de la IA / BehaviourTree
@@ -381,10 +367,10 @@ internal static class NewFlagellantBehaviour_CanGoDownToReachPlayer_Patch
 /// <summary>
 /// Parche en FoolBehaviour.Chase: evita que el enemigo 'Fool' deje de moverse si P1 muere pero P2 sigue vivo.
 /// </summary>
-[HarmonyPatch(typeof(FoolBehaviour), "Chase")]
+[HarmonyPatch(typeof(FoolBehaviour), "Chase", new[] { typeof(UnityEngine.Vector3) })]
 internal static class FoolBehaviour_Chase_Patch
 {
-    private static bool Prefix(FoolBehaviour __instance, Vector3 targetPos)
+    private static bool Prefix(FoolBehaviour __instance, Vector3 position)
     {
         if (__instance.Fool == null) return true;
 
@@ -534,5 +520,6 @@ internal static class LevelManager_ChangeLevel_Targeting_Patch
     private static void Prefix()
     {
         EnemyTargetingSystem.Clear();
+        Penitent_OnUpdate_P2Death_Patch.IsAllDeadEventLaunched = false;
     }
 }
