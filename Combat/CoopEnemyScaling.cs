@@ -72,49 +72,49 @@ public static class CoopEnemyScaling
     public static readonly float[] EnemyCountMultipliers = { 1.0f, 1.5f, 2.0f, 2.5f, 3.0f };
     public static readonly string[] EnemyCountLabels = { "1.0x (Normal)", "1.5x (+50%)", "2.0x (Doble)", "2.5x (+150%)", "3.0x (Triple)" };
 
-    public static readonly float[] HealthMultipliers = { 1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 2.5f, 3.0f };
-    public static readonly string[] HealthLabels = { "1.0x (Normal)", "1.25x (+25%)", "1.5x (+50%)", "1.75x (+75%)", "2.0x (Doble)", "2.5x (+150%)", "3.0x (Triple)" };
+    public static readonly float[] HealthMultipliers = { 2.5f, 3.25f, 4.0f, 5.0f };
+    public static readonly string[] HealthLabels = { "+150% (x2.5)", "+225% (x3.25)", "+300% (x4.0)", "+400% (x5.0)" };
 
-    public static readonly float[] BossResistanceLevels = { 0.0f, 0.50f, 1.0f, 1.35f, 1.70f };
-    public static readonly string[] BossResistanceLabels = { "Ninguna (0%)", "Baja (50% base)", "Media (Recomendada)", "Alta (+35%)", "Extrema (+70%)" };
+    public static readonly float[] BossResistanceLevels = { 2.5f, 3.25f, 4.0f };
+    public static readonly string[] BossResistanceLabels = { "Estándar (30% - 65%)", "Alta (45% - 80%)", "Extrema (60% - 90%)" };
 
     // Configuración activa
     public static float ActiveEnemyMultiplier = 1.0f;
-    public static float ActiveHealthMultiplier = 1.0f;
-    public static float ActiveBossResistanceFactor = 1.0f;
+    public static float ActiveHealthMultiplier = 2.5f;
+    public static float ActiveBossResistanceFactor = 2.5f;
 
     // Catálogo de resistencias por ID de Jefe
     private static readonly Dictionary<string, BossResistanceProfile> BossProfiles = new(StringComparer.OrdinalIgnoreCase)
     {
-        // Guardián del Silencio (Warden)
-        { "BS01", new BossResistanceProfile("Guardián del Silencio", 0.30f, 0.20f, 3) },
-        // Ten Piedad (Bestia de espinas)
-        { "BS02", new BossResistanceProfile("Ten Piedad", 0.50f, 0.35f, 4) },
-        // Tres Angustias (Brujas de la lanza)
-        { "BS03", new BossResistanceProfile("Tres Angustias", 0.40f, 0.50f, 5) },
-        // Nuestra Señora de la Faz Desfigurada (Cabeza de bronce ardiente)
-        { "BS04", new BossResistanceProfile("Faz Desfigurada", 0.70f, 0.80f, 8) },
-        // Melquíades (Arzobispo Exhumado - esqueleto secular)
-        { "BS05", new BossResistanceProfile("Melquíades", 0.75f, 0.85f, 9) },
-        // Expósito (Vástago de la Abjuración)
-        { "BS06", new BossResistanceProfile("Expósito", 0.35f, 0.45f, 4) },
-        // Quirce (Devuelto de las llamas - cuerpo quemado)
-        { "BS07", new BossResistanceProfile("Quirce", 0.65f, 0.75f, 7) },
-        // Esdras y Perpetva (Guerreros unbround)
-        { "BS08", new BossResistanceProfile("Esdras", 0.30f, 0.25f, 3) },
-        // Crisanta de la Agonía Vendada (Caballera experta)
-        { "BS09", new BossResistanceProfile("Crisanta", 0.45f, 0.40f, 5) },
-        // Escribar / Último Hijo del Milagro
-        { "BS10", new BossResistanceProfile("Escribar", 0.65f, 0.60f, 7) },
-        // Sierpes (Serpiente del abismo marino)
-        { "BS11", new BossResistanceProfile("Sierpes", 0.50f, 0.30f, 4) },
-        // Isidora (Voz de los Muertos - espíritu)
-        { "BS12", new BossResistanceProfile("Isidora", 0.80f, 0.75f, 8) },
-        // Amanecidas (Laudes y autómatas de bronce)
-        { "AMANECIDA", new BossResistanceProfile("Amanecida", 0.75f, 0.80f, 8) }
+        // Guardián del Silencio (Warden) - gigante carnal inicial (débil a sangrado, 30% en nivel bajo)
+        { "BS01", new BossResistanceProfile("Guardián del Silencio", 0.38f, 0.30f, 4) },
+        // Ten Piedad (Bestia arbórea/carnal) - resistente a toxinas vegetales, débil a sangrado 30%
+        { "BS02", new BossResistanceProfile("Ten Piedad", 0.44f, 0.30f, 5) },
+        // Tres Angustias (Espectros etéreos) - espectros sin sangre densa: alta resistencia a sangrado, menor a veneno/corrosión
+        { "BS03", new BossResistanceProfile("Tres Angustias", 0.32f, 0.54f, 6) },
+        // Nuestra Señora de la Faz Desfigurada (Coraza áurea) - más resistente a sangrado por su rostro metálico, menor a veneno
+        { "BS04", new BossResistanceProfile("Faz Desfigurada", 0.34f, 0.50f, 6) },
+        // Melquíades, el Arzobispo Exhumado (Esqueleto óseo) - esqueleto sin sangre: muy resistente a sangrado, vulnerable a corrosión ácida de veneno 30%
+        { "BS05", new BossResistanceProfile("Melquíades", 0.30f, 0.62f, 8) },
+        // Expósito, Vástago de la Abjuración (Serpiente de mimbre y vástago) - más resistente a veneno, vulnerable a sangrado
+        { "BS06", new BossResistanceProfile("Expósito", 0.52f, 0.33f, 5) },
+        // Quirce, Devuelto por las Llamas (Fuego inquisidor) - las llamas purgan el veneno, pero sangra en combate cuerpo a cuerpo
+        { "BS07", new BossResistanceProfile("Quirce", 0.58f, 0.36f, 6) },
+        // Esdras, de la Legión Ungida (Guerrero humano acorazado) - humano vulnerable a veneno, armadura mitiga sangrado
+        { "BS08", new BossResistanceProfile("Esdras", 0.34f, 0.48f, 5) },
+        // Crisanta de la Agonía Vendada (Penitente acorazada late-game)
+        { "BS09", new BossResistanceProfile("Crisanta", 0.50f, 0.64f, 8) },
+        // Su Santidad Escribar (Jefe final)
+        { "BS10", new BossResistanceProfile("Escribar", 0.65f, 0.60f, 8) },
+        // Sierpes (Coloso de escamas y ponzoña) - altísima resistencia a veneno, menor a sangrado
+        { "BS11", new BossResistanceProfile("Sierpes", 0.68f, 0.45f, 7) },
+        // Isidora, Voz de los Muertos (Cantora del osario) - altísima resistencia a sangrado
+        { "BS12", new BossResistanceProfile("Isidora", 0.52f, 0.68f, 9) },
+        // Amanecidas (Guardianas cristalinas del Milagro) - cuerpo cristalino resistente a sangrado
+        { "AMANECIDA", new BossResistanceProfile("Amanecida", 0.46f, 0.64f, 8) }
     };
 
-    private static readonly BossResistanceProfile DefaultBossProfile = new("Jefe Genérico", 0.40f, 0.40f, 4);
+    private static readonly BossResistanceProfile DefaultBossProfile = new("Jefe Genérico", 0.35f, 0.35f, 5);
 
     /// <summary>
     /// Aplica la configuración por defecto recomendada según la cantidad de jugadores.
@@ -126,23 +126,23 @@ public static class CoopEnemyScaling
             case 1:
                 ActiveEnemyMultiplier = 1.0f;
                 ActiveHealthMultiplier = 1.0f;
-                ActiveBossResistanceFactor = 0.0f;
+                ActiveBossResistanceFactor = 1.0f;
                 break;
             case 2:
                 ActiveEnemyMultiplier = 1.5f;
-                ActiveHealthMultiplier = 1.5f;
-                ActiveBossResistanceFactor = 1.0f;
+                ActiveHealthMultiplier = 2.5f;
+                ActiveBossResistanceFactor = 2.5f;
                 break;
             case 3:
                 ActiveEnemyMultiplier = 2.0f;
-                ActiveHealthMultiplier = 2.0f;
-                ActiveBossResistanceFactor = 1.35f;
+                ActiveHealthMultiplier = 3.25f;
+                ActiveBossResistanceFactor = 3.25f;
                 break;
             case 4:
             default:
                 ActiveEnemyMultiplier = 2.5f;
-                ActiveHealthMultiplier = 2.5f;
-                ActiveBossResistanceFactor = 1.70f;
+                ActiveHealthMultiplier = 4.0f;
+                ActiveBossResistanceFactor = 4.0f;
                 break;
         }
     }
@@ -205,21 +205,28 @@ public static class CoopEnemyScaling
     {
         if (!IsBoss(enemy)) return 0f;
         BossResistanceProfile profile = GetBossProfile(enemy);
-        return Mathf.Clamp(profile.BasePoisonResistance * ActiveBossResistanceFactor, 0f, 0.90f);
+        float effectiveFactor = Mathf.Clamp(ActiveBossResistanceFactor, 2.5f, 4.0f);
+        float mult = Mathf.Lerp(1.0f, 1.35f, Mathf.InverseLerp(2.5f, 4.0f, effectiveFactor));
+        float rawRes = profile.BasePoisonResistance * mult;
+        return Mathf.Clamp(rawRes, 0.30f, 0.90f);
     }
 
     public static float GetBossBleedResistance(Enemy enemy)
     {
         if (!IsBoss(enemy)) return 0f;
         BossResistanceProfile profile = GetBossProfile(enemy);
-        return Mathf.Clamp(profile.BaseBleedResistance * ActiveBossResistanceFactor, 0f, 0.90f);
+        float effectiveFactor = Mathf.Clamp(ActiveBossResistanceFactor, 2.5f, 4.0f);
+        float mult = Mathf.Lerp(1.0f, 1.35f, Mathf.InverseLerp(2.5f, 4.0f, effectiveFactor));
+        float rawRes = profile.BaseBleedResistance * mult;
+        return Mathf.Clamp(rawRes, 0.30f, 0.90f);
     }
 
     public static int GetBossExtraBleedHits(Enemy enemy)
     {
         if (!IsBoss(enemy)) return 0;
         BossResistanceProfile profile = GetBossProfile(enemy);
-        return Mathf.RoundToInt(profile.ExtraBleedHits * ActiveBossResistanceFactor);
+        float effectiveFactor = Mathf.Max(2.5f, ActiveBossResistanceFactor);
+        return Mathf.RoundToInt(profile.ExtraBleedHits * (effectiveFactor / 2.5f));
     }
 
     /// <summary>
@@ -318,19 +325,47 @@ public static class CoopEnemyScaling
 
     private static void ScaleEnemyHp(Enemy enemy, float mult)
     {
-        if (enemy == null || mult <= 1.01f) return;
+        if (enemy == null) return;
         if (enemy.GetComponent<CoopScaledEnemyTag>() != null) return;
+
+        float effectiveMult = mult;
+        if (IsBoss(enemy) && CoopGameConfig.IsCoopEnabled)
+        {
+            int players = Mathf.Max(2, CoopGameConfig.PlayerCount);
+            float bossMinMult = 2.5f + (players - 2) * 1.0f; // 2P: 2.5f, 3P: 3.5f, 4P: 4.5f
+            effectiveMult = Mathf.Max(mult, bossMinMult);
+        }
+
+        if (effectiveMult <= 1.01f) return;
 
         enemy.gameObject.AddComponent<CoopScaledEnemyTag>();
 
         if (enemy.Stats != null && enemy.Stats.Life != null)
         {
             float baseHp = enemy.Stats.Life.Base;
+            if (baseHp <= 0f)
+            {
+                baseHp = enemy.Stats.Life.CurrentMax > 0f ? enemy.Stats.Life.CurrentMax : enemy.Stats.Life.Current;
+            }
+
             if (baseHp > 0f)
             {
-                float bonus = baseHp * (mult - 1.0f);
+                float newMaxHp = baseHp * effectiveMult;
+                float bonus = newMaxHp - baseHp;
+
+                // CRÍTICO: En VariableAttribute, CurrentMaxWithoutFactor = Mathf.Min(CalculateValue(), MaxValue).
+                // En los enemigos de Blasphemous, Life.MaxValue se inicializa a LifeMaximun (suele ser igual a Base o 500f).
+                // Si MaxValue NO se incrementa junto con el bonus, SetPermanentBonus se topa con el techo MaxValue y la vida NO sube.
+                if (enemy.Stats.Life.MaxValue < newMaxHp)
+                {
+                    enemy.Stats.Life.MaxValue = newMaxHp;
+                }
                 enemy.Stats.Life.SetPermanentBonus(bonus);
                 enemy.Stats.Life.SetToCurrentMax();
+                if (enemy.Stats.Life.Current < newMaxHp)
+                {
+                    enemy.Stats.Life.Current = newMaxHp;
+                }
             }
         }
     }
@@ -368,12 +403,29 @@ public static class CoopEnemyScaling
                 if (cloneEnemy.Stats?.Life != null)
                 {
                     float baseHp = cloneEnemy.Stats.Life.Base;
+                    if (baseHp <= 0f)
+                    {
+                        baseHp = cloneEnemy.Stats.Life.CurrentMax > 0f ? cloneEnemy.Stats.Life.CurrentMax : cloneEnemy.Stats.Life.Current;
+                    }
                     if (baseHp > 0f && ActiveHealthMultiplier > 1.01f)
                     {
-                        float bonus = baseHp * (ActiveHealthMultiplier - 1.0f);
+                        float newMaxHp = baseHp * ActiveHealthMultiplier;
+                        float bonus = newMaxHp - baseHp;
+                        if (cloneEnemy.Stats.Life.MaxValue < newMaxHp)
+                        {
+                            cloneEnemy.Stats.Life.MaxValue = newMaxHp;
+                        }
                         cloneEnemy.Stats.Life.SetPermanentBonus(bonus);
+                        cloneEnemy.Stats.Life.SetToCurrentMax();
+                        if (cloneEnemy.Stats.Life.Current < newMaxHp)
+                        {
+                            cloneEnemy.Stats.Life.Current = newMaxHp;
+                        }
                     }
-                    cloneEnemy.Stats.Life.SetToCurrentMax();
+                    else
+                    {
+                        cloneEnemy.Stats.Life.SetToCurrentMax();
+                    }
                 }
             }
         }

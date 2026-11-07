@@ -109,6 +109,7 @@ public sealed class CoopSlotSaveData
     public int SlotIndex; // 0, 1, 2... (correspondiente a savegame_0, savegame_1, savegame_2)
     public bool HasCompletedSetup = false;
     public bool IsCoopEnabled = true;
+    public bool EnableElementalUpgrades = true;
     public int PlayerCount = 2;
     public float EnemyMultiplier = 1.0f;
     public float EnemyHealthMultiplier = 1.0f;
@@ -137,6 +138,7 @@ public sealed class CoopSlotSaveData
     {
         HasCompletedSetup = false;
         IsCoopEnabled = true;
+        EnableElementalUpgrades = true;
         PlayerCount = 2;
         EnemyMultiplier = 1.0f;
         EnemyHealthMultiplier = 1.0f;
@@ -386,6 +388,7 @@ internal static class CoopSaveManager
         if (data == null) return;
 
         CoopGameConfig.IsCoopEnabled = data.IsCoopEnabled;
+        CoopGameConfig.EnableElementalUpgrades = data.EnableElementalUpgrades;
         CoopGameConfig.PlayerCount = Mathf.Clamp(data.PlayerCount, 1, 4);
 
         // Escalado de enemigos / jefes
@@ -417,6 +420,7 @@ internal static class CoopSaveManager
         if (data == null) return;
 
         data.IsCoopEnabled = CoopGameConfig.IsCoopEnabled;
+        data.EnableElementalUpgrades = CoopGameConfig.EnableElementalUpgrades;
         data.PlayerCount = Mathf.Clamp(CoopGameConfig.PlayerCount, 1, 4);
         data.EnemyMultiplier = Combat.CoopEnemyScaling.ActiveEnemyMultiplier;
         data.EnemyHealthMultiplier = Combat.CoopEnemyScaling.ActiveHealthMultiplier;
@@ -448,9 +452,15 @@ internal static class CoopSaveManager
         sb.AppendLine("# ========================================================");
         sb.AppendLine();
 
+        // [GLOBAL]
+        sb.AppendLine("[GLOBAL]");
+        sb.AppendLine($"EnableElementalUpgrades={data.EnableElementalUpgrades}");
+        sb.AppendLine();
+
         // [CoopConfig]
         sb.AppendLine("[CoopConfig]");
         sb.AppendLine($"IsCoopEnabled={data.IsCoopEnabled}");
+        sb.AppendLine($"EnableElementalUpgrades={data.EnableElementalUpgrades}");
         sb.AppendLine($"PlayerCount={data.PlayerCount}");
         sb.AppendLine($"HasCompletedSetup={data.HasCompletedSetup}");
         sb.AppendLine($"EnemyMultiplier={data.EnemyMultiplier.ToString(CultureInfo.InvariantCulture)}");
@@ -545,11 +555,16 @@ internal static class CoopSaveManager
             string key = line.Substring(0, eq).Trim();
             string val = line.Substring(eq + 1).Trim();
 
-            if (currentSection.Equals("CoopConfig", StringComparison.OrdinalIgnoreCase))
+            if (currentSection.Equals("CoopConfig", StringComparison.OrdinalIgnoreCase) ||
+                currentSection.Equals("GLOBAL", StringComparison.OrdinalIgnoreCase))
             {
                 if (key.Equals("IsCoopEnabled", StringComparison.OrdinalIgnoreCase))
                 {
                     if (bool.TryParse(val, out bool b)) data.IsCoopEnabled = b;
+                }
+                else if (key.Equals("EnableElementalUpgrades", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (bool.TryParse(val, out bool b)) data.EnableElementalUpgrades = b;
                 }
                 else if (key.Equals("PlayerCount", StringComparison.OrdinalIgnoreCase))
                 {
@@ -599,7 +614,7 @@ internal static class CoopSaveManager
         else if (key.Equals("FervourCurrent", StringComparison.OrdinalIgnoreCase)) { if (float.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out float f)) p.CurrentFervour = f; }
         else if (key.Equals("FlaskCurrent", StringComparison.OrdinalIgnoreCase)) { if (float.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out float f)) p.CurrentFlask = f; }
         else if (key.Equals("FlaskHealthBonus", StringComparison.OrdinalIgnoreCase)) { if (float.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out float f)) p.FlaskHealthBonus = f; }
-        else if (key.Equals("PurgeCurrent", StringComparison.OrdinalIgnoreCase)) { if (float.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out float f)) p.CurrentPurge = f; }
+        else if (key.Equals("PurgeCurrent", StringComparison.OrdinalIgnoreCase)) { if (float.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out float f)) p.CurrentPurge = Mathf.Clamp(f, 0f, 9999999f); }
         else if (key.Equals("PermanentBonuses", StringComparison.OrdinalIgnoreCase))
         {
             p.PermanentBonuses.Clear();
@@ -782,7 +797,7 @@ internal static class CoopSaveManager
                     string key = line.Substring(0, eq).Trim();
                     string val = line.Substring(eq + 1).Trim();
 
-                    if (key == "__PurgeCurrent__") { if (float.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out float f)) p2.CurrentPurge = f; }
+                    if (key == "__PurgeCurrent__") { if (float.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out float f)) p2.CurrentPurge = Mathf.Clamp(f, 0f, 9999999f); }
                     else if (key == "__LifeCurrent__") { if (float.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out float f)) p2.CurrentLife = f; }
                     else if (key == "__FervourCurrent__") { if (float.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out float f)) p2.CurrentFervour = f; }
                     else if (key == "__FlaskCurrent__") { if (float.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out float f)) p2.CurrentFlask = f; }

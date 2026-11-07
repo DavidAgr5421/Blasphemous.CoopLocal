@@ -54,26 +54,23 @@ internal static class SkillTreeUIHelper
         var skill = Core.SkillManager.GetSkill(skillId);
         int activeIdx = Player2MenuView.ActivePlayerIndex;
         Penitent activePenitent = CoopPlayerRegistry.GetPenitent(activeIdx);
-        if (skill == null || activePenitent == null) return false;
-        return activePenitent.Stats.Purge.Current >= skill.cost;
+        if (skill == null || activePenitent == null || activePenitent.Stats == null || activePenitent.Stats.Purge == null) return false;
+        float currentPurge = Mathf.Clamp(activePenitent.Stats.Purge.Current, 0f, 9999999f);
+        return currentPurge >= skill.cost;
     }
 
     internal static void RefreshP2PurgeDisplay(NewInventory_LayoutSkill instance)
     {
-        int activeIdx = Player2MenuView.ActivePlayerIndex;
-        Penitent activePenitent = CoopPlayerRegistry.GetPenitent(activeIdx);
-        if (instance == null || activePenitent == null || PurgeControlField == null || PurgeTextField == null)
+        MenuPurgeDisplaySync.RefreshAllMenuPurgeCounters();
+
+        if (instance == null || PurgeControlField == null)
         {
             return;
         }
         var purgeControl = PurgeControlField.GetValue(instance) as PlayerPurgePoints;
         if (purgeControl != null)
         {
-            var purgeText = PurgeTextField.GetValue(purgeControl) as Text;
-            if (purgeText != null)
-            {
-                purgeText.text = ((int)activePenitent.Stats.Purge.Current).ToString();
-            }
+            purgeControl.RefreshPoints(false);
         }
     }
 }
@@ -88,17 +85,22 @@ internal static class SkillLayout_ShowLayout_P2_Patch
             return;
         }
 
-        SwordElementalUpgrades.EnsureSkillTreeNodesInjected(__instance);
+        MenuPurgeDisplaySync.RefreshAllMenuPurgeCounters();
+
+        if (CoopGameConfig.EnableElementalUpgrades)
+        {
+            SwordElementalUpgrades.EnsureSkillTreeNodesInjected(__instance);
+        }
 
         var maxTier = SkillTreeUIHelper.MaxTierField?.GetValue(__instance) as Text;
         if (maxTier != null)
         {
             int activeIdx = Player2MenuView.ActivePlayerIndex;
-            Penitent activePenitent = CoopPlayerRegistry.GetPenitent(activeIdx);
-            float mea = Player2MenuView.IsSkillP2View && activePenitent != null
+            Penitent activePenitent = activeIdx > 0 ? CoopPlayerRegistry.GetPenitent(activeIdx) : null;
+            float mea = activeIdx > 0 && activePenitent != null
                 ? activePenitent.Stats.MeaCulpa.Final
                 : Core.SkillManager.GetCurrentMeaCulpa();
-            maxTier.text = $"{Player2MenuView.CurrentBracketTag} {(int)mea}";
+            maxTier.text = ((int)mea).ToString();
         }
 
         if (Player2MenuView.IsSkillP2View)
@@ -144,7 +146,10 @@ internal static class SkillLayout_Update_P2_Patch
 {
     private static bool Prefix(NewInventory_LayoutSkill __instance)
     {
-        SwordElementalUpgrades.HandleSkillTreeShortcuts(__instance);
+        if (CoopGameConfig.EnableElementalUpgrades)
+        {
+            SwordElementalUpgrades.HandleSkillTreeShortcuts(__instance);
+        }
 
         if (!Player2MenuView.IsSkillP2View) return true; // P1 vanilla intacto
 
@@ -185,13 +190,17 @@ internal static class SkillLayout_Update_P2_Patch
                     SkillTreeUIHelper.TimePressingField.SetValue(__instance, 0f);
                     var skill = Core.SkillManager.GetSkill(skillId);
                     float cost = skill != null ? skill.cost : 0f;
-                    if (activePenitent != null && activePenitent.Stats.Purge.Current >= cost)
+                    if (activePenitent != null && activePenitent.Stats != null && activePenitent.Stats.Purge != null)
                     {
-                        activePenitent.Stats.Purge.Current -= cost;
+                        float currentPurge = Mathf.Clamp(activePenitent.Stats.Purge.Current, 0f, 9999999f);
+                        if (currentPurge >= cost)
+                        {
+                            activePenitent.Stats.Purge.Current = Mathf.Max(0f, currentPurge - cost);
+                        }
                     }
                     Player2SkillManager.SetUnlocked(activeIdx, skillId, true);
                     Player2SkillManager.Persist();
-                    if (SwordElementalUpgrades.IsElementalSkill(skillId))
+                    if (CoopGameConfig.EnableElementalUpgrades && SwordElementalUpgrades.IsElementalSkill(skillId))
                     {
                         SwordElementalUpgrades.GrantMatchingHeartOnUnlock(skillId, isPlayer2: true, playerIndex: activeIdx);
                     }
@@ -244,7 +253,7 @@ internal static class SkillItem_UpdateStatus_P2_Patch
     {
         string skillId = (string)SkillIdField.GetValue(__instance);
         bool isP2View = Player2MenuView.IsSkillP2View;
-        bool isElemental = SwordElementalUpgrades.IsElementalSkill(skillId);
+        bool isElemental = CoopGameConfig.EnableElementalUpgrades && SwordElementalUpgrades.IsElementalSkill(skillId);
 
         // Nodos vanilla para P1: intactos al flujo original del juego
         if (!isP2View && !isElemental) return true;

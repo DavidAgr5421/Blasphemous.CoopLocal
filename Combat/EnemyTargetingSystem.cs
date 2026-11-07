@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
 using Framework.FrameworkCore;
@@ -310,7 +310,7 @@ internal static class BellCarrierBehaviour_CheckCollision_Patch
     {
         if (__instance.TargetInLine) return;
 
-        Enemy enemy = __instance.Entity;
+        Enemy enemy = (AccessTools.Field(typeof(EnemyBehaviour), "Entity")?.GetValue(__instance) as Enemy) ?? __instance.GetComponentInParent<Enemy>();
         if (enemy == null || enemy.Target == null) return;
 
         Vector2 enemyPos = enemy.transform.position;
@@ -323,7 +323,7 @@ internal static class BellCarrierBehaviour_CheckCollision_Patch
 
         if (inFront && dy < 3.5f)
         {
-            __instance.TargetInLine = true;
+            AccessTools.Field(typeof(BellCarrierBehaviour), "<TargetInLine>k__BackingField")?.SetValue(__instance, true);
         }
     }
 }
@@ -337,7 +337,7 @@ internal static class NewFlagellantBehaviour_CanGoDownToReachPlayer_Patch
 {
     private static bool Prefix(NewFlagellantBehaviour __instance, ref bool __result)
     {
-        var enemy = __instance.NewFlagellant;
+        var enemy = (AccessTools.Property(typeof(NewFlagellantBehaviour), "NewFlagellant")?.GetValue(__instance, null) as Gameplay.GameControllers.Enemies.NewFlagellant.NewFlagellant) ?? __instance.GetComponentInParent<Gameplay.GameControllers.Enemies.NewFlagellant.NewFlagellant>();
         if (enemy == null || enemy.Target == null) return true;
 
         Vector2 enemyPos = enemy.transform.position;

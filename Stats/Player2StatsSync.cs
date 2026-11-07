@@ -86,7 +86,7 @@ internal static class Player2StatsSync
         guest.Stats.Life.SetToCurrentMax();
         guest.Stats.Flask.SetToCurrentMax();
         guest.Stats.Fervour.SetToCurrentMax();
-        guest.Stats.Purge.Current = p1.Stats.Purge.Current;
+        guest.Stats.Purge.Current = Mathf.Clamp(p1.Stats.Purge.Current, 0f, 9999999f);
 
         SaveSnapshot(saveSlot, guest, allTypes, targetSlot);
 
@@ -111,7 +111,7 @@ internal static class Player2StatsSync
                 pData.PermanentBonuses[type.ToString()] = attr.PermanetBonus;
             }
 
-            pData.CurrentPurge = guest.Stats.Purge.Current;
+            pData.CurrentPurge = Mathf.Clamp(guest.Stats.Purge.Current, 0f, 9999999f);
             pData.CurrentLife = guest.Stats.Life.Current;
             pData.CurrentFervour = guest.Stats.Fervour.Current;
             pData.CurrentFlask = guest.Stats.Flask.Current;
@@ -143,7 +143,7 @@ internal static class Player2StatsSync
 
         try
         {
-            pData.CurrentPurge = outgoing.Stats.Purge.Current;
+            pData.CurrentPurge = Mathf.Clamp(outgoing.Stats.Purge.Current, 0f, 9999999f);
             pData.CurrentLife = outgoing.Stats.Life.Current;
             pData.CurrentFervour = outgoing.Stats.Fervour.Current;
             pData.CurrentFlask = outgoing.Stats.Flask.Current;
@@ -235,7 +235,7 @@ internal static class Player2StatsSync
                 }
             }
 
-            guest.Stats.Purge.Current = pData.CurrentPurge;
+            guest.Stats.Purge.Current = Mathf.Clamp(pData.CurrentPurge, 0f, 9999999f);
             if (pData.CurrentLife > 0f) guest.Stats.Life.Current = pData.CurrentLife;
             else guest.Stats.Life.SetToCurrentMax();
 

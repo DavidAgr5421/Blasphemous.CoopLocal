@@ -21,6 +21,7 @@ internal static class SelectSaveSlots_OnAcceptSlots_CoopSetup_Patch
     private static bool Prefix(SelectSaveSlots __instance, int idxSlot)
     {
         if (BypassIntercept) return true;
+        if (CoopGameSetupUI.IsOpen || SuppressVanillaSaveSlotsFrames > 0) return false;
         if (!__instance.IsShowing) return true;
 
         var slotsField = AccessTools.Field(typeof(SelectSaveSlots), "slots");
@@ -112,7 +113,7 @@ internal static class SelectSaveSlots_BlockUpdate_WhenCoopSetupOpen_Patch
 {
     private static bool Prefix()
     {
-        if (CoopGameSetupUI.Instance != null && CoopGameSetupUI.Instance.IsOpen)
+        if (CoopGameSetupUI.IsOpen)
         {
             return false;
         }
@@ -133,8 +134,22 @@ internal static class SelectSaveSlots_BlockUpdate_WhenCoopSetupOpen_Patch
 [HarmonyPatch(typeof(SelectSaveSlots), nameof(SelectSaveSlots.OnSelectedSlots))]
 internal static class SelectSaveSlots_OnSelectedSlots_LoadConfig_Patch
 {
+    private static bool Prefix()
+    {
+        if (CoopGameSetupUI.IsOpen || SelectSaveSlots_OnAcceptSlots_CoopSetup_Patch.SuppressVanillaSaveSlotsFrames > 0)
+        {
+            return false;
+        }
+        return true;
+    }
+
     private static void Postfix(int idxSlot)
     {
+        if (CoopGameSetupUI.IsOpen || SelectSaveSlots_OnAcceptSlots_CoopSetup_Patch.SuppressVanillaSaveSlotsFrames > 0)
+        {
+            return;
+        }
+
         if (idxSlot >= 0)
         {
             CoopSaveManager.TargetSetupSlot = idxSlot;
@@ -153,7 +168,7 @@ internal static class SelectSaveSlots_Update_CoopSetup_Shortcut_Patch
 {
     private static void Postfix(SelectSaveSlots __instance)
     {
-        if (!__instance.IsShowing || __instance.IsConfirming || CoopGameSetupUI.Instance.IsOpen) return;
+        if (!__instance.IsShowing || __instance.IsConfirming || CoopGameSetupUI.IsOpen) return;
 
         if (Input.GetKeyDown(KeyCode.C) || Input.GetKeyDown(KeyCode.F4))
         {

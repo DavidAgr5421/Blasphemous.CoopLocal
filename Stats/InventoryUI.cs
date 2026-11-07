@@ -1,14 +1,128 @@
 using Gameplay.GameControllers.Penitent;
 using Framework.Inventory;
 using Framework.Managers;
+using Gameplay.UI;
 using Gameplay.UI.Others.MenuLogic;
 using Gameplay.UI.Others.UIGameLogic;
 using HarmonyLib;
 using System.Collections.Generic;
 using System.Reflection;
+using UnityEngine;
 using UnityEngine.UI;
 
 namespace Blasphemous.CoopLocal;
+
+internal static class MenuPurgeDisplaySync
+{
+    private static readonly FieldInfo PurgeTextField = AccessTools.Field(typeof(PlayerPurgePoints), "text");
+    private static readonly FieldInfo CurrentPointsField = AccessTools.Field(typeof(PlayerPurgePoints), "currentPoints");
+    private static readonly FieldInfo TargetPointsField = AccessTools.Field(typeof(PlayerPurgePoints), "targetPoints");
+    private static readonly FieldInfo NumbersPerSecondsField = AccessTools.Field(typeof(PlayerPurgePoints), "numbersPerSeconds");
+    private static readonly FieldInfo NewInventoryMenuField = AccessTools.Field(typeof(UIController), "newInventoryMenu");
+
+    internal static bool IsMenuPurgeCounter(PlayerPurgePoints instance)
+    {
+        Transform t = instance != null ? instance.transform : null;
+        while (t != null)
+        {
+            if (t.GetComponent<NewInventoryWidget>() != null)
+                return true;
+            t = t.parent;
+        }
+        return false;
+    }
+
+    internal static void ApplyToCounter(PlayerPurgePoints counter, float currentPurge)
+    {
+        if (counter == null) return;
+
+        counter.StopAllCoroutines();
+        CurrentPointsField?.SetValue(counter, currentPurge);
+        TargetPointsField?.SetValue(counter, currentPurge);
+        NumbersPerSecondsField?.SetValue(counter, 0f);
+
+        if (PurgeTextField?.GetValue(counter) is Text purgeText && purgeText != null)
+        {
+            purgeText.text = Mathf.FloorToInt(currentPurge).ToString();
+        }
+    }
+
+    internal static float GetActiveMenuPlayerPurge()
+    {
+        int activeIdx = Player2MenuView.ActivePlayerIndex;
+        Penitent targetPenitent = activeIdx > 0
+            ? CoopPlayerRegistry.GetPenitent(activeIdx)
+            : Core.Logic?.Penitent;
+
+        if (targetPenitent == null || targetPenitent.Stats == null || targetPenitent.Stats.Purge == null)
+        {
+            return -1f;
+        }
+
+        float currentPurge = Mathf.Clamp(targetPenitent.Stats.Purge.Current, 0f, 9999999f);
+        targetPenitent.Stats.Purge.Current = currentPurge;
+        return currentPurge;
+    }
+
+    internal static void RefreshAllMenuPurgeCounters(NewInventoryWidget widget = null)
+    {
+        if (widget == null && UIController.instance != null)
+        {
+            widget = NewInventoryMenuField?.GetValue(UIController.instance) as NewInventoryWidget;
+        }
+
+        if (widget == null) return;
+
+        float currentPurge = GetActiveMenuPlayerPurge();
+        if (currentPurge < 0f) return;
+
+        PlayerPurgePoints[] counters = widget.GetComponentsInChildren<PlayerPurgePoints>(true);
+        if (counters == null) return;
+
+        for (int i = 0; i < counters.Length; i++)
+        {
+            ApplyToCounter(counters[i], currentPurge);
+        }
+    }
+}
+
+[HarmonyPatch(typeof(PlayerPurgePoints), nameof(PlayerPurgePoints.RefreshPoints))]
+internal static class PlayerPurgePoints_RefreshPoints_Menu_Patch
+{
+    private static bool Prefix(PlayerPurgePoints __instance)
+    {
+        if (__instance == null) return true;
+        if (!MenuPurgeDisplaySync.IsMenuPurgeCounter(__instance))
+        {
+            return true;
+        }
+
+        float currentPurge = MenuPurgeDisplaySync.GetActiveMenuPlayerPurge();
+        if (currentPurge < 0f)
+        {
+            return true;
+        }
+
+        MenuPurgeDisplaySync.ApplyToCounter(__instance, currentPurge);
+        return false;
+    }
+}
+
+[HarmonyPatch(typeof(PlayerPurgePoints), "RunRefreshPointsCoroutine")]
+internal static class PlayerPurgePoints_RunRefreshPointsCoroutine_Menu_Patch
+{
+    private static bool Prefix(PlayerPurgePoints __instance)
+    {
+        if (__instance == null) return true;
+        if (!MenuPurgeDisplaySync.IsMenuPurgeCounter(__instance))
+        {
+            return true;
+        }
+
+        __instance.RefreshPoints(true);
+        return false;
+    }
+}
 
 // Fase 2 / Ronda 88 — UI Grid sombra P2 (Prayers/Beads/Swords/Relics).
 // Muestra visualmente los rezos, cuentas de rosario y corazones de Mea Culpa equipados por P2,
@@ -18,8 +132,6 @@ internal static class Grid_ShowLayout_P2_Patch
 {
     private static readonly FieldInfo PurgeControlField =
         AccessTools.Field(typeof(NewInventory_LayoutGrid), "purgeControl");
-    private static readonly FieldInfo PurgeTextField =
-        AccessTools.Field(typeof(PlayerPurgePoints), "text");
     private static readonly FieldInfo CurrentItemTypeField =
         AccessTools.Field(typeof(NewInventory_LayoutGrid), "currentItemType");
     private static readonly MethodInfo UpdateEquippedMethod =
@@ -27,21 +139,17 @@ internal static class Grid_ShowLayout_P2_Patch
 
     private static void Postfix(NewInventory_LayoutGrid __instance, NewInventoryWidget.TabType tabType, bool editMode)
     {
+        MenuPurgeDisplaySync.RefreshAllMenuPurgeCounters();
+
         if (!Player2MenuView.IsInventoryP2View) return;
 
         // Actualizar contador de lágrimas de enmienda (Purge) con el valor real del jugador activo
-        int activeIdx = Player2MenuView.ActivePlayerIndex;
-        Penitent activePenitent = CoopPlayerRegistry.GetPenitent(activeIdx);
-        if (activePenitent != null && PurgeControlField != null && PurgeTextField != null)
+        if (PurgeControlField != null)
         {
             var purgeControl = PurgeControlField.GetValue(__instance) as PlayerPurgePoints;
             if (purgeControl != null)
             {
-                var purgeText = PurgeTextField.GetValue(purgeControl) as Text;
-                if (purgeText != null)
-                {
-                    purgeText.text = ((int)activePenitent.Stats.Purge.Current).ToString();
-                }
+                purgeControl.RefreshPoints(false);
             }
         }
 

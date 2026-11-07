@@ -33,7 +33,7 @@ internal sealed class CoopGameSetupUI : MonoBehaviour
     private Text titleText;
     private Text subtitleText;
 
-    // Barra superior: Coop Toggle y Cantidad de Jugadores
+    // Barra superior: Coop Toggle, Cantidad de Jugadores y Senda Elemental
     private GameObject coopToggleBox;
     private Outline coopToggleOutline;
     private Text coopToggleLabel;
@@ -43,6 +43,11 @@ internal sealed class CoopGameSetupUI : MonoBehaviour
     private Outline playerCountOutline;
     private Text playerCountLabel;
     private Text playerCountValue;
+
+    private GameObject elementalToggleBox;
+    private Outline elementalToggleOutline;
+    private Text elementalToggleLabel;
+    private Text elementalToggleValue;
 
     // Tarjetas de jugadores (hasta 4 columnas)
     private struct PlayerCardUI
@@ -77,8 +82,8 @@ internal sealed class CoopGameSetupUI : MonoBehaviour
     private GameObject enemyDifficultyModal;
     private Text enemyDiffTitleText;
     private Text enemyDiffSubtitleText;
-    private readonly Text[] enemyDiffRowLabels = new Text[4];
-    private readonly Text[] enemyDiffRowValues = new Text[4];
+    private readonly Text[] enemyDiffRowLabels = new Text[5];
+    private readonly Text[] enemyDiffRowValues = new Text[5];
     private GameObject enemyDiffStartButton;
     private Outline enemyDiffStartOutline;
     private Text enemyDiffStartText;
@@ -86,7 +91,7 @@ internal sealed class CoopGameSetupUI : MonoBehaviour
     private Outline enemyDiffBackOutline;
     private Text enemyDiffBackText;
     private bool isConfiguringEnemyDifficulty = false;
-    private int selectedEnemyDiffRow = 0; // 0 = Cantidad, 1 = Salud, 2 = Resistencia, 3 = Preajuste
+    private int selectedEnemyDiffRow = 0; // 0 = Cantidad, 1 = Salud, 2 = Resistencia, 3 = Senda Elemental, 4 = Preajuste
     private int enemyDiffBottomAction = 0; // 0 = Iniciar Partida, 1 = Volver
     private bool enemyDiffOnBottomActions = false;
 
@@ -109,7 +114,7 @@ internal sealed class CoopGameSetupUI : MonoBehaviour
     private Action onConfirmedCallback;
     private Action onCancelledCallback;
 
-    public bool IsOpen { get; private set; }
+    public static bool IsOpen { get; private set; }
 
     // Estados de navegación
     private enum MenuZone
@@ -210,7 +215,7 @@ internal sealed class CoopGameSetupUI : MonoBehaviour
         subtitleText.color = new Color(0.85f, 0.85f, 0.85f, 1f);
         subtitleText.text = "[◄ / ►] Mover entre Jugadores y Ajustes  |  [▲ / ▼] Seleccionar Fila  |  [BOTÓN ATAQUE (X/K)]: Cambiar Valor";
 
-        // 5. Barra superior (Modo Coop y Cantidad de Jugadores)
+        // 5. Barra superior (Modo Coop, Cantidad de Jugadores y Senda Elemental)
         GameObject topBarContainer = CreateUiElement("TopBarContainer", panelObj.transform);
         RectTransform tbRt = topBarContainer.GetComponent<RectTransform>();
         tbRt.anchoredPosition = new Vector2(0f, 325f);
@@ -219,8 +224,8 @@ internal sealed class CoopGameSetupUI : MonoBehaviour
         // 5.1 Botón Modo Cooperativo
         coopToggleBox = CreateUiElement("CoopToggleBox", topBarContainer.transform);
         RectTransform ctbRt = coopToggleBox.GetComponent<RectTransform>();
-        ctbRt.anchoredPosition = new Vector2(-320f, 0f);
-        ctbRt.sizeDelta = new Vector2(610f, 50f);
+        ctbRt.anchoredPosition = new Vector2(-425f, 0f);
+        ctbRt.sizeDelta = new Vector2(410f, 50f);
         Image ctbImg = coopToggleBox.AddComponent<Image>();
         ctbImg.color = new Color(0.12f, 0.12f, 0.15f, 0.95f);
         coopToggleOutline = coopToggleBox.AddComponent<Outline>();
@@ -229,29 +234,29 @@ internal sealed class CoopGameSetupUI : MonoBehaviour
 
         GameObject ctbLblObj = CreateUiElement("Label", coopToggleBox.transform);
         RectTransform ctbLblRt = ctbLblObj.GetComponent<RectTransform>();
-        ctbLblRt.anchoredPosition = new Vector2(-120f, 0f);
-        ctbLblRt.sizeDelta = new Vector2(320f, 40f);
+        ctbLblRt.anchoredPosition = new Vector2(-75f, 0f);
+        ctbLblRt.sizeDelta = new Vector2(230f, 40f);
         coopToggleLabel = ctbLblObj.AddComponent<Text>();
         coopToggleLabel.font = gameFont;
-        coopToggleLabel.fontSize = 18;
+        coopToggleLabel.fontSize = 17;
         coopToggleLabel.alignment = TextAnchor.MiddleLeft;
         coopToggleLabel.color = new Color(0.90f, 0.90f, 0.90f, 1f);
         coopToggleLabel.text = "Modo de Juego:";
 
         GameObject ctbValObj = CreateUiElement("Value", coopToggleBox.transform);
         RectTransform ctbValRt = ctbValObj.GetComponent<RectTransform>();
-        ctbValRt.anchoredPosition = new Vector2(130f, 0f);
-        ctbValRt.sizeDelta = new Vector2(300f, 40f);
+        ctbValRt.anchoredPosition = new Vector2(90f, 0f);
+        ctbValRt.sizeDelta = new Vector2(210f, 40f);
         coopToggleValue = ctbValObj.AddComponent<Text>();
         coopToggleValue.font = gameFont;
-        coopToggleValue.fontSize = 19;
+        coopToggleValue.fontSize = 17;
         coopToggleValue.alignment = TextAnchor.MiddleRight;
 
         // 5.2 Botón Cantidad de Jugadores
         playerCountBox = CreateUiElement("PlayerCountBox", topBarContainer.transform);
         RectTransform pcbRt = playerCountBox.GetComponent<RectTransform>();
-        pcbRt.anchoredPosition = new Vector2(320f, 0f);
-        pcbRt.sizeDelta = new Vector2(610f, 50f);
+        pcbRt.anchoredPosition = new Vector2(0f, 0f);
+        pcbRt.sizeDelta = new Vector2(410f, 50f);
         Image pcbImg = playerCountBox.AddComponent<Image>();
         pcbImg.color = new Color(0.12f, 0.12f, 0.15f, 0.95f);
         playerCountOutline = playerCountBox.AddComponent<Outline>();
@@ -260,23 +265,54 @@ internal sealed class CoopGameSetupUI : MonoBehaviour
 
         GameObject pcbLblObj = CreateUiElement("Label", playerCountBox.transform);
         RectTransform pcbLblRt = pcbLblObj.GetComponent<RectTransform>();
-        pcbLblRt.anchoredPosition = new Vector2(-120f, 0f);
-        pcbLblRt.sizeDelta = new Vector2(320f, 40f);
+        pcbLblRt.anchoredPosition = new Vector2(-75f, 0f);
+        pcbLblRt.sizeDelta = new Vector2(230f, 40f);
         playerCountLabel = pcbLblObj.AddComponent<Text>();
         playerCountLabel.font = gameFont;
-        playerCountLabel.fontSize = 18;
+        playerCountLabel.fontSize = 17;
         playerCountLabel.alignment = TextAnchor.MiddleLeft;
         playerCountLabel.color = new Color(0.90f, 0.90f, 0.90f, 1f);
-        playerCountLabel.text = "Cantidad Jugadores:";
+        playerCountLabel.text = "Jugadores:";
 
         GameObject pcbValObj = CreateUiElement("Value", playerCountBox.transform);
         RectTransform pcbValRt = pcbValObj.GetComponent<RectTransform>();
-        pcbValRt.anchoredPosition = new Vector2(130f, 0f);
-        pcbValRt.sizeDelta = new Vector2(300f, 40f);
+        pcbValRt.anchoredPosition = new Vector2(90f, 0f);
+        pcbValRt.sizeDelta = new Vector2(210f, 40f);
         playerCountValue = pcbValObj.AddComponent<Text>();
         playerCountValue.font = gameFont;
-        playerCountValue.fontSize = 19;
+        playerCountValue.fontSize = 17;
         playerCountValue.alignment = TextAnchor.MiddleRight;
+
+        // 5.3 Botón Mod Veneno y Sangrado / Senda Elemental
+        elementalToggleBox = CreateUiElement("ElementalToggleBox", topBarContainer.transform);
+        RectTransform etbRt = elementalToggleBox.GetComponent<RectTransform>();
+        etbRt.anchoredPosition = new Vector2(425f, 0f);
+        etbRt.sizeDelta = new Vector2(410f, 50f);
+        Image etbImg = elementalToggleBox.AddComponent<Image>();
+        etbImg.color = new Color(0.12f, 0.12f, 0.15f, 0.95f);
+        elementalToggleOutline = elementalToggleBox.AddComponent<Outline>();
+        elementalToggleOutline.effectColor = new Color(0.40f, 0.35f, 0.25f, 0.70f);
+        elementalToggleOutline.effectDistance = new Vector2(2f, -2f);
+
+        GameObject etbLblObj = CreateUiElement("Label", elementalToggleBox.transform);
+        RectTransform etbLblRt = etbLblObj.GetComponent<RectTransform>();
+        etbLblRt.anchoredPosition = new Vector2(-75f, 0f);
+        etbLblRt.sizeDelta = new Vector2(230f, 40f);
+        elementalToggleLabel = etbLblObj.AddComponent<Text>();
+        elementalToggleLabel.font = gameFont;
+        elementalToggleLabel.fontSize = 17;
+        elementalToggleLabel.alignment = TextAnchor.MiddleLeft;
+        elementalToggleLabel.color = new Color(0.90f, 0.90f, 0.90f, 1f);
+        elementalToggleLabel.text = "Senda Elemental:";
+
+        GameObject etbValObj = CreateUiElement("Value", elementalToggleBox.transform);
+        RectTransform etbValRt = etbValObj.GetComponent<RectTransform>();
+        etbValRt.anchoredPosition = new Vector2(90f, 0f);
+        etbValRt.sizeDelta = new Vector2(210f, 40f);
+        elementalToggleValue = etbValObj.AddComponent<Text>();
+        elementalToggleValue.font = gameFont;
+        elementalToggleValue.fontSize = 17;
+        elementalToggleValue.alignment = TextAnchor.MiddleRight;
 
         // 6. Contenedor de Tarjetas de Jugadores (Columnas)
         GameObject cardsContainer = CreateUiElement("PlayerCardsContainer", panelObj.transform);
@@ -524,7 +560,7 @@ internal sealed class CoopGameSetupUI : MonoBehaviour
 
         GameObject edBox = CreateUiElement("ModalBox", enemyDifficultyModal.transform);
         RectTransform edbRt = edBox.GetComponent<RectTransform>();
-        edbRt.sizeDelta = new Vector2(920f, 540f);
+        edbRt.sizeDelta = new Vector2(920f, 580f);
         edbRt.anchoredPosition = Vector2.zero;
         Image edbBg = edBox.AddComponent<Image>();
         edbBg.color = new Color(0.08f, 0.08f, 0.11f, 0.98f);
@@ -534,8 +570,8 @@ internal sealed class CoopGameSetupUI : MonoBehaviour
 
         GameObject edTitleObj = CreateUiElement("Title", edBox.transform);
         RectTransform edTitleRt = edTitleObj.GetComponent<RectTransform>();
-        edTitleRt.anchoredPosition = new Vector2(0f, 215f);
-        edTitleRt.sizeDelta = new Vector2(860f, 40f);
+        edTitleRt.anchoredPosition = new Vector2(0f, 235f);
+        edTitleRt.sizeDelta = new Vector2(860f, 38f);
         enemyDiffTitleText = edTitleObj.AddComponent<Text>();
         enemyDiffTitleText.font = gameFont;
         enemyDiffTitleText.fontSize = 22;
@@ -545,36 +581,37 @@ internal sealed class CoopGameSetupUI : MonoBehaviour
 
         GameObject edSubObj = CreateUiElement("Subtitle", edBox.transform);
         RectTransform edSubRt = edSubObj.GetComponent<RectTransform>();
-        edSubRt.anchoredPosition = new Vector2(0f, 175f);
-        edSubRt.sizeDelta = new Vector2(860f, 32f);
+        edSubRt.anchoredPosition = new Vector2(0f, 195f);
+        edSubRt.sizeDelta = new Vector2(860f, 30f);
         enemyDiffSubtitleText = edSubObj.AddComponent<Text>();
         enemyDiffSubtitleText.font = gameFont;
         enemyDiffSubtitleText.fontSize = 15;
         enemyDiffSubtitleText.alignment = TextAnchor.MiddleCenter;
         enemyDiffSubtitleText.color = new Color(0.80f, 0.80f, 0.80f, 1f);
-        enemyDiffSubtitleText.text = "Escala la cantidad de enemigos, salud y resistencia para mantener el reto";
+        enemyDiffSubtitleText.text = "Escala la cantidad de enemigos, salud, resistencia y senda elemental";
 
-        // 4 Filas de ajustes de dificultad
+        // 5 Filas de ajustes de dificultad y senda elemental
         string[] diffRowNames = new string[]
         {
             "CANTIDAD DE ENEMIGOS POR SALA",
             "SALUD / VIDA DE ENEMIGOS Y JEFES",
             "RESISTENCIA DE JEFES A VENENO Y SANGRADO",
+            "SENDA ELEMENTAL (VENENO / SANGRADO)",
             "PREAJUSTE DE DIFICULTAD"
         };
-        float[] diffRowY = new float[] { 105f, 35f, -35f, -105f };
+        float[] diffRowY = new float[] { 135f, 75f, 15f, -45f, -105f };
 
-        for (int r = 0; r < 4; r++)
+        for (int r = 0; r < 5; r++)
         {
             GameObject rObj = CreateUiElement($"DiffRow_{r}", edBox.transform);
             RectTransform rRt = rObj.GetComponent<RectTransform>();
             rRt.anchoredPosition = new Vector2(0f, diffRowY[r]);
-            rRt.sizeDelta = new Vector2(840f, 60f);
+            rRt.sizeDelta = new Vector2(840f, 56f);
 
             GameObject lblObj = CreateUiElement("Label", rObj.transform);
             RectTransform lRt = lblObj.GetComponent<RectTransform>();
-            lRt.anchoredPosition = new Vector2(0f, 14f);
-            lRt.sizeDelta = new Vector2(820f, 26f);
+            lRt.anchoredPosition = new Vector2(0f, 13f);
+            lRt.sizeDelta = new Vector2(820f, 24f);
             Text lTxt = lblObj.AddComponent<Text>();
             lTxt.font = gameFont;
             lTxt.fontSize = 15;
@@ -584,8 +621,8 @@ internal sealed class CoopGameSetupUI : MonoBehaviour
 
             GameObject valObj = CreateUiElement("Value", rObj.transform);
             RectTransform vRt = valObj.GetComponent<RectTransform>();
-            vRt.anchoredPosition = new Vector2(0f, -14f);
-            vRt.sizeDelta = new Vector2(820f, 32f);
+            vRt.anchoredPosition = new Vector2(0f, -13f);
+            vRt.sizeDelta = new Vector2(820f, 30f);
             Text vTxt = valObj.AddComponent<Text>();
             vTxt.font = gameFont;
             vTxt.fontSize = 18;
@@ -677,6 +714,12 @@ internal sealed class CoopGameSetupUI : MonoBehaviour
         if (deviceAssignModal != null) deviceAssignModal.SetActive(false);
         if (enemyDifficultyModal != null) enemyDifficultyModal.SetActive(false);
 
+        if (UnityEngine.EventSystems.EventSystem.current != null &&
+            UnityEngine.EventSystems.EventSystem.current.currentSelectedGameObject != null)
+        {
+            UnityEngine.EventSystems.EventSystem.current.SetSelectedGameObject(null);
+        }
+
         canvasObj.SetActive(true);
         RefreshDisplay();
     }
@@ -697,6 +740,12 @@ internal sealed class CoopGameSetupUI : MonoBehaviour
     private void Update()
     {
         if (!IsOpen) return;
+
+        if (UnityEngine.EventSystems.EventSystem.current != null &&
+            UnityEngine.EventSystems.EventSystem.current.currentSelectedGameObject != null)
+        {
+            UnityEngine.EventSystems.EventSystem.current.SetSelectedGameObject(null);
+        }
 
         // Atajo global F2: pasar directamente la asignación o iniciar
         if (Input.GetKeyDown(KeyCode.F2))
@@ -836,7 +885,7 @@ internal sealed class CoopGameSetupUI : MonoBehaviour
             switch (currentZone)
             {
                 case MenuZone.TopGlobal:
-                    topBarIndex = (topBarIndex == 0) ? 1 : 0;
+                    topBarIndex = (topBarIndex == 0) ? 2 : topBarIndex - 1;
                     break;
                 case MenuZone.PlayerCards:
                     selectedPlayerIndex--;
@@ -856,7 +905,7 @@ internal sealed class CoopGameSetupUI : MonoBehaviour
             switch (currentZone)
             {
                 case MenuZone.TopGlobal:
-                    topBarIndex = (topBarIndex == 0) ? 1 : 0;
+                    topBarIndex = (topBarIndex == 2) ? 0 : topBarIndex + 1;
                     break;
                 case MenuZone.PlayerCards:
                     selectedPlayerIndex++;
@@ -886,7 +935,7 @@ internal sealed class CoopGameSetupUI : MonoBehaviour
                     else
                     {
                         currentZone = MenuZone.TopGlobal;
-                        topBarIndex = (selectedPlayerIndex >= activePlayers / 2) ? 1 : 0;
+                        topBarIndex = Mathf.Clamp(selectedPlayerIndex * 2 / Mathf.Max(1, activePlayers - 1), 0, 2);
                     }
                     break;
                 case MenuZone.BottomActions:
@@ -906,6 +955,7 @@ internal sealed class CoopGameSetupUI : MonoBehaviour
                 case MenuZone.TopGlobal:
                     currentZone = MenuZone.PlayerCards;
                     selectedConfigRow = 0;
+                    selectedPlayerIndex = Mathf.Clamp(topBarIndex * (activePlayers - 1) / 2, 0, activePlayers - 1);
                     break;
                 case MenuZone.PlayerCards:
                     if (selectedConfigRow < 2)
@@ -1008,12 +1058,19 @@ internal sealed class CoopGameSetupUI : MonoBehaviour
                     if (selectedPlayerIndex >= maxP) selectedPlayerIndex = maxP - 1;
                     PlayToggleSound();
                 }
-                else
+                else if (topBarIndex == 1)
                 {
                     // Cambiar cantidad de jugadores (2 -> 3 -> 4 -> 2)
                     int count = CoopGameConfig.PlayerCount + 1;
                     if (count > 4) count = 2;
                     CoopGameConfig.PlayerCount = count;
+                    CoopGameConfig.Save();
+                    PlayToggleSound();
+                }
+                else if (topBarIndex == 2)
+                {
+                    // Alternar Senda Elemental (Veneno / Sangrado)
+                    CoopGameConfig.EnableElementalUpgrades = !CoopGameConfig.EnableElementalUpgrades;
                     CoopGameConfig.Save();
                     PlayToggleSound();
                 }
@@ -1369,7 +1426,11 @@ internal sealed class CoopGameSetupUI : MonoBehaviour
             }
         }
 
-        // Fila 3: Preajuste
+        // Fila 3: Senda Elemental (Veneno / Sangrado)
+        bool elemOn = CoopGameConfig.EnableElementalUpgrades;
+        string elemLabel = elemOn ? "ACTIVADO" : "DESACTIVADO";
+
+        // Fila 4: Preajuste
         string presetLabel = $"Recomendado ({activePlayers} Jugadores)";
         if (Mathf.Approximately(curEm, 1.0f) && Mathf.Approximately(curHm, 1.0f) && Mathf.Approximately(curBr, 0.0f))
         {
@@ -1384,14 +1445,30 @@ internal sealed class CoopGameSetupUI : MonoBehaviour
             presetLabel = "Caos Total (x3.0 Enemigos / x2.0 Vida)";
         }
 
-        string[] values = new string[] { emLabel, hmLabel, brLabel, presetLabel };
+        string[] values = new string[] { emLabel, hmLabel, brLabel, elemLabel, presetLabel };
 
-        for (int r = 0; r < 4; r++)
+        for (int r = 0; r < 5; r++)
         {
             bool isSelected = (!enemyDiffOnBottomActions && selectedEnemyDiffRow == r);
             string prefix = isSelected ? "► " : "";
             enemyDiffRowLabels[r].color = isSelected ? new Color(1f, 0.95f, 0.40f, 1f) : new Color(0.75f, 0.75f, 0.75f, 1f);
-            enemyDiffRowValues[r].color = isSelected ? Color.white : new Color(0.85f, 0.85f, 0.85f, 1f);
+
+            if (r == 3)
+            {
+                if (isSelected)
+                {
+                    enemyDiffRowValues[r].color = elemOn ? new Color(0.40f, 1f, 0.50f, 1f) : new Color(1f, 0.45f, 0.45f, 1f);
+                }
+                else
+                {
+                    enemyDiffRowValues[r].color = elemOn ? new Color(0.35f, 0.85f, 0.45f, 1f) : new Color(0.70f, 0.35f, 0.35f, 1f);
+                }
+            }
+            else
+            {
+                enemyDiffRowValues[r].color = isSelected ? Color.white : new Color(0.85f, 0.85f, 0.85f, 1f);
+            }
+
             enemyDiffRowValues[r].text = prefix + $"[ ◄  {values[r]}  ► ]";
         }
 
@@ -1433,7 +1510,7 @@ internal sealed class CoopGameSetupUI : MonoBehaviour
             if (enemyDiffOnBottomActions)
             {
                 enemyDiffOnBottomActions = false;
-                selectedEnemyDiffRow = 3;
+                selectedEnemyDiffRow = 4;
             }
             else if (selectedEnemyDiffRow > 0)
             {
@@ -1448,7 +1525,7 @@ internal sealed class CoopGameSetupUI : MonoBehaviour
         {
             if (!enemyDiffOnBottomActions)
             {
-                if (selectedEnemyDiffRow < 3)
+                if (selectedEnemyDiffRow < 4)
                 {
                     selectedEnemyDiffRow++;
                 }
@@ -1571,7 +1648,12 @@ internal sealed class CoopGameSetupUI : MonoBehaviour
                 Combat.CoopEnemyScaling.ActiveBossResistanceFactor = Combat.CoopEnemyScaling.BossResistanceLevels[nextBr];
                 break;
 
-            case 3: // Preajuste
+            case 3: // Senda Elemental (Veneno / Sangrado)
+                CoopGameConfig.EnableElementalUpgrades = !CoopGameConfig.EnableElementalUpgrades;
+                CoopGameConfig.Save();
+                break;
+
+            case 4: // Preajuste
                 int activePlayers = CoopGameConfig.IsCoopEnabled ? Mathf.Clamp(CoopGameConfig.PlayerCount, 2, 4) : 1;
                 if (dir > 0)
                 {
@@ -1695,6 +1777,7 @@ internal sealed class CoopGameSetupUI : MonoBehaviour
         bool isTopZone = (currentZone == MenuZone.TopGlobal);
         bool isTop0 = isTopZone && (topBarIndex == 0);
         bool isTop1 = isTopZone && (topBarIndex == 1);
+        bool isTop2 = isTopZone && (topBarIndex == 2);
 
         coopToggleOutline.effectColor = isTop0 ? new Color(1f, 0.88f, 0.35f, 1f) : new Color(0.40f, 0.35f, 0.25f, 0.60f);
         coopToggleOutline.effectDistance = isTop0 ? new Vector2(3f, -3f) : new Vector2(2f, -2f);
@@ -1707,6 +1790,13 @@ internal sealed class CoopGameSetupUI : MonoBehaviour
         playerCountLabel.color = isTop1 ? new Color(1f, 0.95f, 0.50f, 1f) : new Color(0.85f, 0.85f, 0.85f, 1f);
         playerCountValue.color = coopOn ? Color.white : new Color(0.50f, 0.50f, 0.50f, 1f);
         playerCountValue.text = (isTop1 ? "► " : "") + (coopOn ? $"[ {activePlayers} JUGADORES ]" : "[ 1 JUGADOR ]");
+
+        bool elemOn = CoopGameConfig.EnableElementalUpgrades;
+        elementalToggleOutline.effectColor = isTop2 ? new Color(1f, 0.88f, 0.35f, 1f) : new Color(0.40f, 0.35f, 0.25f, 0.60f);
+        elementalToggleOutline.effectDistance = isTop2 ? new Vector2(3f, -3f) : new Vector2(2f, -2f);
+        elementalToggleLabel.color = isTop2 ? new Color(1f, 0.95f, 0.50f, 1f) : new Color(0.85f, 0.85f, 0.85f, 1f);
+        elementalToggleValue.color = elemOn ? new Color(0.40f, 1f, 0.50f, 1f) : new Color(1f, 0.45f, 0.45f, 1f);
+        elementalToggleValue.text = (isTop2 ? "► " : "") + (elemOn ? "[ ACTIVADO ]" : "[ DESACTIVADO ]");
 
         // 2. Posicionamiento dinámico de tarjetas de jugadores según cantidad
         float totalWidth = 1260f;

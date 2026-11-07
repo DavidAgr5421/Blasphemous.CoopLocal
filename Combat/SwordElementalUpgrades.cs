@@ -606,7 +606,7 @@ internal static class SwordElementalUpgrades
             "Imbuye la espada con toxina: inflige 1 de daño/s por 5s.\nRequiere equipar el Corazón de Ponzoña Viva.",
             "Requiere equipar el Corazón de Ponzoña Viva en el menú de Mea Culpa.",
             tier: 1,
-            cost: 0,
+            cost: 600,
             parent: "",
             venenoSmallSprite,
             venenoSmallBuyedSprite,
@@ -619,7 +619,7 @@ internal static class SwordElementalUpgrades
             "Aumenta la potencia tóxica: inflige 2.5 de daño/s por 7.5s.\nRequiere equipar el Corazón de Ponzoña Viva.",
             "Requiere equipar el Corazón de Ponzoña Viva en el menú de Mea Culpa.",
             tier: 2,
-            cost: 0,
+            cost: 6500,
             parent: SkillVeneno1,
             venenoSmallSprite,
             venenoSmallBuyedSprite,
@@ -632,7 +632,7 @@ internal static class SwordElementalUpgrades
             "Ponzoña letal máxima: inflige 4 de daño/s por 10s.\nRequiere equipar el Corazón de Ponzoña Viva.",
             "Requiere equipar el Corazón de Ponzoña Viva en el menú de Mea Culpa.",
             tier: 3,
-            cost: 0,
+            cost: 16000,
             parent: SkillVeneno2,
             venenoSmallSprite,
             venenoSmallBuyedSprite,
@@ -642,10 +642,10 @@ internal static class SwordElementalUpgrades
             allSkills,
             SkillSangrado1,
             "Filo Sangrante I",
-            "Acumula sangrado en 6 golpes (10 en jefes): inflige 4% de salud máx. y 2.5 de daño/s por 5s.\nRequiere equipar el Corazón de la Hemorragia Sagrada.",
+            "Acumula sangrado en 6 golpes (15+ en jefes): inflige 4% de salud máx. y 2.5 de daño/s por 5s.\nRequiere equipar el Corazón de la Hemorragia Sagrada.",
             "Requiere equipar el Corazón de la Hemorragia Sagrada en el menú de Mea Culpa.",
             tier: 1,
-            cost: 0,
+            cost: 600,
             parent: "",
             sangradoSmallSprite,
             sangradoSmallBuyedSprite,
@@ -658,7 +658,7 @@ internal static class SwordElementalUpgrades
             "Heridas profundas tras el umbral: inflige 5.5% de salud máx. y 3.5 de daño/s por 5s.\nRequiere equipar el Corazón de la Hemorragia Sagrada.",
             "Requiere equipar el Corazón de la Hemorragia Sagrada en el menú de Mea Culpa.",
             tier: 2,
-            cost: 0,
+            cost: 6500,
             parent: SkillSangrado1,
             sangradoSmallSprite,
             sangradoSmallBuyedSprite,
@@ -671,7 +671,7 @@ internal static class SwordElementalUpgrades
             "Hemorragia devastadora tras el umbral: inflige 7% de salud máx. y 4.5 de daño/s por 5s.\nRequiere equipar el Corazón de la Hemorragia Sagrada.",
             "Requiere equipar el Corazón de la Hemorragia Sagrada en el menú de Mea Culpa.",
             tier: 3,
-            cost: 0,
+            cost: 16000,
             parent: SkillSangrado2,
             sangradoSmallSprite,
             sangradoSmallBuyedSprite,
@@ -719,6 +719,31 @@ internal static class SwordElementalUpgrades
         var ownSwords = OwnSwordsField.GetValue(invManager) as List<Sword>;
         if (allSwords == null || ownSwords == null) return;
 
+        if (!CoopGameConfig.EnableElementalUpgrades)
+        {
+            // Si el mod elemental está desactivado en la pre-partida:
+            // 1. Desequipar si P1 lo tiene equipado
+            if (Core.InventoryManager != null)
+            {
+                Sword equippedP1 = Core.InventoryManager.GetSwordInSlot(0);
+                if (equippedP1 != null && IsElementalHeart(equippedP1.id))
+                {
+                    Core.InventoryManager.SetSwordInSlot(0, (Sword)null);
+                }
+            }
+
+            // 2. Remover de ownSwords para P1
+            ownSwords.RemoveAll(s => s != null && IsElementalHeart(s.id));
+
+            // 3. Remover y desequipar para P2, P3 y P4
+            for (int p = 1; p < 4; p++)
+            {
+                Player2InventoryManager.RemoveOwnedSword(HeartVenenoId, p);
+                Player2InventoryManager.RemoveOwnedSword(HeartSangradoId, p);
+            }
+            return;
+        }
+
         EnsureSpritesCreated();
 
         RegisterOrUpdateSwordHeart(
@@ -735,7 +760,7 @@ internal static class SwordElementalUpgrades
             ownSwords,
             HeartSangradoId,
             "Corazón de la Hemorragia Sagrada",
-            "Canaliza la Senda del Sangrado desbloqueada en el Árbol de Habilidades.\nCada impacto acumula sangrado (Umbral: 6 golpes en enemigos normales, 10 en jefes).\n• Sangrado I: 4% Vida Máx + 2.5 de daño/s por 5s.\n• Sangrado II: 5.5% Vida Máx + 3.5 de daño/s por 5s.\n• Sangrado III: 7% Vida Máx + 4.5 de daño/s por 5s.\n(El sangrado solo se aplica mientras este corazón está equipado y se posee al menos Filo Sangrante I).",
+            "Canaliza la Senda del Sangrado desbloqueada en el Árbol de Habilidades.\nCada impacto acumula sangrado (Umbral: 6 golpes en enemigos normales, 15+ en jefes).\n• Sangrado I: 4% Vida Máx + 2.5 de daño/s por 5s.\n• Sangrado II: 5.5% Vida Máx + 3.5 de daño/s por 5s.\n• Sangrado III: 7% Vida Máx + 4.5 de daño/s por 5s.\n(El sangrado solo se aplica mientras este corazón está equipado y se posee al menos Filo Sangrante I).",
             "Forjado en sangre coagulada del Milagro, desgarra el interior de quienes sufren el castigo reiterado del acero.",
             sangradoHeartSprite);
 
@@ -780,6 +805,8 @@ internal static class SwordElementalUpgrades
 
     internal static void GrantMatchingHeartOnUnlock(string skillId, bool isPlayer2, int playerIndex)
     {
+        if (!CoopGameConfig.EnableElementalUpgrades) return;
+
         if (Core.InventoryManager != null)
         {
             EnsureSwordsRegistered(Core.InventoryManager);
@@ -876,6 +903,11 @@ internal static class SwordElementalUpgrades
 
     internal static void CycleDebugElementalAndPrayers()
     {
+        if (!CoopGameConfig.EnableElementalUpgrades)
+        {
+            if (Main.CoopLocal != null) Blasphemous.ModdingAPI.ModLog.Info("[F8 Debug] Mejoras elementales desactivadas en la configuración pre-partida.", Main.CoopLocal);
+            return;
+        }
         if (Core.SkillManager == null || Core.InventoryManager == null) return;
         EnsureSkillsRegistered(Core.SkillManager);
         EnsureSwordsRegistered(Core.InventoryManager);
@@ -1030,18 +1062,11 @@ internal static class SwordElementalUpgrades
         var cachedSkills = CachedSkillsField?.GetValue(layout) as List<NewInventory_Skill>;
         if (skillsRoot == null || cachedSkills == null || cachedSkills.Count == 0) return;
 
-        // Comprobar si ya fueron inyectados
-        foreach (var s in cachedSkills)
+        Transform containerTrans = skillsRoot.transform.Find("ElementalTreeContainer");
+        if (containerTrans != null)
         {
-            if (s != null && s.GetSkillId() == SkillVeneno1)
-            {
-                return;
-            }
+            containerTrans.gameObject.SetActive(CoopGameConfig.EnableElementalUpgrades);
         }
-
-        // Localizar explícitamente los nodos extremos izquierdo (Combo: Last Words) y derecho (Lunge: Sacred Thrust)
-        NewInventory_Skill templateNode = cachedSkills[0];
-        float yTier2 = 0f;
 
         NewInventory_Skill leftTier1 = cachedSkills.Find(s => s != null && s.GetSkillId() == "COMBO_1");
         NewInventory_Skill leftTier2 = cachedSkills.Find(s => s != null && s.GetSkillId() == "COMBO_2");
@@ -1051,11 +1076,74 @@ internal static class SwordElementalUpgrades
         NewInventory_Skill rightTier2 = cachedSkills.Find(s => s != null && s.GetSkillId() == "LUNGE_2");
         NewInventory_Skill rightTier3 = cachedSkills.Find(s => s != null && s.GetSkillId() == "LUNGE_3");
 
+        NewInventory_Skill v1Node = cachedSkills.Find(s => s != null && s.GetSkillId() == SkillVeneno1);
+        NewInventory_Skill v2Node = cachedSkills.Find(s => s != null && s.GetSkillId() == SkillVeneno2);
+        NewInventory_Skill v3Node = cachedSkills.Find(s => s != null && s.GetSkillId() == SkillVeneno3);
+
+        NewInventory_Skill s1Node = cachedSkills.Find(s => s != null && s.GetSkillId() == SkillSangrado1);
+        NewInventory_Skill s2Node = cachedSkills.Find(s => s != null && s.GetSkillId() == SkillSangrado2);
+        NewInventory_Skill s3Node = cachedSkills.Find(s => s != null && s.GetSkillId() == SkillSangrado3);
+
+        // Comprobar si ya fueron inyectados
+        if (v1Node != null)
+        {
+            if (containerTrans != null)
+            {
+                Transform oldVen = containerTrans.Find("Lbl_Veneno");
+                if (oldVen != null) UnityEngine.Object.Destroy(oldVen.gameObject);
+                Transform oldSan = containerTrans.Find("Lbl_Sangrado");
+                if (oldSan != null) UnityEngine.Object.Destroy(oldSan.gameObject);
+
+                containerTrans.gameObject.SetActive(CoopGameConfig.EnableElementalUpgrades);
+            }
+
+            if (CoopGameConfig.EnableElementalUpgrades)
+            {
+                WireNodeNavigation(v1Node, up: null, down: v2Node, left: null, right: leftTier1);
+                WireNodeNavigation(v2Node, up: v1Node, down: v3Node, left: null, right: leftTier2 ?? leftTier1);
+                WireNodeNavigation(v3Node, up: v2Node, down: null, left: null, right: leftTier3 ?? leftTier2 ?? leftTier1);
+
+                ConnectLeftNeighbor(leftTier1, v1Node);
+                ConnectLeftNeighbor(leftTier2, v2Node);
+                ConnectLeftNeighbor(leftTier3, v3Node);
+
+                WireNodeNavigation(s1Node, up: null, down: s2Node, left: rightTier1, right: null);
+                WireNodeNavigation(s2Node, up: s1Node, down: s3Node, left: rightTier2 ?? rightTier1, right: null);
+                WireNodeNavigation(s3Node, up: s2Node, down: null, left: rightTier3 ?? rightTier2 ?? rightTier1, right: null);
+
+                ConnectRightNeighbor(rightTier1, s1Node);
+                ConnectRightNeighbor(rightTier2, s2Node);
+                ConnectRightNeighbor(rightTier3, s3Node);
+
+                SanitizeVanillaNodeNavigation(cachedSkills, v1Node, v2Node, v3Node, s1Node, s2Node, s3Node);
+            }
+            else
+            {
+                DisconnectLeftNeighbor(leftTier1);
+                DisconnectLeftNeighbor(leftTier2);
+                DisconnectLeftNeighbor(leftTier3);
+
+                DisconnectRightNeighbor(rightTier1);
+                DisconnectRightNeighbor(rightTier2);
+                DisconnectRightNeighbor(rightTier3);
+            }
+            return;
+        }
+
+        // Si el mod elemental está desactivado y aún no se han inyectado, no crearlos
+        if (!CoopGameConfig.EnableElementalUpgrades)
+        {
+            return;
+        }
+
+        // Localizar explícitamente los nodos extremos izquierdo (Combo: Last Words) y derecho (Lunge: Sacred Thrust)
+        NewInventory_Skill templateNode = cachedSkills[0];
+        float yTier2 = 0f;
+
         if (leftTier2 != null) yTier2 = leftTier2.transform.localPosition.y;
         else if (rightTier2 != null) yTier2 = rightTier2.transform.localPosition.y;
 
         // Contenedor dedicado para el árbol elemental completo (permite mover y escalar en vivo)
-        Transform containerTrans = skillsRoot.transform.Find("ElementalTreeContainer");
         GameObject containerObj;
         if (containerTrans == null)
         {
@@ -1067,6 +1155,8 @@ internal static class SwordElementalUpgrades
         {
             containerObj = containerTrans.gameObject;
         }
+
+        containerObj.SetActive(CoopGameConfig.EnableElementalUpgrades);
 
         // Si TreeOffsetX aún tiene el centinela (-9999f), inicializarlo a la posición calibrada permanente
         if (CoopGameConfig.TreeOffsetX < -500f)
@@ -1108,21 +1198,26 @@ internal static class SwordElementalUpgrades
         WireNodeNavigation(v2, up: v1, down: v3, left: null, right: leftTier2 ?? leftTier1);
         WireNodeNavigation(v3, up: v2, down: null, left: null, right: leftTier3 ?? leftTier2 ?? leftTier1);
 
-        ConnectLeftNeighbor(leftTier1, v1);
-        ConnectLeftNeighbor(leftTier2, v2);
-        ConnectLeftNeighbor(leftTier3, v3);
+        if (CoopGameConfig.EnableElementalUpgrades)
+        {
+            ConnectLeftNeighbor(leftTier1, v1);
+            ConnectLeftNeighbor(leftTier2, v2);
+            ConnectLeftNeighbor(leftTier3, v3);
+        }
 
         // Rama Derecha Vanilla <-> Sangrado (extremo derecho) (s1 arriba -> down s2 -> down s3)
         WireNodeNavigation(s1, up: null, down: s2, left: rightTier1, right: null);
         WireNodeNavigation(s2, up: s1, down: s3, left: rightTier2 ?? rightTier1, right: null);
         WireNodeNavigation(s3, up: s2, down: null, left: rightTier3 ?? rightTier2 ?? rightTier1, right: null);
 
-        ConnectRightNeighbor(rightTier1, s1);
-        ConnectRightNeighbor(rightTier2, s2);
-        ConnectRightNeighbor(rightTier3, s3);
+        if (CoopGameConfig.EnableElementalUpgrades)
+        {
+            ConnectRightNeighbor(rightTier1, s1);
+            ConnectRightNeighbor(rightTier2, s2);
+            ConnectRightNeighbor(rightTier3, s3);
+        }
 
-        CreateColumnLabel(containerTrans, "Lbl_Veneno", "VENENO", new Vector3(localVenenoX, elemTier1Y + 28f, 0f), new Color(0.45f, 0.95f, 0.5f));
-        CreateColumnLabel(containerTrans, "Lbl_Sangrado", "SANGRADO", new Vector3(localSangradoX, elemTier1Y + 28f, 0f), new Color(0.95f, 0.4f, 0.4f));
+        SanitizeVanillaNodeNavigation(cachedSkills, v1, v2, v3, s1, s2, s3);
 
         NewInventory_Description desc = LayoutDescriptionField?.GetValue(layout) as NewInventory_Description;
         ApplyDescriptionTextScale(desc);
@@ -1208,6 +1303,9 @@ internal static class SwordElementalUpgrades
         Transform containerTrans = skillsRoot.transform.Find("ElementalTreeContainer");
         if (containerTrans != null)
         {
+            containerTrans.gameObject.SetActive(CoopGameConfig.EnableElementalUpgrades);
+            if (!CoopGameConfig.EnableElementalUpgrades) return;
+
             containerTrans.localPosition = new Vector3(CoopGameConfig.TreeOffsetX, CoopGameConfig.TreeOffsetY, 0f);
             containerTrans.localScale = Vector3.one * CoopGameConfig.TreeScale;
 
@@ -1230,20 +1328,8 @@ internal static class SwordElementalUpgrades
 
             Transform lblVeneno = containerTrans.Find("Lbl_Veneno");
             Transform lblSangrado = containerTrans.Find("Lbl_Sangrado");
-            if (lblVeneno != null) lblVeneno.localPosition = new Vector3(localVenenoX, elemTier1Y + 28f, 0f);
-            if (lblSangrado != null) lblSangrado.localPosition = new Vector3(localSangradoX, elemTier1Y + 28f, 0f);
-
-            int lblSize = Mathf.Clamp(Mathf.RoundToInt(10 * CoopGameConfig.SkillTextScale), 8, 26);
-            if (lblVeneno != null)
-            {
-                Text t = lblVeneno.GetComponent<Text>();
-                if (t != null) t.fontSize = lblSize;
-            }
-            if (lblSangrado != null)
-            {
-                Text t = lblSangrado.GetComponent<Text>();
-                if (t != null) t.fontSize = lblSize;
-            }
+            if (lblVeneno != null) UnityEngine.Object.Destroy(lblVeneno.gameObject);
+            if (lblSangrado != null) UnityEngine.Object.Destroy(lblSangrado.gameObject);
         }
     }
 
@@ -1313,10 +1399,10 @@ internal static class SwordElementalUpgrades
 
         Navigation nav = btn.navigation;
         nav.mode = Navigation.Mode.Explicit;
-        if (up != null) nav.selectOnUp = up.GetEventButton();
-        if (down != null) nav.selectOnDown = down.GetEventButton();
-        if (left != null) nav.selectOnLeft = left.GetEventButton();
-        if (right != null) nav.selectOnRight = right.GetEventButton();
+        nav.selectOnUp = up != null ? up.GetEventButton() : null;
+        nav.selectOnDown = down != null ? down.GetEventButton() : null;
+        nav.selectOnLeft = left != null ? left.GetEventButton() : null;
+        nav.selectOnRight = right != null ? right.GetEventButton() : null;
         btn.navigation = nav;
     }
 
@@ -1328,10 +1414,6 @@ internal static class SwordElementalUpgrades
         Navigation nav = btn.navigation;
         nav.mode = Navigation.Mode.Explicit;
         nav.selectOnLeft = targetElemNode.GetEventButton();
-        // Preservar la navegación hacia arriba, abajo y derecha para no bloquear el árbol vanilla
-        if (nav.selectOnRight == null) nav.selectOnRight = btn.FindSelectableOnRight();
-        if (nav.selectOnUp == null) nav.selectOnUp = btn.FindSelectableOnUp();
-        if (nav.selectOnDown == null) nav.selectOnDown = btn.FindSelectableOnDown();
         btn.navigation = nav;
     }
 
@@ -1343,47 +1425,102 @@ internal static class SwordElementalUpgrades
         Navigation nav = btn.navigation;
         nav.mode = Navigation.Mode.Explicit;
         nav.selectOnRight = targetElemNode.GetEventButton();
-        if (nav.selectOnLeft == null) nav.selectOnLeft = btn.FindSelectableOnLeft();
-        if (nav.selectOnUp == null) nav.selectOnUp = btn.FindSelectableOnUp();
-        if (nav.selectOnDown == null) nav.selectOnDown = btn.FindSelectableOnDown();
         btn.navigation = nav;
     }
 
-    private static void CreateColumnLabel(Transform parent, string name, string text, Vector3 localPos, Color color)
+    private static void DisconnectLeftNeighbor(NewInventory_Skill vanillaLeftNode)
     {
-        if (parent.Find(name) != null) return;
-        Text referenceText = parent.GetComponentInParent<Canvas>()?.GetComponentInChildren<Text>(true);
+        if (vanillaLeftNode == null) return;
+        EventsButton btn = vanillaLeftNode.GetEventButton();
+        if (btn == null) return;
+        Navigation nav = btn.navigation;
+        nav.selectOnLeft = null;
+        btn.navigation = nav;
+    }
 
-        GameObject go = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(Text), typeof(Outline));
-        go.transform.SetParent(parent, false);
-        RectTransform rt = go.GetComponent<RectTransform>();
-        rt.sizeDelta = new Vector2(64f, 24f);
-        rt.localPosition = localPos;
-        rt.localScale = Vector3.one * 0.65f;
+    private static void DisconnectRightNeighbor(NewInventory_Skill vanillaRightNode)
+    {
+        if (vanillaRightNode == null) return;
+        EventsButton btn = vanillaRightNode.GetEventButton();
+        if (btn == null) return;
+        Navigation nav = btn.navigation;
+        nav.selectOnRight = null;
+        btn.navigation = nav;
+    }
 
-        Text label = go.GetComponent<Text>();
-        if (referenceText != null)
+    private static void SanitizeVanillaNodeNavigation(
+        List<NewInventory_Skill> cachedSkills,
+        NewInventory_Skill v1,
+        NewInventory_Skill v2,
+        NewInventory_Skill v3,
+        NewInventory_Skill s1,
+        NewInventory_Skill s2,
+        NewInventory_Skill s3)
+    {
+        if (cachedSkills == null) return;
+        var elemButtons = new HashSet<Selectable>();
+        if (v1 != null && v1.GetEventButton() != null) elemButtons.Add(v1.GetEventButton());
+        if (v2 != null && v2.GetEventButton() != null) elemButtons.Add(v2.GetEventButton());
+        if (v3 != null && v3.GetEventButton() != null) elemButtons.Add(v3.GetEventButton());
+        if (s1 != null && s1.GetEventButton() != null) elemButtons.Add(s1.GetEventButton());
+        if (s2 != null && s2.GetEventButton() != null) elemButtons.Add(s2.GetEventButton());
+        if (s3 != null && s3.GetEventButton() != null) elemButtons.Add(s3.GetEventButton());
+
+        foreach (var skill in cachedSkills)
         {
-            label.font = referenceText.font;
-        }
-        label.text = text;
-        label.fontSize = 10;
-        label.alignment = TextAnchor.MiddleCenter;
-        label.horizontalOverflow = HorizontalWrapMode.Overflow;
-        label.verticalOverflow = VerticalWrapMode.Overflow;
-        label.color = color;
-        label.raycastTarget = false;
+            if (skill == null) continue;
+            string sid = skill.GetSkillId();
+            if (IsElementalSkill(sid)) continue;
+            EventsButton btn = skill.GetEventButton();
+            if (btn == null) continue;
 
-        Outline outline = go.GetComponent<Outline>();
-        outline.effectColor = new Color(0f, 0f, 0f, 0.9f);
-        outline.effectDistance = new Vector2(1f, -1f);
+            Navigation nav = btn.navigation;
+            bool changed = false;
+
+            if (sid != "COMBO_1" && sid != "COMBO_2" && sid != "COMBO_3")
+            {
+                if (nav.selectOnLeft != null && elemButtons.Contains(nav.selectOnLeft))
+                {
+                    nav.selectOnLeft = null;
+                    changed = true;
+                }
+            }
+
+            if (sid != "LUNGE_1" && sid != "LUNGE_2" && sid != "LUNGE_3")
+            {
+                if (nav.selectOnRight != null && elemButtons.Contains(nav.selectOnRight))
+                {
+                    nav.selectOnRight = null;
+                    changed = true;
+                }
+            }
+
+            if (nav.selectOnUp != null && elemButtons.Contains(nav.selectOnUp))
+            {
+                nav.selectOnUp = null;
+                changed = true;
+            }
+
+            if (nav.selectOnDown != null && elemButtons.Contains(nav.selectOnDown))
+            {
+                nav.selectOnDown = null;
+                changed = true;
+            }
+
+            if (changed)
+            {
+                btn.navigation = nav;
+            }
+        }
     }
 
     private static float navCooldown = 0f;
+    private static int lastObservedSkillIndex = -1;
+    private static NewInventory_LayoutSkill lastObservedLayout = null;
 
     internal static void HandleSkillTreeShortcuts(NewInventory_LayoutSkill layout)
     {
-        if (layout == null) return;
+        if (layout == null || !CoopGameConfig.EnableElementalUpgrades) return;
         var cachedSkills = CachedSkillsField?.GetValue(layout) as List<NewInventory_Skill>;
         if (cachedSkills == null || cachedSkills.Count == 0) return;
 
@@ -1391,15 +1528,41 @@ internal static class SwordElementalUpgrades
         float dt = Time.unscaledDeltaTime;
         if (navCooldown > 0f) navCooldown -= dt;
 
+        if (layout != lastObservedLayout)
+        {
+            lastObservedLayout = layout;
+            lastObservedSkillIndex = currentSelected;
+        }
+
+        // Si EventSystem (Unity UI) movió la selección en este frame, registramos el índice y salimos
+        // inmediatamente para evitar saltos dobles accidentales.
+        if (currentSelected != lastObservedSkillIndex)
+        {
+            lastObservedSkillIndex = currentSelected;
+            navCooldown = 0.18f;
+            return;
+        }
+
         // =====================================================================
-        // NAVEGACIÓN NATURAL: Flechas, WASD y Gamepad (Stick y D-Pad)
+        // NAVEGACIÓN NATURAL: WASD y Gamepad secundario (cuando EventSystem no actúa)
         // =====================================================================
         if (navCooldown <= 0f)
         {
-            bool wantLeft = Input.GetKeyDown(KeyCode.A) || Input.GetKeyDown(KeyCode.LeftArrow) || Player2Pad.Left || CheckRewiredLeft();
-            bool wantRight = Input.GetKeyDown(KeyCode.D) || Input.GetKeyDown(KeyCode.RightArrow) || Player2Pad.Right || CheckRewiredRight();
-            bool wantUp = Input.GetKeyDown(KeyCode.W) || Input.GetKeyDown(KeyCode.UpArrow) || Player2Pad.Up || CheckRewiredUp();
-            bool wantDown = Input.GetKeyDown(KeyCode.S) || Input.GetKeyDown(KeyCode.DownArrow) || Player2Pad.Down || CheckRewiredDown();
+            bool eventSystemActive = EventSystem.current != null;
+
+            bool wantLeft = Input.GetKeyDown(KeyCode.A) || Player2Pad.Left;
+            bool wantRight = Input.GetKeyDown(KeyCode.D) || Player2Pad.Right;
+            bool wantUp = Input.GetKeyDown(KeyCode.W) || Player2Pad.Up;
+            bool wantDown = Input.GetKeyDown(KeyCode.S) || Player2Pad.Down;
+
+            // Si EventSystem no está presente, usar flechas y Rewired como respaldo
+            if (!eventSystemActive)
+            {
+                wantLeft |= Input.GetKeyDown(KeyCode.LeftArrow) || CheckRewiredLeft();
+                wantRight |= Input.GetKeyDown(KeyCode.RightArrow) || CheckRewiredRight();
+                wantUp |= Input.GetKeyDown(KeyCode.UpArrow) || CheckRewiredUp();
+                wantDown |= Input.GetKeyDown(KeyCode.DownArrow) || CheckRewiredDown();
+            }
 
             if (wantLeft || wantRight || wantUp || wantDown)
             {
@@ -1477,21 +1640,10 @@ internal static class SwordElementalUpgrades
                     if (targetIdx >= 0 && targetIdx < cachedSkills.Count && targetIdx != currentSelected)
                     {
                         SelectSkillDirect(layout, cachedSkills, targetIdx);
-                        navCooldown = 0.20f;
                         return;
                     }
                 }
             }
-        }
-
-        // Atajos directos Q y E para saltar entre Veneno y Sangrado
-        if (Input.GetKeyDown(KeyCode.Q))
-        {
-            CycleSkillGroup(layout, cachedSkills, currentSelected, VenenoSkills);
-        }
-        else if (Input.GetKeyDown(KeyCode.E))
-        {
-            CycleSkillGroup(layout, cachedSkills, currentSelected, SangradoSkills);
         }
     }
 
@@ -1510,6 +1662,8 @@ internal static class SwordElementalUpgrades
             EventSystem.current.SetSelectedGameObject(cachedSkills[newIdx].gameObject);
         }
         SkillTreeUIHelper.SelectSkillMethod?.Invoke(layout, new object[] { newIdx, true });
+        lastObservedSkillIndex = newIdx;
+        navCooldown = 0.20f;
     }
 
     private static bool CheckRewiredLeft()
@@ -1698,8 +1852,30 @@ internal static class NewInventory_LayoutGrid_UpdateItemsBySwordHeartEquipabilit
 // =========================================================================
 internal static class SwordElementalCombatBridge
 {
-    internal static void TryApplyElementalStatus(Enemy enemy, Penitent attacker)
+    internal static int GetThresholdHitWeight(Penitent attacker, Hit hit, Gameplay.GameControllers.Entities.Weapon.Weapon weapon = null)
     {
+        if (attacker == null) return 1;
+
+        bool isCharged = attacker.ReleaseChargedAttack
+            || (attacker.Animator != null && attacker.Animator.GetCurrentAnimatorStateInfo(0).IsName("Charged Attack"))
+            || (weapon is Gameplay.GameControllers.Penitent.Attack.ChargedAttackProjectile)
+            || (hit.AttackingEntity != null && hit.AttackingEntity.GetComponentInChildren<Gameplay.GameControllers.Penitent.Attack.ChargedAttackProjectile>() != null);
+        if (isCharged) return 4;
+
+        bool isParryHit = (attacker.Parry != null && attacker.Parry.SuccessParry)
+            || (attacker.ActiveRiposte != null && (attacker.ActiveRiposte.IsTriggeredRiposte || attacker.ActiveRiposte.Casting))
+            || (attacker.Animator != null && (
+                attacker.Animator.GetBool("PARRY") ||
+                attacker.Animator.GetCurrentAnimatorStateInfo(0).IsName("ParrySuccess") ||
+                attacker.Animator.GetCurrentAnimatorStateInfo(0).IsName("ParryRepost")));
+        if (isParryHit) return 2;
+
+        return 1;
+    }
+
+    internal static void TryApplyElementalStatus(Enemy enemy, Penitent attacker, int hitWeight = 1)
+    {
+        if (!CoopGameConfig.EnableElementalUpgrades) return;
         if (enemy == null || enemy.Status.Dead || attacker == null) return;
 
         int playerIdx = CoopPlayerRegistry.GetPlayerIndex(attacker);
@@ -1714,7 +1890,7 @@ internal static class SwordElementalCombatBridge
             int poisonTier = SwordElementalUpgrades.GetUnlockedVenenoTier(playerIdx);
             if (poisonTier > 0)
             {
-                ctrl.ApplyPoison(enemy, attacker, poisonTier);
+                ctrl.ApplyPoison(enemy, attacker, poisonTier, hitWeight);
             }
         }
 
@@ -1724,7 +1900,7 @@ internal static class SwordElementalCombatBridge
             int bleedTier = SwordElementalUpgrades.GetUnlockedSangradoTier(playerIdx);
             if (bleedTier > 0)
             {
-                ctrl.AddBleedHit(enemy, attacker, bleedTier);
+                ctrl.AddBleedHit(enemy, attacker, bleedTier, hitWeight);
             }
         }
     }
@@ -1741,6 +1917,7 @@ internal static class Weapon_AttackDamageableEntities_ElementalStatus_Patch
     {
         try
         {
+            if (!CoopGameConfig.EnableElementalUpgrades) return;
             if (EnemyDamageArea_TakeDamage_ElementalStatus_Patch.IsApplyingStatusDamage) return;
 
             Penitent attacker = weaponHit.AttackingEntity?.GetComponent<Penitent>()
@@ -1748,6 +1925,8 @@ internal static class Weapon_AttackDamageableEntities_ElementalStatus_Patch
                 ?? __instance.GetComponentInParent<Penitent>()
                 ?? Core.Logic?.Penitent;
             if (attacker == null) return;
+
+            int hitWeight = SwordElementalCombatBridge.GetThresholdHitWeight(attacker, weaponHit, __instance);
 
             List<IDamageable> targets = ___DamageableEntities ?? (DamageableEntitiesField?.GetValue(__instance) as List<IDamageable>);
             if (targets == null || targets.Count == 0) return;
@@ -1765,7 +1944,7 @@ internal static class Weapon_AttackDamageableEntities_ElementalStatus_Patch
 
                 if (enemy != null && !enemy.Status.Dead)
                 {
-                    SwordElementalCombatBridge.TryApplyElementalStatus(enemy, attacker);
+                    SwordElementalCombatBridge.TryApplyElementalStatus(enemy, attacker, hitWeight);
                 }
             }
         }
@@ -1786,6 +1965,7 @@ internal static class EnemyDamageArea_TakeDamage_ElementalStatus_Patch
 
     private static void Postfix(EnemyDamageArea __instance, Hit hit)
     {
+        if (!CoopGameConfig.EnableElementalUpgrades) return;
         if (IsApplyingStatusDamage) return;
 
         Penitent attacker = hit.AttackingEntity?.GetComponent<Penitent>()
@@ -1796,7 +1976,8 @@ internal static class EnemyDamageArea_TakeDamage_ElementalStatus_Patch
         Enemy enemy = __instance.GetComponent<Enemy>() ?? __instance.GetComponentInParent<Enemy>();
         if (enemy == null || enemy.Status.Dead) return;
 
-        SwordElementalCombatBridge.TryApplyElementalStatus(enemy, attacker);
+        int hitWeight = SwordElementalCombatBridge.GetThresholdHitWeight(attacker, hit, null);
+        SwordElementalCombatBridge.TryApplyElementalStatus(enemy, attacker, hitWeight);
     }
 }
 
@@ -2028,7 +2209,8 @@ internal sealed class EnemyElementalStatusController : MonoBehaviour
         int baseHits;
         if (IsBossEnemy(target, maxHp))
         {
-            baseHits = 10 + Combat.CoopEnemyScaling.GetBossExtraBleedHits(target);
+            // Mínimo x2.5 veces el normal (normal es 6 golpes -> 15 golpes base en bosses) + golpes extra por perfil de jefe
+            baseHits = 15 + Combat.CoopEnemyScaling.GetBossExtraBleedHits(target);
         }
         else
         {
@@ -2049,8 +2231,20 @@ internal sealed class EnemyElementalStatusController : MonoBehaviour
         return baseHits;
     }
 
-    internal void ApplyPoison(Enemy target, Penitent attacker, int tier)
+    private int ComputePoisonThreshold(Enemy target)
     {
+        float maxHp = GetEnemyMaxHealth();
+        if (IsBossEnemy(target, maxHp))
+        {
+            // Mínimo x2.5 veces el normal (normal es 6 golpes -> 15 golpes base en bosses) + golpes extra por perfil de jefe
+            return 15 + Combat.CoopEnemyScaling.GetBossExtraBleedHits(target);
+        }
+        return 6;
+    }
+
+    internal void ApplyPoison(Enemy target, Penitent attacker, int tier, int hitWeight = 1)
+    {
+        if (!CoopGameConfig.EnableElementalUpgrades) return;
         if (target == null || target.Status.Dead) return;
 
         if (lastPoisonAttacker == attacker && lastPoisonHitFrame == Time.frameCount)
@@ -2062,6 +2256,16 @@ internal sealed class EnemyElementalStatusController : MonoBehaviour
 
         enemy = target;
         GetEnemyMaxHealth();
+
+        // Configurar umbral según sea jefe (mínimo x2.5) o enemigo regular si aún no ha escalado
+        if (poisonBonusPercent == 0 && poisonHitCount == 0)
+        {
+            poisonHitThreshold = ComputePoisonThreshold(target);
+        }
+        else if (IsBossEnemy(target, GetEnemyMaxHealth()) && poisonHitThreshold < 15)
+        {
+            poisonHitThreshold = ComputePoisonThreshold(target);
+        }
 
         SwordElementalUpgrades.GetPoisonParams(tier, out float dps, out float duration);
         float bossPoisonRes = Combat.CoopEnemyScaling.GetBossPoisonResistance(target);
@@ -2081,11 +2285,15 @@ internal sealed class EnemyElementalStatusController : MonoBehaviour
         // Aumentar daño de veneno en 50% cada 6 golpes, escalando el umbral en 50% cada vez hasta máx +150%
         if (poisonBonusPercent < 150)
         {
-            poisonHitCount++;
-            if (poisonHitCount >= poisonHitThreshold)
+            poisonHitCount += Mathf.Max(1, hitWeight);
+            while (poisonBonusPercent < 150 && poisonHitCount >= poisonHitThreshold)
             {
-                poisonHitCount = 0;
+                poisonHitCount -= poisonHitThreshold;
                 poisonBonusPercent = Mathf.Min(150, poisonBonusPercent + 50);
+                if (poisonBonusPercent >= 150)
+                {
+                    poisonHitCount = 0;
+                }
                 poisonHitThreshold = Mathf.Max(1, Mathf.RoundToInt(poisonHitThreshold * 1.5f));
 
                 try
@@ -2111,8 +2319,9 @@ internal sealed class EnemyElementalStatusController : MonoBehaviour
         UpdateStatusBars();
     }
 
-    internal void AddBleedHit(Enemy target, Penitent attacker, int tier)
+    internal void AddBleedHit(Enemy target, Penitent attacker, int tier, int hitWeight = 1)
     {
+        if (!CoopGameConfig.EnableElementalUpgrades) return;
         if (target == null || target.Status.Dead) return;
 
         // Si el enemigo ya se encuentra con el estado de sangrado progresivo,
@@ -2131,7 +2340,7 @@ internal sealed class EnemyElementalStatusController : MonoBehaviour
         bleedThreshold = ComputeBleedThreshold(target);
 
         activeBleedTier = Mathf.Max(activeBleedTier, tier);
-        bleedStacks++;
+        bleedStacks += Mathf.Max(1, hitWeight);
         bleedStackDecayTimer = 8.0f;
 
         if (bleedStacks >= bleedThreshold)
@@ -2186,6 +2395,12 @@ internal sealed class EnemyElementalStatusController : MonoBehaviour
 
     private void Update()
     {
+        if (!CoopGameConfig.EnableElementalUpgrades)
+        {
+            ResetAllStatuses();
+            return;
+        }
+
         if (enemy == null || enemy.Status.Dead)
         {
             poisonBar?.Hide();
@@ -2272,6 +2487,38 @@ internal sealed class EnemyElementalStatusController : MonoBehaviour
         }
     }
 
+    private void TriggerEnemyDeathVisuals(Enemy enemy, bool lethalHandledByDamageable)
+    {
+        if (enemy == null) return;
+        try
+        {
+            var dmgArea = enemy.GetComponentInChildren<EnemyDamageArea>();
+            if (dmgArea?.DamageAreaCollider != null)
+            {
+                dmgArea.DamageAreaCollider.enabled = false;
+            }
+            enemy.GetComponentInChildren<MotionLerper>()?.StopLerping();
+
+            if (!lethalHandledByDamageable)
+            {
+                var injector = enemy.GetComponentInChildren<Gameplay.GameControllers.Entities.Animations.EnemyAnimatorInyector>();
+                if (injector != null)
+                {
+                    MethodInfo deathMethod = AccessTools.Method(injector.GetType(), "Death", Type.EmptyTypes);
+                    deathMethod?.Invoke(injector, null);
+                }
+
+                var beh = enemy.GetComponentInChildren<Gameplay.GameControllers.Enemies.Framework.IA.EnemyBehaviour>();
+                if (beh != null)
+                {
+                    MethodInfo deathMethod = AccessTools.Method(beh.GetType(), "Death", Type.EmptyTypes);
+                    deathMethod?.Invoke(beh, null);
+                }
+            }
+        }
+        catch { }
+    }
+
     private void DealDirectStatusDamage(float amount, string audioId, bool isPoison, bool isBurst)
     {
         if (enemy == null || enemy.Status.Dead || amount <= 0f) return;
@@ -2283,30 +2530,60 @@ internal sealed class EnemyElementalStatusController : MonoBehaviour
             float def = (enemy.Stats?.Defense != null) ? enemy.Stats.Defense.Final : 0f;
             float effectiveAmount = amount + def;
 
-            // 1. Entregar daño directo a través de Entity.Damage sumando la defensa del enemigo
-            // de modo que el daño neto descontado sea exactamente 'amount'.
-            // Al llamar directamente a Entity.Damage en lugar de IDamageable.Damage(Hit),
-            // NO se invoca EnemyBehaviour.Damage() ni SleepTimeByHit() ni Animator.SetTrigger("DAMAGE").
-            // Esto evita que el veneno o sangrado dejen al enemigo en estado de daño / stun / flinch o interrumpan sus ataques.
-            try
-            {
-                enemy.Damage(effectiveAmount, string.Empty);
-            }
-            catch { }
+            bool willBeLethal = lifeBefore > 0f && amount >= lifeBefore;
+            bool lethalHandledByDamageable = false;
 
-            float lifeAfter = (enemy.Stats?.Life != null) ? enemy.Stats.Life.Current : 0f;
-
-            // 2. Garantía absoluta: Si por algún motivo la máquina de estados o el collider del enemigo
-            // no descontó la vida, la descontamos directamente
-            if (lifeAfter >= lifeBefore && enemy.Stats?.Life != null && lifeBefore > 0f)
+            if (willBeLethal)
             {
-                float newLife = Mathf.Max(0f, lifeBefore - amount);
-                enemy.Stats.Life.Current = newLife;
-                if (newLife <= 0f)
+                Penitent killer = (isPoison ? (lastPoisonAttacker ?? lastBleedAttacker) : (lastBleedAttacker ?? lastPoisonAttacker)) ?? Core.Logic?.Penitent;
+
+                enemy.IsGuarding = false;
+                enemy.Status.Unattacable = false;
+                enemy.GetComponentInChildren<MotionLerper>()?.StopLerping();
+                enemy.GetComponentInChildren<EnemyDamageArea>()?.ClearAccumDamage();
+
+                Hit lethalHit = new Hit
                 {
-                    enemy.Status.Dead = true;
-                    try { enemy.KillInstanteneously(); } catch { }
+                    AttackingEntity = killer != null ? killer.gameObject : enemy.gameObject,
+                    DamageAmount = effectiveAmount + 10f,
+                    DamageType = DamageArea.DamageType.Normal,
+                    DamageElement = DamageArea.DamageElement.Normal,
+                    HitSoundId = string.Empty
+                };
+
+                try
+                {
+                    (enemy as IDamageable)?.Damage(lethalHit);
+                    lethalHandledByDamageable = true;
                 }
+                catch { }
+            }
+
+            if (!willBeLethal || (!enemy.Status.Dead && enemy.Stats?.Life != null && enemy.Stats.Life.Current > 0f))
+            {
+                try
+                {
+                    enemy.Damage(effectiveAmount, string.Empty);
+                }
+                catch { }
+
+                float lifeAfter = (enemy.Stats?.Life != null) ? enemy.Stats.Life.Current : 0f;
+
+                if (lifeAfter >= lifeBefore && enemy.Stats?.Life != null && lifeBefore > 0f)
+                {
+                    float newLife = Mathf.Max(0f, lifeBefore - amount);
+                    enemy.Stats.Life.Current = newLife;
+                    if (newLife <= 0f)
+                    {
+                        enemy.Status.Dead = true;
+                        try { enemy.KillInstanteneously(); } catch { }
+                    }
+                }
+            }
+
+            if (enemy.Status.Dead || (enemy.Stats?.Life != null && enemy.Stats.Life.Current <= 0f))
+            {
+                TriggerEnemyDeathVisuals(enemy, lethalHandledByDamageable);
             }
 
             // 3. Audio de impacto
@@ -2993,50 +3270,25 @@ internal sealed class FloatingUpgradeSkull : MonoBehaviour
             GameObject root = new GameObject("Coop_UpgradeSkull");
             root.transform.position = worldPos;
 
-            // 1. Fondo estilizado tipo orbe/píldora oscuro de alto contraste
-            GameObject bgObj = new GameObject("BgBackdrop");
-            bgObj.transform.SetParent(root.transform, false);
-            bgObj.transform.localPosition = new Vector3(0.04f, 0f, 0.02f);
-
-            SpriteRenderer bgSr = bgObj.AddComponent<SpriteRenderer>();
-            bgSr.sprite = GetBackdropSprite(isPoison);
-            bgSr.sortingOrder = 30014;
-
-            // 2. Sprite del Cráneo (a la izquierda de la píldora)
+            // Sprite del Cráneo
             GameObject skullObj = new GameObject("SkullSprite");
             skullObj.transform.SetParent(root.transform, false);
-            skullObj.transform.localPosition = new Vector3(-0.35f, 0f, 0f);
+            skullObj.transform.localScale = new Vector3(0.30f, 0.30f, 1f);
+            skullObj.transform.localPosition = new Vector3(-0.14f, 0f, 0f);
 
             SpriteRenderer sr = skullObj.AddComponent<SpriteRenderer>();
             sr.sprite = isPoison ? GetPoisonSkullSprite() : GetBleedSkullSprite();
             sr.sortingOrder = 30016;
 
-            // 3. Sombra del texto "+" / "+50%"
-            GameObject shadowObj = new GameObject("PlusShadow");
-            shadowObj.transform.SetParent(root.transform, false);
-            shadowObj.transform.localPosition = new Vector3(0.12f, -0.01f, 0.01f);
-
-            TextMesh shadowTm = shadowObj.AddComponent<TextMesh>();
-            shadowTm.text = text;
-            shadowTm.fontSize = 28;
-            shadowTm.characterSize = 0.10f;
-            shadowTm.fontStyle = FontStyle.Bold;
-            shadowTm.anchor = TextAnchor.MiddleLeft;
-            shadowTm.alignment = TextAlignment.Left;
-            shadowTm.color = new Color(0f, 0f, 0f, 0.85f);
-
-            MeshRenderer shadowMr = shadowObj.GetComponent<MeshRenderer>();
-            if (shadowMr != null) shadowMr.sortingOrder = 30016;
-
-            // 4. Texto principal "+" / "+50%" con brillo elemental
+            // Texto principal "+" / "+50%" con brillo elemental
             GameObject textObj = new GameObject("PlusText");
             textObj.transform.SetParent(root.transform, false);
-            textObj.transform.localPosition = new Vector3(0.10f, 0.01f, 0f);
+            textObj.transform.localPosition = new Vector3(0.02f, 0.01f, 0f);
 
             TextMesh tm = textObj.AddComponent<TextMesh>();
             tm.text = text;
             tm.fontSize = 28;
-            tm.characterSize = 0.10f;
+            tm.characterSize = 0.05f;
             tm.fontStyle = FontStyle.Bold;
             tm.anchor = TextAnchor.MiddleLeft;
             tm.alignment = TextAlignment.Left;
@@ -3047,16 +3299,14 @@ internal sealed class FloatingUpgradeSkull : MonoBehaviour
             if (mr != null) mr.sortingOrder = 30017;
 
             FloatingUpgradeSkull comp = root.AddComponent<FloatingUpgradeSkull>();
-            comp.bgRenderer = bgSr;
+            comp.bgRenderer = null;
             comp.skullRenderer = sr;
             comp.textMesh = tm;
-            comp.shadowTextMesh = shadowTm;
+            comp.shadowTextMesh = null;
             comp.bgColor = Color.white;
             comp.skullColor = Color.white;
             comp.textColor = fontColor;
 
-            // Tamaño compacto solicitado por el usuario (escala ~0.72x en lugar de 1.15x)
-            // Tamano aumentado en un 100% (2.0x) y duracion de 3 segundos solicitados por el usuario
             comp.initialScale = new Vector3(1.44f, 1.44f, 1f);
             root.transform.localScale = Vector3.zero;
         }

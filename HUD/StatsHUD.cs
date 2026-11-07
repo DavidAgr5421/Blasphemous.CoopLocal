@@ -1,6 +1,7 @@
 using Com.LuisPedroFonseca.ProCamera2D;
 using CreativeSpore.SmartColliders;
 using Framework.FrameworkCore;
+using Framework.FrameworkCore.Attributes.Logic;
 using Framework.Managers;
 using System;
 using Gameplay.GameControllers.AnimationBehaviours.Player.Attack;
@@ -165,18 +166,25 @@ internal static class PlayerFlask_RefreshFlask_P2_Patch
 // Spending (shops/Alms) is NOT touched here - shop UI/dialogue is still P1-only in this mod (no
 // P2 shop-interaction exists at all yet), so there's nothing to redirect on that side yet; P2's
 // pool just accumulates for now.
+// Corrección de Lágrimas (Purge):
+// 1. Solo acreditar ganancias (delta > 0). Ignorar cobros/gastos de P1 (delta <= 0).
+// 2. Acreditar a todos los jugadores cooperativos (P2, P3, P4) mediante CoopLocal.GetAllExtraPlayers().
+// 3. Clampear siempre entre 0 y 9,999,999 para evitar overflows a negativos en C#.
 [HarmonyPatch(typeof(Tools.PlayMaker.Action.TearsAddition), "OnEnter")]
 internal static class TearsAddition_CreditPlayer2_Patch
 {
     private static void Postfix(Tools.PlayMaker.Action.TearsAddition __instance)
     {
-        Penitent p2 = CoopLocal.Player2;
-        if (p2 == null)
-        {
-            return;
-        }
         float delta = __instance.Tears != null ? __instance.Tears.Value : 0f;
-        p2.Stats.Purge.Current = Mathf.Max(0f, p2.Stats.Purge.Current + delta);
+        if (delta <= 0f) return; // Ignorar deducciones / pagos de P1
+
+        foreach (Penitent extra in CoopLocal.GetAllExtraPlayers())
+        {
+            if (extra != null && extra.Stats != null && extra.Stats.Purge != null)
+            {
+                extra.Stats.Purge.Current = Mathf.Clamp(extra.Stats.Purge.Current + delta, 0f, 9999999f);
+            }
+        }
     }
 }
 
@@ -185,13 +193,16 @@ internal static class PurgeAdd_CreditPlayer2_Patch
 {
     private static void Postfix(Tools.Playmaker2.Action.PurgeAdd __instance)
     {
-        Penitent p2 = CoopLocal.Player2;
-        if (p2 == null)
-        {
-            return;
-        }
         float delta = __instance.value != null ? __instance.value.Value : 0f;
-        p2.Stats.Purge.Current = Mathf.Max(0f, p2.Stats.Purge.Current + delta);
+        if (delta <= 0f) return; // Ignorar deducciones / pagos de P1
+
+        foreach (Penitent extra in CoopLocal.GetAllExtraPlayers())
+        {
+            if (extra != null && extra.Stats != null && extra.Stats.Purge != null)
+            {
+                extra.Stats.Purge.Current = Mathf.Clamp(extra.Stats.Purge.Current + delta, 0f, 9999999f);
+            }
+        }
     }
 }
 
@@ -204,13 +215,86 @@ internal static class PurgeSet_CreditPlayer2_Patch
 {
     private static void Postfix(Tools.Playmaker2.Action.PurgeSet __instance)
     {
-        Penitent p2 = CoopLocal.Player2;
-        if (p2 == null)
-        {
-            return;
-        }
         float value = __instance.value != null ? __instance.value.Value : 0f;
-        p2.Stats.Purge.Current = Mathf.Max(0f, value);
+        if (value < 0f) value = 0f;
+        value = Mathf.Clamp(value, 0f, 9999999f);
+
+        foreach (Penitent extra in CoopLocal.GetAllExtraPlayers())
+        {
+            if (extra != null && extra.Stats != null && extra.Stats.Purge != null)
+            {
+                extra.Stats.Purge.Current = value;
+            }
+        }
+    }
+}
+
+// Corrección de FervourPenance compartido:
+// FervourPenance.OnUpdate lee directamente el Rewired de P1 ("Range Attack").
+// Cuando P1 pulsaba Range Attack, FervourPenance se disparaba en todos los Penitents invitados,
+// drenando sus lágrimas y vida (DrainResources) y deshabilitando Core.Logic.Penitent.RangeAttack.
+// Si es un guest, interceptamos OnUpdate para evitar que consuma recursos o deshabilite el ataque de P1.
+[HarmonyPatch(typeof(FervourPenance), "OnUpdate")]
+internal static class FervourPenance_OnUpdate_Guest_Patch
+{
+    private static bool Prefix(FervourPenance __instance)
+    {
+        Penitent owner = __instance.EntityOwner as Penitent;
+        if (owner == null || !CoopLocal.IsGuestPlayer(owner, out int _))
+        {
+            return true; // P1 vanilla
+        }
+
+        if (__instance.Casting && !owner.Animator.GetCurrentAnimatorStateInfo(0).IsName("FervourPenance"))
+        {
+            __instance.StopCast();
+        }
+
+        return false;
+    }
+}
+
+// Asegurar que DrainResources de FervourPenance nunca deje Purge en negativo
+[HarmonyPatch(typeof(FervourPenance), "DrainResources")]
+internal static class FervourPenance_DrainResources_Clamp_Patch
+{
+    private static void Postfix(FervourPenance __instance)
+    {
+        if (__instance.EntityOwner != null && __instance.EntityOwner.Stats != null && __instance.EntityOwner.Stats.Purge != null)
+        {
+            __instance.EntityOwner.Stats.Purge.Current = Mathf.Clamp(__instance.EntityOwner.Stats.Purge.Current, 0f, 9999999f);
+        }
+    }
+}
+
+// Protección contra overflow y números negativos en Purge (Lágrimas de Enmienda):
+// Purge hereda de VariableFixedMaxAttribute cuyo MaxValue es float.MaxValue.
+// Al castear float.MaxValue a int32 o exceder los 9.999.999 se genera un overflow a -2147483648.
+// Interceptamos la asignación de Current y CalculateValue para mantener Purge siempre entre 0 y 9.999.999.
+[HarmonyPatch(typeof(VariableAttribute), "set_Current")]
+internal static class VariableAttribute_SetCurrent_PurgeClamp_Patch
+{
+    private static void Prefix(VariableAttribute __instance, ref float value)
+    {
+        if (__instance is Framework.FrameworkCore.Attributes.Purge)
+        {
+            value = Mathf.Clamp(value, 0f, 9999999f);
+        }
+    }
+}
+
+[HarmonyPatch(typeof(VariableAttribute), "CalculateValue")]
+internal static class VariableAttribute_CalculateValue_PurgeClamp_Patch
+{
+    private static void Postfix(VariableAttribute __instance, ref float __result)
+    {
+        if (__instance is Framework.FrameworkCore.Attributes.Purge)
+        {
+            if (__result < 0f || __result > 9999999f)
+            {
+                __result = Mathf.Clamp(__result, 0f, 9999999f);
+            }
+        }
     }
 }
 
@@ -400,11 +484,13 @@ internal static class Player2PurgePoints
             return;
         }
         Penitent p2 = CoopLocal.Player2;
-        if (p2 == null)
+        if (p2 == null || p2.Stats == null || p2.Stats.Purge == null)
         {
             return;
         }
-        label.text = Mathf.FloorToInt(p2.Stats.Purge.Current).ToString();
+        float cur = Mathf.Clamp(p2.Stats.Purge.Current, 0f, 9999999f);
+        p2.Stats.Purge.Current = cur;
+        label.text = Mathf.FloorToInt(cur).ToString();
     }
 }
 

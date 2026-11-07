@@ -432,10 +432,13 @@ internal static class PlatformCharacterInput_Update_Patch
                 isHealingAnimPlaying = true;
             }
         }
-        bool isMenuBlocked = GlobalBlockerTracker.AnyBlockerOtherThanPlayerLogic() || Player2MenuView.IsShowingAnyMenu;
-        bool blocked = PlayerLogicBlocker.IsBlocked(____penitent) || ____penitent.Status.Dead || isPrayerAnimPlaying || isHealingAnimPlaying || isMenuBlocked;
-
         Player2Input.Tick();
+
+        bool isMenuBlocked = GlobalBlockerTracker.AnyBlockerOtherThanPlayerLogic()
+            || Player2MenuView.IsShowingAnyMenu
+            || Time.frameCount == Player2MenuView.LastMenuToggleFrame
+            || Time.timeScale <= 0.0001f;
+        bool blocked = PlayerLogicBlocker.IsBlocked(____penitent) || ____penitent.Status.Dead || isPrayerAnimPlaying || isHealingAnimPlaying || isMenuBlocked;
 
         bool rawDown = Player2Input.GetDown(slotIndex);
         bool left = !blocked && Player2Input.GetLeft(slotIndex);
@@ -547,7 +550,16 @@ internal static class PlatformCharacterInput_Update_Patch
         }
         else if (____penitent.Dash != null)
         {
-            ____penitent.Dash.AddDashForce();
+            if (isMenuBlocked || !____penitent.Dash.Casting)
+            {
+                DashAndInputBlockers_ForceStopStuckDash.ForceStop(____penitent);
+                controller.SetActionState(eControllerActions.Left, false);
+                controller.SetActionState(eControllerActions.Right, false);
+            }
+            else
+            {
+                ____penitent.Dash.AddDashForce();
+            }
         }
 
         // Round 82 - Ladder jump cooldown: when jumping while climbing, reset threshold so P2 jumps away cleanly instead of regrabbing immediately

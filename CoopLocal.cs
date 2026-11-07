@@ -81,6 +81,9 @@ public class CoopLocal : BlasMod
         // Ve Stats/PermanentStatsDebugPanel.cs para la arquitectura y keybindings.
         PermanentStatsDebugPanel.EnsureCreated();
         CameraTargetModeIndicator.Show(CameraTargetDebugToggle.Mode);
+
+        // Menú de depuración y teletransporte a jefes (F2)
+        Combat.BossDebugTeleportManager.EnsureCreated();
     }
 
     protected override void OnDispose()
@@ -88,6 +91,7 @@ public class CoopLocal : BlasMod
         SpawnManager.OnPlayerSpawn -= OnPlayerSpawn;
         LevelManager.OnLevelLoaded -= OnLevelLoaded;
         Player2HudFadeSync.Dispose();
+        Combat.BossDebugTeleportManager.Dispose();
     }
 
     // Round 47: the wall cliff-lede fix (SetLayerRecursively, round 46) copies P1's layer onto P2
@@ -122,6 +126,7 @@ public class CoopLocal : BlasMod
     private void OnLevelLoaded(Level oldLevel, Level newLevel)
     {
         Combat.CoopEnemyScaling.OnLevelLoaded();
+        Combat.BossDebugTeleportManager.OnLevelLoaded(oldLevel, newLevel);
         if (Core.Logic == null || Core.Logic.Penitent == null)
         {
             return;

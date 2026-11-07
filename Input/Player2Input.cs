@@ -202,6 +202,9 @@ internal static class Player2Pad
     internal static bool GetDashDown(Rewired.Joystick pad) =>
         AxisDown(pad, "DashTrigger", "Right Trigger", "RT", "R2");
 
+    internal static bool GetDashHeld(Rewired.Joystick pad) =>
+        AxisHeld(pad, "DashTrigger", "Right Trigger", "RT", "R2");
+
     internal static bool GetPrayerActivateDown(Rewired.Joystick pad) =>
         AxisDown(pad, "PrayerTrigger", "Left Trigger", "LT", "L2");
 
@@ -220,14 +223,16 @@ internal static class Player2Pad
     internal static bool ParryDown => GetParryDown(Pad);
     internal static bool HealDown => GetHealDown(Pad);
     internal static bool InteractDown => GetInteractDown(Pad);
-    internal static bool GetStartDown(Rewired.Joystick pad) => ButtonDown(pad, "Start", "Options", "Menu");
+    internal static bool GetStartDown(Rewired.Joystick pad) => ButtonDown(pad, "Start", "Options", "Menu", "Back", "Select", "View", "Share");
     internal static bool StartDown => GetStartDown(Pad);
 
-    internal static bool CancelDown => ButtonDown(Pad, "B Button", "Button B", "Action Button 2", "Circle", "Button 1", "B");
+    internal static bool GetCancelDown(Rewired.Joystick pad) => ButtonDown(pad, "B Button", "Button B", "Action Button 2", "Circle", "Button 1", "B");
+    internal static bool CancelDown => GetCancelDown(Pad);
     internal static bool LoreDown => ButtonDown(Pad, "Y Button", "Button Y", "Action Button 4", "Triangle", "Button 3", "Y");
     internal static bool SelectDown => GetSelectDown(Pad);
 
     internal static bool DashDown => GetDashDown(Pad);
+    internal static bool DashHeld => GetDashHeld(Pad);
     internal static bool PrayerActivateDown => GetPrayerActivateDown(Pad);
     internal static bool PrayerActivateUp => GetPrayerActivateUp(Pad);
 
@@ -263,6 +268,15 @@ internal static class Player2Pad
     }
 
     private static bool ButtonUp(params string[] candidateNames) => ButtonUp(Pad, candidateNames);
+
+    private static bool AxisHeld(Rewired.Joystick pad, string cacheKey, params string[] candidateNames)
+    {
+        if (pad == null) return false;
+        int id = ResolveAxisId(pad, cacheKey, candidateNames);
+        return id >= 0 && Mathf.Abs(pad.GetAxisById(id)) >= AxisThreshold;
+    }
+
+    private static bool AxisHeld(string cacheKey, params string[] candidateNames) => AxisHeld(Pad, cacheKey, candidateNames);
 
     private static bool AxisDown(Rewired.Joystick pad, string cacheKey, params string[] candidateNames)
     {
@@ -582,6 +596,13 @@ internal static class Player2Input
         return Player2Pad.GetDashDown(pad);
     }
 
+    internal static bool GetDashHeld(int slotIndex)
+    {
+        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKey(Player2Keys.Dash);
+        var pad = Player2Pad.GetPadForSlot(slotIndex);
+        return Player2Pad.GetDashHeld(pad);
+    }
+
     internal static bool GetParryDown(int slotIndex)
     {
         if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKeyDown(Player2Keys.Parry);
@@ -697,6 +718,12 @@ internal static class Player2Input
         if (Input.GetKeyDown(KeyCode.F5))
         {
             Combat.TestDummyManager.SpawnOrResetDummy();
+        }
+
+        // Atajo F2: Selector de jefes para práctica / depuración (solo cuando CoopGameSetupUI no esté abierto)
+        if (Input.GetKeyDown(KeyCode.F2) && !CoopGameSetupUI.IsOpen)
+        {
+            Combat.BossDebugTeleportManager.ToggleMenu();
         }
 
         // Dentro de Tick(), lógica P2 para abrir menú de inventario y atajo F6/F7 de fervor máximo:

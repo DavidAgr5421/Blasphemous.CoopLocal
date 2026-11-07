@@ -42,23 +42,15 @@ internal static class Player2MenuView
     }
 
     internal static bool IsShowingAnyMenu =>
-        Gameplay.UI.UIController.instance != null &&
-        (Gameplay.UI.UIController.instance.IsShowingMenu || Gameplay.UI.UIController.instance.IsShowingInventory);
+        (Gameplay.UI.UIController.instance != null &&
+        (Gameplay.UI.UIController.instance.IsShowingMenu || Gameplay.UI.UIController.instance.IsShowingInventory))
+        || Combat.BossDebugTeleportManager.IsMenuOpen;
 
-    internal static bool IsGuestView =>
-        ActivePlayerIndex > 0 &&
-        Gameplay.UI.UIController.instance != null &&
-        Gameplay.UI.UIController.instance.IsShowingInventory;
+    internal static bool IsGuestView => ActivePlayerIndex > 0;
 
-    internal static bool IsSkillGuestView =>
-        SkillViewPlayer > 0 &&
-        Gameplay.UI.UIController.instance != null &&
-        Gameplay.UI.UIController.instance.IsShowingInventory;
+    internal static bool IsSkillGuestView => SkillViewPlayer > 0;
 
-    internal static bool IsInventoryGuestView =>
-        InventoryViewPlayer > 0 &&
-        Gameplay.UI.UIController.instance != null &&
-        Gameplay.UI.UIController.instance.IsShowingInventory;
+    internal static bool IsInventoryGuestView => InventoryViewPlayer > 0;
 
     internal static bool IsSkillP2View => IsSkillGuestView;
     internal static bool IsInventoryP2View => IsInventoryGuestView;

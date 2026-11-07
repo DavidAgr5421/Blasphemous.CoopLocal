@@ -160,6 +160,20 @@ internal static class CoopPlayerRegistry
         return GetSlot(playerIndex)?.Instance;
     }
 
+    internal static List<Penitent> GetActivePlayers()
+    {
+        List<Penitent> list = new List<Penitent>();
+        for (int i = 0; i < MaxPlayers; i++)
+        {
+            Penitent p = GetPenitent(i);
+            if (p != null)
+            {
+                list.Add(p);
+            }
+        }
+        return list;
+    }
+
     internal static string GetDisplayName(int playerIndex) => GetSlot(playerIndex).DisplayName;
     internal static string GetMenuTitle(int playerIndex) => GetSlot(playerIndex).MenuTitle;
     internal static Color32 GetLabelColor(int playerIndex) => GetSlot(playerIndex).LabelColor;

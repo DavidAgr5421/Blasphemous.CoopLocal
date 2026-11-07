@@ -59,6 +59,39 @@ internal static class Dash_OnStart_Patch
     }
 }
 
+internal static class DashAndInputBlockers_ForceStopStuckDash
+{
+    private static readonly FieldInfo CastTimeField = AccessTools.Field(typeof(Ability), "castTime");
+
+    internal static void ForceStop(Penitent penitent)
+    {
+        if (penitent == null) return;
+        if (penitent.Dash != null)
+        {
+            CastTimeField?.SetValue(penitent.Dash, 0.01f);
+            penitent.Dash.StopCast();
+            penitent.IsDashing = false;
+            PlayerLogicBlocker.SetBlocked(penitent, false);
+        }
+    }
+}
+
+[HarmonyPatch(typeof(Dash), "OnCastStart")]
+internal static class Dash_OnCastStart_Guard_Patch
+{
+    private static readonly FieldInfo CastTimeField = AccessTools.Field(typeof(Ability), "castTime");
+
+    private static void Postfix(Dash __instance)
+    {
+        if (__instance == null || CastTimeField == null) return;
+        float curCastTime = (float)CastTimeField.GetValue(__instance);
+        if (curCastTime <= 0f)
+        {
+            CastTimeField.SetValue(__instance, 0.001f);
+        }
+    }
+}
+
 // AddDashForce() still needs its own fix on top of the above: even with _penitent corrected,
 // it computes the dash direction from _penitent.PlatformCharacterInput.Rewired.GetAxisRaw(0) -
 // Rewired is still the same shared Player 0 for both P1 and P2, so the direction itself would
@@ -72,13 +105,13 @@ internal static class Dash_AddDashForce_Patch
     private static void Prefix(Dash __instance, ref bool ____isDashDirectionSet, ref float ____dashDirection)
     {
         Penitent owner = __instance.GetComponentInParent<Penitent>();
-        if (owner == null || owner != CoopLocal.Player2 || ____isDashDirectionSet)
+        if (owner == null || !CoopLocal.IsGuestPlayer(owner, out int guestSlot) || ____isDashDirectionSet)
         {
             return;
         }
 
-        bool left = Player2Input.Left;
-        bool right = Player2Input.Right;
+        bool left = Player2Input.GetLeft(guestSlot);
+        bool right = Player2Input.GetRight(guestSlot);
 
         ____dashDirection = left ? -1f : (right ? 1f : 0f);
         ____isDashDirectionSet = true;
@@ -206,7 +239,23 @@ internal static class PlayerLogicBlocker
     // permanently frozen out of movement/crouch with no way to recover. Cross-checking against
     // the real global blocker means a stale entry here stops mattering the moment ANYTHING
     // clears "PLAYER_LOGIC" for real, instead of requiring this exact HashSet to be cleared too.
-    internal static bool IsBlocked(Penitent owner) => owner != null && blocked.Contains(owner) && Core.Input.HasBlocker("PLAYER_LOGIC");
+    internal static bool IsBlocked(Penitent owner) => owner != null && blocked.Contains(owner) && Core.Input != null && Core.Input.HasBlocker("PLAYER_LOGIC");
+
+    internal static bool AnyBlocked()
+    {
+        blocked.RemoveWhere(p => p == null || (p.Status != null && p.Status.Dead));
+        return blocked.Count > 0;
+    }
+
+    internal static bool AnyOtherBlocked(Penitent current)
+    {
+        blocked.RemoveWhere(p => p == null || (p.Status != null && p.Status.Dead));
+        foreach (var p in blocked)
+        {
+            if (p != current) return true;
+        }
+        return false;
+    }
 
     internal static void ClearAll() => blocked.Clear();
 }
@@ -261,12 +310,40 @@ internal static class GlobalBlockerTracker
         return false;
     }
 
+    internal static bool HasNonPlayerLogicBlocker() => AnyBlockerOtherThanPlayerLogic();
+
+    internal static bool AnyGlobalBlocker(Penitent penitent)
+    {
+        foreach (string name in active)
+        {
+            if (name == "PLAYER_LOGIC")
+            {
+                continue;
+            }
+            if (name == "EXECUTION" && (penitent == null || !penitent.IsOnExecution))
+            {
+                continue;
+            }
+            return true;
+        }
+        return false;
+    }
+
     internal static void Clear() => active.Clear();
 }
 
 [HarmonyPatch(typeof(InputManager), nameof(InputManager.SetBlocker))]
 internal static class InputManager_SetBlocker_Patch
 {
+    private static bool Prefix(string name, bool blocking)
+    {
+        if (name == "PLAYER_LOGIC" && !blocking && PlayerLogicBlocker.AnyBlocked())
+        {
+            return false;
+        }
+        return true;
+    }
+
     private static void Postfix(string name, bool blocking) => GlobalBlockerTracker.Track(name, blocking);
 }
 
@@ -285,7 +362,7 @@ internal static class DashBehaviour_BlockerTracking_OnStateEnter_Patch
 [HarmonyPatch(typeof(DashBehaviour), "OnStateExit")]
 internal static class DashBehaviour_BlockerTracking_OnStateExit_Patch
 {
-    private static void Postfix(Animator animator)
+    private static void Prefix(Animator animator)
     {
         Penitent owner = animator.GetComponentInParent<Penitent>();
         PlayerLogicBlocker.SetBlocked(owner, false);
@@ -319,20 +396,25 @@ internal static class PlatformCharacterInput_Blocked_Patch
             __result = true;
             reason = "own PLAYER_LOGIC lock";
         }
+        else if (____penitent != null && ____penitent.IsOnExecution)
+        {
+            __result = true;
+            reason = "own EXECUTION lock";
+        }
         else if (!__result)
         {
             reason = "not blocked";
         }
-        else if (GlobalBlockerTracker.AnyBlockerOtherThanPlayerLogic())
+        else if (GlobalBlockerTracker.AnyGlobalBlocker(____penitent))
         {
             reason = "other global blocker active";
         }
         else
         {
-            // The only reason Blocked is currently true is the shared PLAYER_LOGIC entry, and
-            // it's not this instance's own lock - so it belongs to the other player's dash/parry.
+            // The only reason Blocked is currently true is the shared PLAYER_LOGIC or EXECUTION entry, and
+            // it's not this instance's own lock - so it belongs to another player.
             __result = false;
-            reason = "PLAYER_LOGIC belongs to the other player - ignored";
+            reason = "PLAYER_LOGIC/EXECUTION belongs to another player - ignored";
         }
 
         if (____penitent != null && (!lastLogged.TryGetValue(____penitent, out bool last) || last != __result))
@@ -395,50 +477,44 @@ internal static class BlockerOverrideHelper
     // bare-list check was invisible to that fix entirely.
     private static readonly FieldInfo InputBlockersListField = AccessTools.Field(typeof(InputManager), "inputBlockers");
 
-    private static bool removedFromList;
+    private static bool removedPlayerLogic;
+    private static bool removedExecution;
 
     internal static bool TryOverride(Penitent instancePenitent)
     {
-        removedFromList = false;
+        removedPlayerLogic = false;
+        removedExecution = false;
         if (instancePenitent == null || Core.Input == null)
         {
             return false;
         }
-        if (PlayerLogicBlocker.IsBlocked(instancePenitent))
+        if (PlayerLogicBlocker.IsBlocked(instancePenitent) || instancePenitent.IsOnExecution)
         {
-            // This instance's own dash/parry/ladder-grab lock - it really should be blocked,
+            // This instance's own dash/parry/ladder-grab/execution lock - it really should be blocked,
             // same as solo play.
             return false;
         }
         bool raw = (bool)InputBlockedBackingField.GetValue(Core.Input);
-        if (!raw || GlobalBlockerTracker.AnyBlockerOtherThanPlayerLogic())
+        if (!raw || GlobalBlockerTracker.AnyGlobalBlocker(instancePenitent))
         {
             // Either nothing is blocking right now, or something genuinely global is (dialog/
             // menu/cutscene) - leave it alone, that should still freeze both players.
             return false;
         }
 
-        // PlayerLogicBlocker only knows about the handful of abilities explicitly wired into it
-        // (Dash, Parry, ladder-grab-down so far) - dozens of other places in the game's own code
-        // push this same "PLAYER_LOGIC" blocker too (WallJump, GuardSlide, hurt states, jump-off,
-        // combo finishers...) and aren't registered with it yet. Only override when the *other*
-        // Penitent is positively confirmed to hold this lock through a tracked source - if neither
-        // side is tracked (an unaudited ability locked *this* instance's own input, or the
-        // tracker simply doesn't know), do nothing and leave the real block in effect. This is
-        // the safe default: it never incorrectly un-freezes anyone, it just doesn't yet fix
-        // cross-talk from abilities nobody has wired in - same "audit as reported" posture as the
-        // rest of this file, instead of assuming un-tracked always means "the other player".
-        Penitent other = (instancePenitent == CoopLocal.Player2) ? Core.Logic.Penitent : CoopLocal.Player2;
-        if (!PlayerLogicBlocker.IsBlocked(other))
-        {
-            return false;
-        }
-
         List<string> blockerList = (List<string>)InputBlockersListField.GetValue(Core.Input);
-        if (blockerList.Contains("PLAYER_LOGIC"))
+        if (blockerList != null)
         {
-            blockerList.Remove("PLAYER_LOGIC");
-            removedFromList = true;
+            if (blockerList.Contains("PLAYER_LOGIC"))
+            {
+                blockerList.Remove("PLAYER_LOGIC");
+                removedPlayerLogic = true;
+            }
+            if (blockerList.Contains("EXECUTION"))
+            {
+                blockerList.Remove("EXECUTION");
+                removedExecution = true;
+            }
         }
         InputBlockedBackingField.SetValue(Core.Input, false);
         return true;
@@ -446,16 +522,23 @@ internal static class BlockerOverrideHelper
 
     internal static void Restore()
     {
-        InputBlockedBackingField.SetValue(Core.Input, true);
-        if (removedFromList)
+        if (Core.Input == null) return;
+
+        List<string> blockerList = (List<string>)InputBlockersListField.GetValue(Core.Input);
+        if (blockerList != null)
         {
-            List<string> blockerList = (List<string>)InputBlockersListField.GetValue(Core.Input);
-            if (!blockerList.Contains("PLAYER_LOGIC"))
+            if (removedPlayerLogic && !blockerList.Contains("PLAYER_LOGIC"))
             {
                 blockerList.Add("PLAYER_LOGIC");
             }
-            removedFromList = false;
+            if (removedExecution && !blockerList.Contains("EXECUTION"))
+            {
+                blockerList.Add("EXECUTION");
+            }
         }
+        InputBlockedBackingField.SetValue(Core.Input, true);
+        removedPlayerLogic = false;
+        removedExecution = false;
     }
 }
 
@@ -525,25 +608,36 @@ internal static class AnimatorInyector_Dashing_DebugLogger_Patch
     private static readonly FieldInfo PlayerInputField = AccessTools.Field(typeof(Gameplay.GameControllers.Penitent.Animator.AnimatorInyector), "_playerInput");
     private static readonly FieldInfo PlayerDashField = AccessTools.Field(typeof(Gameplay.GameControllers.Penitent.Animator.AnimatorInyector), "_playerDash");
 
-    private static void Prefix(object __instance)
+    private static bool Prefix(object __instance)
     {
-        Penitent penitent = PenitentField.GetValue(__instance) as Penitent;
-        if (penitent != CoopLocal.Player2)
+        if (Player2MenuView.IsShowingAnyMenu || Time.frameCount == Player2MenuView.LastMenuToggleFrame || Time.timeScale <= 0.0001f)
         {
-            return;
+            PlatformCharacterInput input = PlayerInputField?.GetValue(__instance) as PlatformCharacterInput;
+            if (input != null)
+            {
+                input.Dash = false;
+            }
+            return false;
         }
-        PlatformCharacterInput input = PlayerInputField.GetValue(__instance) as PlatformCharacterInput;
-        if (input == null || !input.Dash)
+
+        Penitent penitent = PenitentField?.GetValue(__instance) as Penitent;
+        if (penitent == null || !CoopLocal.IsGuestPlayer(penitent, out int guestSlot))
         {
-            return;
+            return true;
         }
-        Dash playerDash = PlayerDashField.GetValue(__instance) as Dash;
+        PlatformCharacterInput guestInput = PlayerInputField?.GetValue(__instance) as PlatformCharacterInput;
+        if (guestInput == null || !guestInput.Dash)
+        {
+            return true;
+        }
+        Dash playerDash = PlayerDashField?.GetValue(__instance) as Dash;
         DashParryDebugLog.Log(
-            $"P2 Dashing() attempt: Dash={input.Dash} Jump={input.Jump} DashEnabled={penitent.Dash.enabled} " +
+            $"P{guestSlot + 1} Dashing() attempt: Dash={guestInput.Dash} Jump={guestInput.Jump} DashEnabled={penitent.Dash.enabled} " +
             $"ReadyToUse={(playerDash != null ? playerDash.ReadyToUse.ToString() : "null")} IsGrabbingCliffLede={penitent.IsGrabbingCliffLede} " +
             $"IsHurt={penitent.Status.IsHurt} Dead={penitent.Status.Dead} StandUpAfterDash={penitent.Dash.StandUpAfterDash} " +
-            $"IsChargingAttack={penitent.IsChargingAttack} Blocked={input.Blocked} IsFallingStunt={penitent.IsFallingStunt} " +
+            $"IsChargingAttack={penitent.IsChargingAttack} Blocked={guestInput.Blocked} IsFallingStunt={penitent.IsFallingStunt} " +
             $"(frame {Time.frameCount})");
+        return true;
     }
 }
 
@@ -576,19 +670,19 @@ internal static class DashBehaviour_OnStateUpdate_Patch
     private static bool Prefix(DashBehaviour __instance, Animator animator, AnimatorStateInfo stateInfo)
     {
         Penitent owner = animator.GetComponentInParent<Penitent>();
-        if (owner == null || owner != CoopLocal.Player2)
+        if (owner == null || !CoopLocal.IsGuestPlayer(owner, out int guestSlot))
         {
             return true;
         }
 
-        bool left = Player2Input.Left;
-        bool right = Player2Input.Right;
-        bool crouchAxis = Player2Input.Down;
-        bool attackUpAxis = Player2Input.Up;
-        bool jumpHeld = Player2Input.JumpHeld;
-        bool attackPressed = Player2Input.AttackDown;
-        bool attackReleased = Player2Input.AttackUp;
-        bool parryPressed = Player2Input.ParryDown;
+        bool left = Player2Input.GetLeft(guestSlot);
+        bool right = Player2Input.GetRight(guestSlot);
+        bool crouchAxis = Player2Input.GetDown(guestSlot);
+        bool attackUpAxis = Player2Input.GetUp(guestSlot);
+        bool jumpHeld = Player2Input.GetJumpHeld(guestSlot);
+        bool attackPressed = Player2Input.GetAttackDown(guestSlot);
+        bool attackReleased = Player2Input.GetAttackUp(guestSlot);
+        bool parryPressed = Player2Input.GetParryDown(guestSlot);
 
         if (stateInfo.normalizedTime > 0.9f && owner.Dash.IsUpperBlocked && !(bool)AddExtraDashField.GetValue(__instance))
         {
@@ -606,9 +700,9 @@ internal static class DashBehaviour_OnStateUpdate_Patch
         }
         if (attackPressed && stateInfo.normalizedTime < 1f)
         {
-            DashParryDebugLog.Log($"P2 Dash CastLungeAttack pre-invoke owner={DashParryDebugLog.Label(owner)} DashBehaviour={__instance.GetInstanceID()} penitent={owner.GetInstanceID()} frame {Time.frameCount}");
+            DashParryDebugLog.Log($"P{guestSlot + 1} Dash CastLungeAttack pre-invoke owner={DashParryDebugLog.Label(owner)} DashBehaviour={__instance.GetInstanceID()} penitent={owner.GetInstanceID()} frame {Time.frameCount}");
             bool castResult = (bool)CastLungeAttackMethod.Invoke(__instance, null);
-            DashParryDebugLog.Log($"P2 Dash CastLungeAttack post-invoke result={castResult} owner={DashParryDebugLog.Label(owner)} frame {Time.frameCount}");
+            DashParryDebugLog.Log($"P{guestSlot + 1} Dash CastLungeAttack post-invoke result={castResult} owner={DashParryDebugLog.Label(owner)} frame {Time.frameCount}");
             if (castResult)
             {
                 return false;

@@ -1,4 +1,4 @@
-using Framework.FrameworkCore;
+﻿using Framework.FrameworkCore;
 using Framework.Inventory;
 using Framework.Managers;
 using Gameplay.GameControllers.Effects.Player.Protection;
@@ -370,7 +370,7 @@ internal static class PenitentGuardianEffect_InstantiateGuardian_P2_Patch
                 PenitentGuardianField.SetValue(__instance, guardianObj);
                 Gameplay.GameControllers.Effects.Player.PenitentGuardian comp =
                     guardianObj.GetComponent<Gameplay.GameControllers.Effects.Player.PenitentGuardian>();
-                comp.SetOrientation(__instance.currentHit);
+                comp.SetOrientation((Hit)AccessTools.Field(typeof(Framework.Inventory.ObjectEffect), "currentHit").GetValue(__instance));
             }
             return false;
         }
@@ -380,7 +380,7 @@ internal static class PenitentGuardianEffect_InstantiateGuardian_P2_Patch
             guardianObj.GetComponent<Gameplay.GameControllers.Effects.Player.PenitentGuardian>();
         if (!comp2.IsTriggered)
         {
-            comp2.SetOrientation(__instance.currentHit);
+            comp2.SetOrientation((Hit)AccessTools.Field(typeof(Framework.Inventory.ObjectEffect), "currentHit").GetValue(__instance));
             guardianObj.transform.position = position;
         }
         return false;

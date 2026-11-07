@@ -297,7 +297,7 @@ internal static class Ability_UpdateInput_Patch
 {
     private static bool Prefix(Ability __instance)
     {
-        return __instance.EntityOwner != CoopLocal.Player2;
+        return !CoopLocal.IsGuestPlayer(__instance.EntityOwner as Penitent, out _);
     }
 }
 

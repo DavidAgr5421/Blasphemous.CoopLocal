@@ -40,6 +40,16 @@ internal static class CoopMenuOwnerBanner
         CoopPlayerSlot slot = CoopPlayerRegistry.GetSlot(playerIndex);
         string title = slot.MenuTitle; // ej. "Baby menu" o "Pan-chan menu"
 
+        Color goldenColor = new Color(0.808f, 0.722f, 0.498f, 1f);
+        if (widget != null && TabLabelField != null)
+        {
+            Text templateText = TabLabelField.GetValue(widget) as Text;
+            if (templateText != null && templateText.color.a > 0.1f)
+            {
+                goldenColor = templateText.color;
+            }
+        }
+
         // 1. Etiqueta nativa con UnityEngine.UI.Text ("Majestic") dentro de NewInventoryWidget
         if (widget != null)
         {
@@ -50,7 +60,7 @@ internal static class CoopMenuOwnerBanner
                 if (inventoryActive)
                 {
                     inventoryBannerText.text = title;
-                    inventoryBannerText.color = slot.LabelColor;
+                    inventoryBannerText.color = goldenColor;
                 }
             }
         }
@@ -64,7 +74,7 @@ internal static class CoopMenuOwnerBanner
             if (showOverlay)
             {
                 overlayBannerTmp.text = title;
-                overlayBannerTmp.color = slot.LabelColor;
+                overlayBannerTmp.color = goldenColor;
             }
         }
     }
@@ -197,6 +207,7 @@ internal static class NewInventoryWidget_Show_P2View_Patch
         else
         {
             CoopMenuOwnerBanner.Refresh(__instance);
+            MenuPurgeDisplaySync.RefreshAllMenuPurgeCounters(__instance);
         }
         Player2HudFadeSync.RefreshMenuOcclusion();
     }
@@ -249,6 +260,7 @@ internal static class NewInventoryWidget_ShowSkills_P2View_Patch
         else
         {
             CoopMenuOwnerBanner.Refresh(__instance);
+            MenuPurgeDisplaySync.RefreshAllMenuPurgeCounters(__instance);
         }
         Player2HudFadeSync.RefreshMenuOcclusion();
     }
@@ -285,6 +297,8 @@ internal static class UIController_MenuNavigation_P2_Patch
             return;
         }
 
+        MenuPurgeDisplaySync.RefreshAllMenuPurgeCounters(widget);
+
         // Si un guest tiene el menú abierto y el jugador con teclado presiona LeftShift (su tecla de Dash/Cancelar rápida),
         // permitir volver atrás sin duplicar Escape (que ya maneja Rewired Player 0 en UIController.Update).
         if (Player2MenuView.IsInventoryP2View)
@@ -296,6 +310,7 @@ internal static class UIController_MenuNavigation_P2_Patch
                 Input.GetKeyDown(KeyCode.LeftShift) &&
                 !Input.GetKeyDown(KeyCode.Escape))
             {
+                Player2MenuView.LastMenuToggleFrame = Time.frameCount;
                 widget.GoBack();
                 return;
             }

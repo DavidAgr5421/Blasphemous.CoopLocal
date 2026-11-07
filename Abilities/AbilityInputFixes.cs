@@ -57,13 +57,26 @@ internal static class Parry_ParryInput_Patch
     private static bool Prefix(Parry __instance, ref bool __result)
     {
         Penitent owner = __instance.GetComponentInParent<Penitent>();
-        if (owner == null || !CoopLocal.IsGuestPlayer(owner, out int guestSlot))
+        if (owner == null)
         {
             return true;
         }
 
-        __result = Player2Input.GetParryDown(guestSlot);
-        return false;
+        if (CoopLocal.IsGuestPlayer(owner, out int guestSlot))
+        {
+            __result = Player2Input.GetParryDown(guestSlot);
+            return false;
+        }
+
+        if (owner == Core.Logic.Penitent)
+        {
+            bool p1Rewired = __instance.Rewired != null && __instance.Rewired.GetButtonDown(38);
+            bool p1Custom = Player2Input.GetParryDown(0);
+            __result = p1Rewired || p1Custom;
+            return false;
+        }
+
+        return true;
     }
 }
 

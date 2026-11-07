@@ -42,6 +42,7 @@ internal static class CoopGameConfig
 {
     public static bool IsCoopEnabled = true;
     public static int PlayerCount = 2; // 1 a 4
+    public static bool EnableElementalUpgrades = true;
 
     // Configuración visual del árbol elemental (posición y escala calibradas por el usuario)
     public static float TreeOffsetX = -2.0f;
@@ -245,6 +246,7 @@ internal static class CoopGameConfig
         {
             StringBuilder sb = new StringBuilder();
             sb.AppendLine($"IsCoopEnabled={IsCoopEnabled}");
+            sb.AppendLine($"EnableElementalUpgrades={EnableElementalUpgrades}");
             sb.AppendLine($"PlayerCount={PlayerCount}");
             sb.AppendLine($"TreeOffsetX={TreeOffsetX.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
             sb.AppendLine($"TreeOffsetY={TreeOffsetY.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
@@ -292,6 +294,10 @@ internal static class CoopGameConfig
                 if (key.Equals("IsCoopEnabled", StringComparison.OrdinalIgnoreCase))
                 {
                     if (bool.TryParse(val, out bool b)) IsCoopEnabled = b;
+                }
+                else if (key.Equals("EnableElementalUpgrades", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (bool.TryParse(val, out bool b)) EnableElementalUpgrades = b;
                 }
                 else if (key.Equals("PlayerCount", StringComparison.OrdinalIgnoreCase))
                 {
