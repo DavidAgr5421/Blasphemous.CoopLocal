@@ -51,30 +51,25 @@ internal static class PrieDieu_ShallowActivationLogic_HealPlayer2_Patch
     {
         if (Player1DeathState.IsPendingRevive())
         {
-            Player1DeathState.ClearPendingRevive();
             Penitent p1 = Core.Logic.Penitent;
             if (p1 != null)
             {
-                p1.Status.Dead = false;
-                p1.DeathEventLaunched = false;
-                p1.Stats.Life.SetToCurrentMax();
-                PlayerDeathFixShared.EnableAbilitiesMethod?.Invoke(p1, new object[] { true });
-                PlayerDeathFixShared.EnableTraitsMethod?.Invoke(p1, new object[] { true });
-                if (p1.DamageArea != null)
-                {
-                    p1.DamageArea.IncludeEnemyLayer(true);
-                }
-                p1.Animator.Play("Idle");
+                PlayerDeathFixShared.RestoreP1FromDownedHiddenState(p1);
             }
         }
 
-        if (Player2DeathState.IsPendingRevive())
+        bool anyPendingGuest = false;
+        for (int p = 1; p < CoopPlayerRegistry.MaxPlayers; p++)
         {
-            Player2DeathState.ClearPendingRevive();
-            if (CoopLocal.Player2 == null)
+            if (Player2DeathState.IsPendingRevive(p))
             {
-                CoopLocal.SpawnPlayer2(Core.Logic.Penitent, Core.Logic.Penitent.transform.position);
+                Player2DeathState.ClearPendingRevive(p);
+                anyPendingGuest = true;
             }
+        }
+        if (anyPendingGuest && Core.Logic?.Penitent != null)
+        {
+            CoopLocal.SpawnAllGuestPlayers(Core.Logic.Penitent);
         }
         Penitent p2 = CoopLocal.Player2;
         if (p2 == null)

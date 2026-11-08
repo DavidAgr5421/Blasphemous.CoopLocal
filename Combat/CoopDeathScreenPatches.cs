@@ -170,3 +170,36 @@ internal static class DeadScreenWidget_OnDeadDemake_Transpiler_Patch
         }
     }
 }
+
+[HarmonyPatch(typeof(Gameplay.UI.Others.Buttons.DeadScreenWidget), "OnPenitentReady")]
+internal static class DeadScreenWidget_OnPenitentReady_Patch
+{
+    private static void Prefix(Gameplay.UI.Others.Buttons.DeadScreenWidget __instance, Gameplay.GameControllers.Penitent.Penitent penitent)
+    {
+        if (penitent != null)
+        {
+            penitent.OnDead = (Framework.Managers.Core.SimpleEvent)System.Delegate.Remove(penitent.OnDead, new Framework.Managers.Core.SimpleEvent(__instance.OnDead));
+        }
+        DeadScreenWidget_OnDead_Guard_Patch.IsDeadScreenActive = false;
+    }
+}
+
+[HarmonyPatch(typeof(Gameplay.UI.Others.Buttons.DeadScreenWidget), "OnDead")]
+internal static class DeadScreenWidget_OnDead_Guard_Patch
+{
+    internal static bool IsDeadScreenActive = false;
+
+    private static bool Prefix()
+    {
+        if (IsDeadScreenActive)
+        {
+            if (Main.CoopLocal != null)
+            {
+                Blasphemous.ModdingAPI.ModLog.Warn("[CoopDeath] DeadScreenWidget.OnDead skipped: screen already active.", Main.CoopLocal);
+            }
+            return false;
+        }
+        IsDeadScreenActive = true;
+        return true;
+    }
+}

@@ -520,6 +520,5 @@ internal static class LevelManager_ChangeLevel_Targeting_Patch
     private static void Prefix()
     {
         EnemyTargetingSystem.Clear();
-        Penitent_OnUpdate_P2Death_Patch.IsAllDeadEventLaunched = false;
     }
 }

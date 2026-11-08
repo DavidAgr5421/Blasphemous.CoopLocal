@@ -132,11 +132,39 @@ public class CoopLocal : BlasMod
             return;
         }
         PrieDieuCoopSync.Reset();
+
+        if (Player1DeathState.IsPendingRevive() && PlayerDeathFixShared.AreAnyOtherPlayersAlive(Core.Logic.Penitent))
+        {
+            PlayerDeathFixShared.PutP1InDownedHiddenState(Core.Logic.Penitent);
+        }
+
         foreach (var extra in GetAllExtraPlayers())
         {
             if (extra != null)
             {
                 CopyLayersRecursively(Core.Logic.Penitent.transform, extra.transform);
+                int slot = CoopPlayerRegistry.GetPlayerIndex(extra);
+                if (slot > 0 && !Player2DeathState.IsPendingRevive(slot) && !extra.Status.Dead)
+                {
+                    if (extra.Physics != null)
+                    {
+                        extra.Physics.EnablePhysics(true);
+                        extra.Physics.EnableColliders(true);
+                    }
+                    if (extra.DamageArea != null)
+                    {
+                        extra.DamageArea.enabled = true;
+                        if (extra.DamageArea.DamageAreaCollider != null)
+                        {
+                            extra.DamageArea.DamageAreaCollider.enabled = true;
+                        }
+                    }
+                    if (extra.PlatformCharacterController != null)
+                    {
+                        extra.PlatformCharacterController.enabled = true;
+                    }
+                    PlayerLogicBlocker.SetBlocked(extra, false);
+                }
             }
         }
     }
@@ -145,6 +173,7 @@ public class CoopLocal : BlasMod
     private void OnPlayerSpawn(Penitent p1)
     {
         Penitent_OnUpdate_P2Death_Patch.IsAllDeadEventLaunched = false;
+        PlayerDeathFixShared.IsRespawningAllPlayers = false;
 
         CleanupAllExtraPlayers();
 
@@ -158,9 +187,14 @@ public class CoopLocal : BlasMod
             return;
         }
 
-        if (Player2DeathState.IsPendingRevive())
+        if (Player1DeathState.IsPendingRevive() && PlayerDeathFixShared.AreAnyOtherPlayersAlive(p1))
         {
-            return;
+            p1.SpriteRenderer.enabled = false;
+            p1.Status.CastShadow = false;
+            if (p1.DamageArea?.DamageAreaCollider != null)
+            {
+                p1.DamageArea.DamageAreaCollider.enabled = false;
+            }
         }
 
         SpawnAllGuestPlayers(p1);
@@ -187,7 +221,10 @@ public class CoopLocal : BlasMod
         {
             Player2SkillManager.Persist();
             Player2InventoryManager.Persist();
-            Player2StatsSync.SaveCurrentVitals(p, slot);
+            if (!PlayerDeathFixShared.IsRespawningAllPlayers && !Player2DeathState.IsPendingRevive(slot) && !p.Status.Dead)
+            {
+                Player2StatsSync.SaveCurrentVitals(p, slot);
+            }
         }
         Object.Destroy(p.gameObject);
     }
@@ -208,18 +245,21 @@ public class CoopLocal : BlasMod
         int activeCount = Mathf.Clamp(CoopGameConfig.PlayerCount, 2, 4);
 
         // Spawn P2
-        Vector3 p2Pos = p1.transform.position + new Vector3(-0.6f, 0f, 0f);
-        Player2 = SpawnSingleGuestPlayer(p1, 1, p2Pos);
+        if (!Player2DeathState.IsPendingRevive(1))
+        {
+            Vector3 p2Pos = p1.transform.position + new Vector3(-0.6f, 0f, 0f);
+            Player2 = SpawnSingleGuestPlayer(p1, 1, p2Pos);
+        }
 
         // Spawn P3
-        if (activeCount >= 3)
+        if (activeCount >= 3 && !Player2DeathState.IsPendingRevive(2))
         {
             Vector3 p3Pos = p1.transform.position + new Vector3(0.6f, 0f, 0f);
             Player3 = SpawnSingleGuestPlayer(p1, 2, p3Pos);
         }
 
         // Spawn P4
-        if (activeCount >= 4)
+        if (activeCount >= 4 && !Player2DeathState.IsPendingRevive(3))
         {
             Vector3 p4Pos = p1.transform.position + new Vector3(1.2f, 0f, 0f);
             Player4 = SpawnSingleGuestPlayer(p1, 3, p4Pos);

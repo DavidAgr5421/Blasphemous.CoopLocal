@@ -23,24 +23,14 @@ internal static class PrieDieuCoopSync
     {
         if (Player1DeathState.IsPendingRevive())
         {
-            Player1DeathState.ClearPendingRevive();
             Penitent p1 = Core.Logic.Penitent;
             if (p1 != null)
             {
-                p1.Status.Dead = false;
-                p1.DeathEventLaunched = false;
-                p1.Stats.Life.SetToCurrentMax();
                 if (interactorAnimator != null)
                 {
                     p1.transform.position = interactorAnimator.transform.position;
                 }
-                PlayerDeathFixShared.EnableAbilitiesMethod?.Invoke(p1, new object[] { true });
-                PlayerDeathFixShared.EnableTraitsMethod?.Invoke(p1, new object[] { true });
-                if (p1.DamageArea != null)
-                {
-                    p1.DamageArea.IncludeEnemyLayer(true);
-                }
-                p1.Animator.Play("Idle");
+                PlayerDeathFixShared.RestoreP1FromDownedHiddenState(p1);
             }
         }
 
@@ -53,9 +43,9 @@ internal static class PrieDieuCoopSync
                 anyPending = true;
             }
         }
-        if (anyPending && CoopLocal.Player2 == null && Core.Logic?.Penitent != null)
+        if (anyPending && Core.Logic?.Penitent != null)
         {
-            CoopLocal.SpawnPlayer2(Core.Logic.Penitent, Core.Logic.Penitent.transform.position);
+            CoopLocal.SpawnAllGuestPlayers(Core.Logic.Penitent);
         }
 
         foreach (var extra in CoopLocal.GetAllExtraPlayers())

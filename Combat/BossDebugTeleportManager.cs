@@ -235,7 +235,8 @@ internal static class BossDebugTeleportManager
             originalFlags.Clear();
         }
 
-        // Limpiar el estado de muerte pendiente de los jugadores cooperativos para que reaparezcan vivos
+        // Limpiar el estado de muerte pendiente de todos los jugadores para que reaparezcan vivos
+        Player1DeathState.ClearPendingRevive();
         for (int i = 1; i < CoopPlayerRegistry.MaxPlayers; i++)
         {
             Player2DeathState.ClearPendingRevive(i);

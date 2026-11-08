@@ -50,7 +50,7 @@ internal static class Interactable_InteractionTriggered_Patch
             if (GlobalBlockerTracker.AnyGlobalBlocker(guest)) continue;
 
             int slot = CoopPlayerRegistry.GetPlayerIndex(guest);
-            if (slot > 0 && Player2Input.GetInteractDown(slot))
+            if (slot > 0 && (Player2Input.GetInteractDown(slot) || Player2Input.GetUp(slot)))
             {
                 if (guest.IsJumping && !interactableWhileJumping) continue;
                 if (guest.IsGrabbingCliffLede) continue;
@@ -517,5 +517,155 @@ internal static class Execution_OnUse_Patch
             executor.IsOnExecution = false;
             PlayerLogicBlocker.SetBlocked(executor, false);
         }
+    }
+}
+
+
+[HarmonyPatch(typeof(Door), "get_EnterTriggered")]
+internal static class Door_EnterTriggered_Coop_Patch
+{
+    private static void Postfix(Door __instance, ref bool __result)
+    {
+        if (__result) return;
+        foreach (var guest in CoopLocal.GetAllExtraPlayers())
+        {
+            if (guest == null || guest.Status == null || guest.Status.Dead) continue;
+            int slot = CoopPlayerRegistry.GetPlayerIndex(guest);
+            if (slot > 0)
+            {
+                if (Player2Input.GetUp(slot) || Player2Input.GetInteractDown(slot))
+                {
+                    __result = true;
+                    return;
+                }
+            }
+        }
+    }
+}
+
+[HarmonyPatch(typeof(Door), "EnterDoor")]
+internal static class Door_EnterDoor_Coop_Patch
+{
+    private static readonly FieldInfo LadderRequiredField = AccessTools.Field(typeof(Door), "ladderRequired");
+
+    private static bool Prefix(Door __instance)
+    {
+        bool ladderRequired = (bool)LadderRequiredField.GetValue(__instance);
+        bool canClimb = false;
+        if (!ladderRequired)
+        {
+            canClimb = true;
+        }
+        else
+        {
+            if (Core.Logic?.Penitent != null && Core.Logic.Penitent.IsClimbingLadder)
+            {
+                canClimb = true;
+            }
+            else
+            {
+                foreach (var guest in CoopLocal.GetAllExtraPlayers())
+                {
+                    if (guest != null && !guest.Status.Dead && guest.IsClimbingLadder)
+                    {
+                        canClimb = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (!canClimb)
+        {
+            return false;
+        }
+
+        // Si P1 esta muerto (PendingRevive), revivirlo temporalmente para que la transicion guarde datos validos
+        if (Player1DeathState.IsPendingRevive() && Core.Logic?.Penitent != null)
+        {
+            PlayerDeathFixShared.TemporarilyReviveP1ForTransition(Core.Logic.Penitent);
+        }
+
+        // Congelar fisicas y dano de todos los invitados durante el cambio de sala
+        foreach (var extra in CoopLocal.GetAllExtraPlayers())
+        {
+            if (extra != null)
+            {
+                if (extra.Physics != null)
+                {
+                    extra.Physics.EnablePhysics(false);
+                    extra.Physics.EnableColliders(false);
+                }
+                if (extra.DamageArea?.DamageAreaCollider != null)
+                {
+                    extra.DamageArea.DamageAreaCollider.enabled = false;
+                }
+                if (extra.PlatformCharacterController != null)
+                {
+                    extra.PlatformCharacterController.InstantVelocity = Vector3.zero;
+                    extra.PlatformCharacterController.enabled = false;
+                }
+            }
+        }
+
+        return true;
+    }
+}
+
+[HarmonyPatch(typeof(Interactable), "OnEntityExit")]
+internal static class Interactable_OnEntityExit_Coop_Patch
+{
+    private static void Postfix(Interactable __instance, Entity entity)
+    {
+        if (entity != null && entity.CompareTag("Penitent"))
+        {
+            if (IsAnyLivingPlayerInSensors(__instance))
+            {
+                __instance.PlayerInRange = true;
+            }
+        }
+    }
+
+    private static bool IsAnyLivingPlayerInSensors(Interactable interactable)
+    {
+        if (interactable == null) return false;
+        var sensorsField = AccessTools.Field(typeof(Interactable), "sensors");
+        var sensors = sensorsField?.GetValue(interactable) as CollisionSensor[];
+        if (sensors == null || sensors.Length == 0) return false;
+
+        Penitent p1 = Core.Logic?.Penitent;
+        if (p1 != null && !p1.Status.Dead && !Player1DeathState.IsPendingRevive())
+        {
+            if (IsPenitentInSensors(p1, sensors)) return true;
+        }
+
+        foreach (var extra in CoopLocal.GetAllExtraPlayers())
+        {
+            if (extra != null && !extra.Status.Dead)
+            {
+                int slot = CoopPlayerRegistry.GetPlayerIndex(extra);
+                if (slot > 0 && !Player2DeathState.IsPendingRevive(slot))
+                {
+                    if (IsPenitentInSensors(extra, sensors)) return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static bool IsPenitentInSensors(Penitent p, CollisionSensor[] sensors)
+    {
+        Collider2D pCol = p.GetComponentInChildren<Collider2D>();
+        if (pCol == null) return false;
+        for (int i = 0; i < sensors.Length; i++)
+        {
+            if (sensors[i] == null) continue;
+            Collider2D sCol = sensors[i].GetComponent<Collider2D>();
+            if (sCol != null && sCol.bounds.Intersects(pCol.bounds))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 }
