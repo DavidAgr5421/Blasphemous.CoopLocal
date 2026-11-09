@@ -270,10 +270,15 @@ internal static class BossDebugTeleportManager
             Blasphemous.ModdingAPI.ModLog.Info($"[BossDebug] Regresando a la ubicación original: {savedLevelName} en {savedPosition}", Main.CoopLocal);
         }
 
-        Core.SpawnManager.SpawnFromCustom(usefade: true);
-
-        IsDebugBossFightActive = false;
-        HasSavedOrigin = false;
+        try
+        {
+            Core.SpawnManager.SpawnFromCustom(usefade: true);
+        }
+        finally
+        {
+            IsDebugBossFightActive = false;
+            HasSavedOrigin = false;
+        }
     }
 
     public static void OnLevelLoaded(Level oldLevel, Level newLevel)

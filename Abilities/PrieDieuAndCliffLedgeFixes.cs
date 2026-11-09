@@ -141,7 +141,7 @@ internal static class GrabCliffLede_Update_DebugLogger_Patch
         if (state != lastLoggedState)
         {
             lastLoggedState = state;
-            DashParryDebugLog.Log($"P2 GrabCliffLede.Update: {state} (frame {Time.frameCount})");
+            // Logging disabled to prevent massive disk write spam
         }
     }
 }

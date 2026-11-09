@@ -36,83 +36,147 @@ using UnityEngine.UI;
 
 namespace Blasphemous.CoopLocal;
 
-// Round 37: second HUD widget for P2, per the user's request to extend Player2HealthBar's
-// approach to Fervour too. Same clone-then-redirect mechanism, with one extra wrinkle
-// PlayerHealth didn't have: PlayerFervour.Awake() does `Instance = this` unconditionally (a
-// static singleton - other code, e.g. Healing.Heal()'s spark effect, calls
-// PlayerFervour.Instance.ShowSpark() expecting P1's real bar). Cloning it would otherwise
-// silently steal the global Instance for the clone and break that for P1 - EnsureCreated resets
-// Instance back to the original immediately after creating the clone to prevent this;
-// Player2FervourBar.Instance (not the static PlayerFervour.Instance) is what every patch below
-// actually checks against.
-//
-// Decompiling PlayerFervour turned up FIVE separate methods independently hardcoding
-// Core.Logic.Penitent (BarTarget, CalculateBarSize, CalculateFillsBars, CalculateMarks,
-// CalculateBarPentalty) - more than PlayerHealth's two. Reimplemented here, following the same
-// proven approach: CalculateBarSize (controls the bar's rendered width - the most visually
-// broken without a fix) and CalculateFillsBars (the actual fill-amount animation, computed
-// directly from P2's own stats rather than through the possibly-inlined BarTarget getter, same
-// as PlayerHealth's CalculateHealthBar/CalculateLossBar). CalculateMarks (segment tick marks) and
-// CalculateBarPentalty (the "guilt" overlay bar) are NOT reimplemented yet - known gap, left
-// running unmodified (so they'll still read P1's numbers for those two specific visual details)
-// rather than guessing their IL translations blind on top of everything else this round already
-// covers; revisit if the user reports those specific pieces looking wrong for P2.
-internal static class Player2FervourBar
+internal class FervourBarSlotInfo
 {
-    // Round 44: was a const - promoted to a mutable field so Player2HudPositionTuner's "." / "-"
-    // scale keys can adjust it live.
-    internal static float Scale = 0.65f;
+    public int SlotIndex;
+    public PlayerFervour Instance;
+    public PlayerFlask FlaskInstance;
+    public GameObject InstanceRoot;
+    public float Scale = 0.65f;
+    public Vector2 AnchoredPosition;
 
-    // PlayerFervour.Instance's setter is private (Awake() calls it on itself) - reflection is the
-    // only way to reset the global singleton back to the original after the clone's own Awake()
-    // steals it.
-    private static readonly FieldInfo GlobalInstanceField =
-        AccessTools.Field(typeof(PlayerFervour), "<Instance>k__BackingField");
+    public RectTransform CloneRect => InstanceRoot != null ? InstanceRoot.GetComponent<RectTransform>() : null;
 
-    // Round 45: final position, re-confirmed by the user via live Player2HudPositionTuner testing
-    // (stacked below Health, which renders on top per the z-order fix).
-    internal static Vector2 AnchoredPosition = new Vector2(-75f, 7f);
-
-    internal static PlayerFervour Instance { get; private set; }
-
-    // Round 40: PlayerFlask ("Flask0"/"Flask1"/... potion sprites) lives as a sibling inside the
-    // same "LeftPart" hierarchy this class already clones wholesale (see the class comment above -
-    // follow-up #8's sibling dump listed "Flask" alongside "Fervour Bar"/"Penitence"/etc) - it
-    // rides along as an unpatched, un-redirected duplicate unless something registers and
-    // redirects it too, which is exactly why P2's potion count was frozen showing P1's count from
-    // the moment of cloning (4 slots, never decreasing) instead of P2's own (2 slots, live).
-    internal static PlayerFlask FlaskInstance { get; private set; }
-
-    internal static RectTransform CloneRect => instanceRoot != null ? instanceRoot.GetComponent<RectTransform>() : null;
-    private static PlayerFervour originalCache;
-    private static GameObject instanceRoot;
-
-    // Round 56: see Player2HudFadeSync - same "clone doesn't hide with the vanilla fade" fix as
-    // Player2HealthBar.SetVisible. Round 57: now an alpha fade via HudFade instead of a binary
-    // pop - see HealthHUD.cs's own SetVisible comment.
-    internal static void SetVisible(bool visible, bool instant = false)
+    public void BringToFront()
     {
-        HudFade.SetVisible(instanceRoot, visible, instant);
+        if (InstanceRoot != null)
+        {
+            InstanceRoot.transform.SetAsLastSibling();
+        }
     }
 
-    internal static void EnsureCreated(Penitent p2)
+    public void SetVisible(bool visible, bool instant = false)
     {
-        if (instanceRoot != null)
+        HudFade.SetVisible(InstanceRoot, visible, instant);
+    }
+}
+
+internal static class CoopFervourBars
+{
+    private static readonly FervourBarSlotInfo[] slots = new FervourBarSlotInfo[4];
+    private static PlayerFervour originalCache;
+    private static readonly FieldInfo GlobalInstanceField = AccessTools.Field(typeof(PlayerFervour), "<Instance>k__BackingField");
+    private static readonly FieldInfo LastBarWidthField = AccessTools.Field(typeof(PlayerFervour), "lastBarWidth");
+    private static readonly MethodInfo CalculateBarSizeMethod = AccessTools.Method(typeof(PlayerFervour), "CalculateBarSize");
+    private static readonly MethodInfo CalculateFillsBarsMethod = AccessTools.Method(typeof(PlayerFervour), "CalculateFillsBars");
+
+    static CoopFervourBars()
+    {
+        for (int i = 0; i < 4; i++)
         {
-            UnityEngine.Object.Destroy(instanceRoot);
-            instanceRoot = null;
-            Instance = null;
-            FlaskInstance = null;
+            slots[i] = new FervourBarSlotInfo { SlotIndex = i };
+        }
+    }
+
+    internal static FervourBarSlotInfo GetSlot(int slotIndex)
+    {
+        if (slotIndex >= 0 && slotIndex < slots.Length)
+            return slots[slotIndex];
+        return null;
+    }
+
+    internal static PlayerFervour OriginalFervour
+    {
+        get
+        {
+            if (originalCache == null)
+            {
+                originalCache = UnityEngine.Object.FindObjectOfType<PlayerFervour>();
+            }
+            return originalCache;
+        }
+    }
+
+    internal static RectTransform P1FervourRect
+    {
+        get
+        {
+            var orig = OriginalFervour;
+            if (orig == null) return null;
+            Transform parent = orig.transform.parent;
+            return (parent != null ? parent : orig.transform) as RectTransform;
+        }
+    }
+
+    internal static int GetSlotForInstance(PlayerFervour fervour)
+    {
+        if (fervour == null) return -1;
+        for (int i = 1; i < slots.Length; i++)
+        {
+            if (slots[i] != null && slots[i].Instance == fervour)
+                return i;
+        }
+        if (fervour == OriginalFervour) return 0;
+        return -1;
+    }
+
+    internal static int GetSlotForFlaskInstance(PlayerFlask flask)
+    {
+        if (flask == null) return -1;
+        for (int i = 1; i < slots.Length; i++)
+        {
+            if (slots[i] != null && slots[i].FlaskInstance == flask)
+                return i;
+        }
+        return -1;
+    }
+
+    internal static void BringToFrontAll()
+    {
+        for (int i = 1; i < slots.Length; i++)
+        {
+            slots[i]?.BringToFront();
+        }
+    }
+
+    internal static void SetVisibleAll(bool visible, bool instant = false)
+    {
+        for (int i = 1; i < slots.Length; i++)
+        {
+            slots[i]?.SetVisible(visible, instant);
+        }
+    }
+
+    internal static void DestroySlot(int slotIndex)
+    {
+        if (slotIndex <= 0 || slotIndex >= slots.Length) return;
+        FervourBarSlotInfo slot = slots[slotIndex];
+        if (slot?.InstanceRoot != null)
+        {
+            UnityEngine.Object.Destroy(slot.InstanceRoot);
+            slot.InstanceRoot = null;
+            slot.Instance = null;
+            slot.FlaskInstance = null;
+        }
+    }
+
+    internal static void EnsureCreated(int slotIndex, Penitent penitent)
+    {
+        if (slotIndex <= 0 || slotIndex >= slots.Length) return;
+        FervourBarSlotInfo slot = slots[slotIndex];
+
+        if (slot.InstanceRoot != null)
+        {
+            UnityEngine.Object.Destroy(slot.InstanceRoot);
+            slot.InstanceRoot = null;
+            slot.Instance = null;
+            slot.FlaskInstance = null;
         }
 
-        if (originalCache == null)
+        PlayerFervour original = OriginalFervour;
+        if (original == null || penitent == null)
         {
-            originalCache = UnityEngine.Object.FindObjectOfType<PlayerFervour>();
-        }
-        PlayerFervour original = originalCache;
-        if (original == null || p2 == null)
-        {
-            DashParryDebugLog.Log($"Player2FervourBar.EnsureCreated: aborted - original PlayerFervour found={original != null}, p2 found={p2 != null}");
+            DashParryDebugLog.Log($"CoopFervourBars.EnsureCreated: cancelado para P{slotIndex + 1} - original={original != null}, penitent={penitent != null}");
             return;
         }
 
@@ -120,10 +184,7 @@ internal static class Player2FervourBar
         while (canvas != null && canvas.transform.parent != null)
         {
             Canvas parentCanvas = canvas.transform.parent.GetComponentInParent<Canvas>();
-            if (parentCanvas == null)
-            {
-                break;
-            }
+            if (parentCanvas == null) break;
             canvas = parentCanvas;
         }
         Transform cloneParent = canvas != null ? canvas.transform : original.transform.parent;
@@ -132,35 +193,165 @@ internal static class Player2FervourBar
         GameObject sourceToClone = originalParent != null ? originalParent.gameObject : original.gameObject;
 
         GameObject cloneObject = UnityEngine.Object.Instantiate(sourceToClone, cloneParent);
-        cloneObject.name = "PlayerFervour_P2";
-        instanceRoot = cloneObject;
-        Instance = cloneObject.GetComponentInChildren<PlayerFervour>();
-        FlaskInstance = cloneObject.GetComponentInChildren<PlayerFlask>();
+        cloneObject.name = $"PlayerFervour_P{slotIndex + 1}";
+        slot.InstanceRoot = cloneObject;
+        slot.Instance = cloneObject.GetComponentInChildren<PlayerFervour>();
+        slot.FlaskInstance = cloneObject.GetComponentInChildren<PlayerFlask>();
 
-        // Round 57: see Player2HealthBar.EnsureCreated's own comment - same start-hidden priming.
-        HudFade.PrepareHidden(instanceRoot);
+        HudFade.PrepareHidden(slot.InstanceRoot);
 
-        // Undo the clone's own Awake() stealing the global static Instance - see class comment.
-        if (Instance != null)
+        // Restaurar el singleton estático de P1
+        if (slot.Instance != null && GlobalInstanceField != null)
         {
             GlobalInstanceField.SetValue(null, original);
+        }
+
+        if (slot.Instance != null && LastBarWidthField != null)
+        {
+            LastBarWidthField.SetValue(slot.Instance, -1f);
         }
 
         RectTransform rect = cloneObject.GetComponent<RectTransform>();
         if (rect != null)
         {
-            // Same bottom-right corner as Player2HealthBar, positioned via AnchoredPosition above.
-            rect.anchorMin = new Vector2(1f, 0f);
-            rect.anchorMax = new Vector2(1f, 0f);
-            rect.pivot = new Vector2(1f, 0f);
-            rect.anchoredPosition = AnchoredPosition;
-            rect.localScale *= Scale;
+            bool is3Plus = CoopGameConfig.PlayerCount >= 3;
+            var cfg = HudLayoutConfig.Current;
+
+            if (slotIndex == 1) // P2
+            {
+                if (!is3Plus)
+                {
+                    // Modo 2 Jugadores: esquina inferior derecha (idéntico al original)
+                    rect.anchorMin = new Vector2(1f, 0f);
+                    rect.anchorMax = new Vector2(1f, 0f);
+                    rect.pivot = new Vector2(1f, 0f);
+                    slot.Scale = cfg.p2_fervour_2p.scale;
+                    slot.AnchoredPosition = cfg.p2_fervour_2p.Position;
+                }
+                else
+                {
+                    // Modo 3-4 Jugadores: esquina superior derecha, configurable independientemente
+                    rect.anchorMin = new Vector2(1f, 1f);
+                    rect.anchorMax = new Vector2(1f, 1f);
+                    rect.pivot = new Vector2(1f, 1f);
+                    if (cfg.isCustomSaved && cfg.p2_fervour != null)
+                    {
+                        slot.Scale = cfg.p2_fervour.scale;
+                        slot.AnchoredPosition = cfg.p2_fervour.Position;
+                    }
+                    else
+                    {
+                        slot.Scale = cfg.p2_health.scale;
+                        slot.AnchoredPosition = cfg.p2_health.Position + new Vector2(44f * slot.Scale, 27f * slot.Scale);
+                    }
+                }
+            }
+            else if (slotIndex == 2) // P3
+            {
+                // Modo 3-4 Jugadores: esquina superior izquierda, configurable independientemente
+                rect.anchorMin = new Vector2(0f, 1f);
+                rect.anchorMax = new Vector2(0f, 1f);
+                rect.pivot = new Vector2(0f, 1f);
+                if (cfg.isCustomSaved && cfg.p3_fervour != null)
+                {
+                    slot.Scale = cfg.p3_fervour.scale;
+                    slot.AnchoredPosition = cfg.p3_fervour.Position;
+                }
+                else
+                {
+                    slot.Scale = cfg.p3_health.scale;
+                    slot.AnchoredPosition = cfg.p3_health.Position + new Vector2(44f * slot.Scale, 27f * slot.Scale);
+                }
+            }
+            else if (slotIndex == 3) // P4
+            {
+                // Modo 3-4 Jugadores: esquina superior derecha, configurable independientemente
+                rect.anchorMin = new Vector2(1f, 1f);
+                rect.anchorMax = new Vector2(1f, 1f);
+                rect.pivot = new Vector2(1f, 1f);
+                if (cfg.isCustomSaved && cfg.p4_fervour != null)
+                {
+                    slot.Scale = cfg.p4_fervour.scale;
+                    slot.AnchoredPosition = cfg.p4_fervour.Position;
+                }
+                else
+                {
+                    slot.Scale = cfg.p4_health.scale;
+                    slot.AnchoredPosition = cfg.p4_health.Position + new Vector2(44f * slot.Scale, 27f * slot.Scale);
+                }
+            }
+
+            rect.anchoredPosition = slot.AnchoredPosition;
+            rect.localScale = Vector3.one * slot.Scale;
         }
 
-        DashParryDebugLog.Log(
-            $"Player2FervourBar.EnsureCreated: cloned from '{sourceToClone.name}', foundPlayerFervour={Instance != null}, " +
-            $"globalInstanceRestored={(PlayerFervour.Instance == original)}, foundPlayerFlask={FlaskInstance != null}");
+        if (HudLayoutConfig.Current.isCustomSaved && (HudLayoutConfig.Current.p1_fervour.x != 0f || HudLayoutConfig.Current.p1_fervour.y != 0f))
+        {
+            var p1Fervour = P1FervourRect;
+            if (p1Fervour != null)
+            {
+                p1Fervour.anchoredPosition = HudLayoutConfig.Current.p1_fervour.Position;
+                p1Fervour.localScale = Vector3.one * HudLayoutConfig.Current.p1_fervour.scale;
+            }
+        }
+
+        if (slot.Instance != null)
+        {
+            if (CalculateBarSizeMethod != null) CalculateBarSizeMethod.Invoke(slot.Instance, null);
+            if (CalculateFillsBarsMethod != null) CalculateFillsBarsMethod.Invoke(slot.Instance, null);
+        }
     }
+
+    internal static void UpdatePositionAttachedToHealth(int slotIndex, Vector2 healthPos, float healthScale)
+    {
+        if (slotIndex <= 0 || slotIndex >= slots.Length) return;
+        FervourBarSlotInfo slot = slots[slotIndex];
+        if (slot == null || slot.CloneRect == null) return;
+
+        bool is3Plus = CoopGameConfig.PlayerCount >= 3;
+        if (slotIndex == 1 && !is3Plus)
+        {
+            return;
+        }
+
+        var cfg = HudLayoutConfig.Current;
+        var fPos = cfg.GetFervourConfig(slotIndex);
+        if (cfg.isCustomSaved && fPos != null && (fPos.x != 0f || fPos.y != 0f))
+        {
+            slot.Scale = fPos.scale;
+            slot.AnchoredPosition = fPos.Position;
+        }
+        else
+        {
+            slot.Scale = healthScale;
+            slot.AnchoredPosition = healthPos + new Vector2(44f * healthScale, 27f * healthScale);
+        }
+        slot.CloneRect.anchoredPosition = slot.AnchoredPosition;
+        slot.CloneRect.localScale = Vector3.one * slot.Scale;
+    }
+}
+
+// Facade compatible con el código existente
+internal static class Player2FervourBar
+{
+    internal static float Scale
+    {
+        get => CoopFervourBars.GetSlot(1).Scale;
+        set => CoopFervourBars.GetSlot(1).Scale = value;
+    }
+
+    internal static Vector2 AnchoredPosition
+    {
+        get => CoopFervourBars.GetSlot(1).AnchoredPosition;
+        set => CoopFervourBars.GetSlot(1).AnchoredPosition = value;
+    }
+
+    internal static PlayerFervour Instance => CoopFervourBars.GetSlot(1)?.Instance;
+    internal static PlayerFlask FlaskInstance => CoopFervourBars.GetSlot(1)?.FlaskInstance;
+    internal static RectTransform CloneRect => CoopFervourBars.GetSlot(1)?.CloneRect;
+
+    internal static void SetVisible(bool visible, bool instant = false) => CoopFervourBars.SetVisibleAll(visible, instant);
+    internal static void EnsureCreated(Penitent p2) => CoopFervourBars.EnsureCreated(1, p2);
 }
 
 [HarmonyPatch(typeof(PlayerFervour), "get_BarTarget")]
@@ -168,32 +359,15 @@ internal static class PlayerFervour_BarTarget_P2_Patch
 {
     private static void Postfix(PlayerFervour __instance, ref float __result)
     {
-        if (__instance != Player2FervourBar.Instance)
-        {
-            return;
-        }
-        Penitent p2 = CoopLocal.Player2;
-        __result = p2 != null ? p2.Stats.Fervour.Current / p2.Stats.Fervour.CurrentMaxWithoutFactor : 0f;
+        int slot = CoopFervourBars.GetSlotForInstance(__instance);
+        if (slot <= 0) return;
+        Penitent p = CoopPlayerRegistry.GetPenitent(slot);
+        __result = (p != null && p.Stats != null && p.Stats.Fervour != null && p.Stats.Fervour.CurrentMaxWithoutFactor > 0f)
+            ? p.Stats.Fervour.Current / p.Stats.Fervour.CurrentMaxWithoutFactor
+            : 0f;
     }
 }
 
-// Round 41: the user reported the cloned Fervour bar frozen - never changing or resetting, even
-// though CalculateBarSize/CalculateFillsBars below were already correctly redirected. Root cause:
-// those two are only ever CALLED from Update() when `lastValue != this.BarTarget` - and Update()
-// itself was never patched, so it's still running vanilla, reading BarTarget through a plain
-// `call` to the small property getter. That's the exact same "small property likely gets JIT-
-// inlined past a Harmony Postfix" risk already proven real for PlayerHealth's own BarTarget (see
-// that class's comments) - if Update()'s own BarTarget read is inlined, it keeps comparing
-// against *P1's* ratio internally, so unless P1's Fervour happens to change too, the "did it
-// change" check never trips and CalculateBarSize/CalculateFillsBars simply never get called for
-// P2's clone at all - leaving it stuck at whatever it displayed at spawn. Fixed by reimplementing
-// Update() itself (mirroring PlayerHealth's CalculateHealthBar/CalculateLossBar being fully
-// reimplemented rather than just patching what they call) - computing barTarget directly from
-// P2's own stats, then invoking the *already-patched* CalculateBarSize/CalculateFillsBars
-// methods via reflection (Harmony patches the underlying method itself, so a reflection Invoke()
-// call from here still runs through those Prefixes correctly - no inlining risk for this call
-// site since it's our own C# code, not vanilla's). CalculateMarks/CalculateBarPentalty are still
-// unpatched (existing known gap - they'll run with their own internal Core.Logic.Penitent reads).
 [HarmonyPatch(typeof(PlayerFervour), "Update")]
 internal static class PlayerFervour_Update_P2_Patch
 {
@@ -212,56 +386,20 @@ internal static class PlayerFervour_Update_P2_Patch
     private static readonly FieldInfo DiagFillExactField = AccessTools.Field(typeof(PlayerFervour), "fillExact");
     private static readonly FieldInfo DiagFillAnimableField = AccessTools.Field(typeof(PlayerFervour), "fillAnimable");
 
-    // Round 43: the HIT and MISS branches previously shared one throttle counter - since both
-    // P1's real instance (MISS) and P2's clone (HIT) call Update() every frame, whichever one
-    // Unity happened to process first each frame "won" the shared 60-frame window and starved the
-    // other branch's log out entirely - confirmed live (an entire test session only ever logged
-    // MISS lines, never once HIT, even though the user's own report proves P2's bar *does*
-    // respond). Separate counters per branch so both get logged independently.
-    private static int lastLoggedMissFrame = -999;
-    private static int lastLoggedHitFrame = -999;
-
     private static bool Prefix(PlayerFervour __instance)
     {
-        if (__instance != Player2FervourBar.Instance)
+        int slot = CoopFervourBars.GetSlotForInstance(__instance);
+        if (slot <= 0)
         {
-            if (Main.CoopLocal != null && Time.frameCount - lastLoggedMissFrame >= 60)
-            {
-                lastLoggedMissFrame = Time.frameCount;
-                Penitent owner = __instance.GetComponentInParent<Penitent>();
-                // Fervour bars live under a UI Canvas, not physically parented under the Penitent
-                // transform - GetComponentInParent<Penitent>() reliably returns null for *every*
-                // PlayerFervour instance (P1's real one included), confirmed live, so it can't be
-                // used to identify which instance this is. Not chasing that further this round.
-                Blasphemous.ModdingAPI.ModLog.Info(
-                    $"[FervourDiag] Update() MISS: instance={__instance.GetInstanceID()} owner={DashParryDebugLog.Label(owner)} " +
-                    $"Player2FervourBar.Instance={(Player2FervourBar.Instance != null ? Player2FervourBar.Instance.GetInstanceID().ToString() : "null")} " +
-                    $"gameObject='{__instance.gameObject.name}' active={__instance.gameObject.activeInHierarchy}",
-                    Main.CoopLocal);
-            }
             return true;
         }
-        Penitent p2 = CoopLocal.Player2;
-        if (p2 == null)
+        Penitent p = CoopPlayerRegistry.GetPenitent(slot);
+        if (p == null || p.Stats == null || p.Stats.Fervour == null)
         {
             return false;
         }
 
-        if (Main.CoopLocal != null && Time.frameCount - lastLoggedHitFrame >= 60)
-        {
-            lastLoggedHitFrame = Time.frameCount;
-            Image diagFillExact = (Image)DiagFillExactField.GetValue(__instance);
-            Image diagFillAnimable = (Image)DiagFillAnimableField.GetValue(__instance);
-            Blasphemous.ModdingAPI.ModLog.Info(
-                $"[FervourDiag] Update() HIT: instance={__instance.GetInstanceID()} P2.Fervour.Current={p2.Stats.Fervour.Current:F1} " +
-                $"P2.Fervour.CurrentMaxWithoutFactor={p2.Stats.Fervour.CurrentMaxWithoutFactor:F1} lastValue={LastValueField.GetValue(__instance)} " +
-                $"fillExact.fillAmount={(diagFillExact != null ? diagFillExact.fillAmount.ToString("F3") : "null")} " +
-                $"fillAnimable.fillAmount={(diagFillAnimable != null ? diagFillAnimable.fillAmount.ToString("F3") : "null")} " +
-                $"gameObject='{__instance.gameObject.name}' active={__instance.gameObject.activeInHierarchy}",
-                Main.CoopLocal);
-        }
-
-        PrayerUse prayerCast = p2.PrayerCast;
+        PrayerUse prayerCast = p.PrayerCast;
         bool isUsing = prayerCast != null && prayerCast.IsUsingAbility;
         bool useStocksOfHealth = Core.PenitenceManager.UseStocksOfHealth;
         ((GameObject)NormalPrayerInUseField.GetValue(__instance)).SetActive(isUsing && !useStocksOfHealth);
@@ -270,21 +408,8 @@ internal static class PlayerFervour_Update_P2_Patch
         float castFillAmount = isUsing ? 1f - prayerCast.GetPercentTimeCasting() : 0f;
         ((Image)PrayerTimerField.GetValue(__instance)).fillAmount = castFillAmount;
 
-        // Round 40 fix: decompiled the REAL Update() body with ICSharpCode.Decompiler (actual C#,
-        // not raw IL) and it does NOT gate CalculateBarSize/CalculateFillsBars/CalculateMarks/
-        // CalculateNotEnough behind "did barTarget change" the way round 41's version (and this
-        // Prefix, until now) assumed - vanilla calls all four UNCONDITIONALLY every single Update()
-        // tick. The "if (lastValue != barTarget)" check only resets fillsIncrease/lastValue/
-        // _timeElapsed (the direction/timer for the lerp animation) - it is NOT a call-gate. Putting
-        // the four Calculate calls inside that gate (as before) meant CalculateFillsBars - which
-        // does the actual per-frame Mathf.Lerp animation toward BarTarget - only ever ran ONCE per
-        // change instead of continuously, so the fill visually took one lerp step and then froze
-        // until the target changed again. This was the best explanation found for "no se actualiza
-        // en tiempo real" via static analysis - **the user still reports it broken after this fix**
-        // (round 42), so either this wasn't the whole story or something else is also wrong; the
-        // enriched [FervourDiag] log above is there to pin down which from real data.
-        float barTarget = p2.Stats.Fervour.CurrentMaxWithoutFactor > 0f
-            ? p2.Stats.Fervour.Current / p2.Stats.Fervour.CurrentMaxWithoutFactor
+        float barTarget = p.Stats.Fervour.CurrentMaxWithoutFactor > 0f
+            ? p.Stats.Fervour.Current / p.Stats.Fervour.CurrentMaxWithoutFactor
             : 0f;
         float lastValue = (float)LastValueField.GetValue(__instance);
         if (!Mathf.Approximately(lastValue, barTarget))
@@ -298,7 +423,7 @@ internal static class PlayerFervour_Update_P2_Patch
         CalculateMarksMethod.Invoke(__instance, null);
         CalculateNotEnoughMethod.Invoke(__instance, null);
 
-        float maxFervour = p2.Stats.Fervour.CurrentMaxWithoutFactor;
+        float maxFervour = p.Stats.Fervour.CurrentMaxWithoutFactor;
         float lastMaxFervour = (float)LastMaxFervourField.GetValue(__instance);
         if (!Mathf.Approximately(maxFervour, lastMaxFervour))
         {
@@ -324,17 +449,18 @@ internal static class PlayerFervour_CalculateBarSize_P2_Patch
 
     private static bool Prefix(PlayerFervour __instance)
     {
-        if (__instance != Player2FervourBar.Instance)
+        int slot = CoopFervourBars.GetSlotForInstance(__instance);
+        if (slot <= 0)
         {
             return true;
         }
-        Penitent p2 = CoopLocal.Player2;
-        if (p2 == null)
+        Penitent p = CoopPlayerRegistry.GetPenitent(slot);
+        if (p == null || p.Stats == null || p.Stats.Fervour == null)
         {
             return false;
         }
 
-        float maxWithoutFactor = p2.Stats.Fervour.CurrentMaxWithoutFactor;
+        float maxWithoutFactor = p.Stats.Fervour.CurrentMaxWithoutFactor;
         float lastBarWidth = (float)LastBarWidthField.GetValue(__instance);
         if (maxWithoutFactor == lastBarWidth)
         {
@@ -376,18 +502,19 @@ internal static class PlayerFervour_CalculateFillsBars_P2_Patch
 
     private static bool Prefix(PlayerFervour __instance)
     {
-        if (__instance != Player2FervourBar.Instance)
+        int slot = CoopFervourBars.GetSlotForInstance(__instance);
+        if (slot <= 0)
         {
             return true;
         }
-        Penitent p2 = CoopLocal.Player2;
-        if (p2 == null)
+        Penitent p = CoopPlayerRegistry.GetPenitent(slot);
+        if (p == null || p.Stats == null || p.Stats.Fervour == null)
         {
             return false;
         }
 
-        float barTarget = p2.Stats.Fervour.Current / p2.Stats.Fervour.CurrentMaxWithoutFactor;
-        float maxWithoutFactor = p2.Stats.Fervour.CurrentMaxWithoutFactor;
+        float barTarget = p.Stats.Fervour.Current / p.Stats.Fervour.CurrentMaxWithoutFactor;
+        float maxWithoutFactor = p.Stats.Fervour.CurrentMaxWithoutFactor;
         float timeElapsed = (float)TimeElapsedField.GetValue(__instance) + Time.deltaTime;
         TimeElapsedField.SetValue(__instance, timeElapsed);
 
@@ -413,10 +540,6 @@ internal static class PlayerFervour_CalculateFillsBars_P2_Patch
                 Vector3 sparkPos = spark.transform.localPosition;
                 spark.transform.localPosition = new Vector3(sparkX, sparkPos.y);
             }
-            // Round 40: real decompiled source sets this unconditionally at the end of the
-            // fillsIncrease branch (both the "reached target" and "still lerping" paths), not only
-            // inside the lerping else - the previous version left fillAnimable one step stale on
-            // the exact frame the target is reached.
             fillAnimable.fillAmount = fillExact.fillAmount;
         }
         else
@@ -438,18 +561,6 @@ internal static class PlayerFervour_CalculateFillsBars_P2_Patch
     }
 }
 
-// Round 43: found the real cause of "reduce el fervor a 0 igual aparece en el HUD como a la
-// mitad" - CalculateMarks() was the one remaining unredirected Calculate method (documented as a
-// "tick marks" known gap since round 37/38, but it turns out to control far more than cosmetic
-// tick marks). It computes `fillExactFull.fillAmount` - a *visible* fill layer rendered alongside
-// fillExact/fillAnimable (both already correctly redirected) - straight from
-// Core.Logic.Penitent.Stats.Fervour.Current (always P1). Since P1 and P2's Fervour *max* now
-// matches after the stat-sync feature, the segment/tick-mark *positions* this method computes
-// (based on CurrentMax) happen to come out identical either way - but the *fill ratio itself*
-// (based on Current, which genuinely differs per player) was still showing P1's percentage
-// regardless of P2's real value, which is exactly the "stuck at half" symptom reported. Full
-// reimplementation, mirroring CalculateBarSize/CalculateFillsBars's own approach - every
-// Core.Logic.Penitent read redirected to p2, private fields/method accessed via reflection.
 [HarmonyPatch(typeof(PlayerFervour), "CalculateMarks")]
 internal static class PlayerFervour_CalculateMarks_P2_Patch
 {
@@ -472,26 +583,29 @@ internal static class PlayerFervour_CalculateMarks_P2_Patch
 
     private static bool Prefix(PlayerFervour __instance)
     {
-        if (__instance != Player2FervourBar.Instance)
+        int slot = CoopFervourBars.GetSlotForInstance(__instance);
+        if (slot <= 0)
         {
             return true;
         }
-        Penitent p2 = CoopLocal.Player2;
-        if (p2 == null)
+        Penitent p = CoopPlayerRegistry.GetPenitent(slot);
+        if (p == null || p.Stats == null || p.Stats.Fervour == null)
         {
             return false;
         }
 
         int num = 0;
         float num2 = 0f;
-        Framework.Inventory.Prayer prayerInSlot = Player2InventoryManager.GetEquippedPrayerObj();
-        int num3 = prayerInSlot != null ? prayerInSlot.fervourNeeded + (int)p2.Stats.PrayerCostAddition.Final : 0;
+        Framework.Inventory.Prayer prayerInSlot = (slot == 1)
+            ? Player2InventoryManager.GetEquippedPrayerObj()
+            : Player2InventoryManager.GetEquippedPrayerObj(slot);
+        int num3 = prayerInSlot != null ? prayerInSlot.fervourNeeded + (int)p.Stats.PrayerCostAddition.Final : 0;
         Image fillExactFull = (Image)FillExactFullField.GetValue(__instance);
         if (num3 > 0)
         {
-            num = (int)p2.Stats.Fervour.CurrentMax / num3;
-            num2 = (int)p2.Stats.Fervour.Current / num3;
-            fillExactFull.fillAmount = num2 * num3 / p2.Stats.Fervour.CurrentMaxWithoutFactor;
+            num = (int)p.Stats.Fervour.CurrentMax / num3;
+            num2 = (int)p.Stats.Fervour.Current / num3;
+            fillExactFull.fillAmount = num2 * num3 / p.Stats.Fervour.CurrentMaxWithoutFactor;
         }
         else
         {
@@ -499,7 +613,7 @@ internal static class PlayerFervour_CalculateMarks_P2_Patch
         }
 
         float epsilonToShowLastBar = (float)EpsilonToShowLastBarField.GetValue(__instance);
-        bool showLastBar = p2.Stats.Fervour.CurrentMax - num3 * num > epsilonToShowLastBar;
+        bool showLastBar = p.Stats.Fervour.CurrentMax - num3 * num > epsilonToShowLastBar;
         bool skippedAnimReset = false;
         float restPosition = -num3 + 1f;
 
@@ -590,5 +704,3 @@ internal static class PlayerFervour_CalculateMarks_P2_Patch
         return false;
     }
 }
-
-

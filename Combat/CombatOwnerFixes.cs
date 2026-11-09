@@ -282,6 +282,132 @@ internal static class AttackArea_SetOffset_DebugLog_Patch
         lastLogged[__instance] = offset;
         DashParryDebugLog.Log($"{DashParryDebugLog.Label(owner)} AttackArea.SetOffset -> {offset} (frame {Time.frameCount})");
     }
+
+
+// Ronda 91: Corrige AttackBehaviour.OnStateUpdate para clones P2-P4.
+// En vanilla lee Rewired.GetAxis(0) que siempre lee el eje horizontal de P1,
+// girando a P2 o reseteando su combo cuando P1 se mueve.
+[HarmonyPatch(typeof(AttackBehaviour), "OnStateUpdate")]
+internal static class AttackBehaviour_OnStateUpdate_OwnerAxis_Patch
+{
+    private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(AttackBehaviour), "_penitent");
+    private static readonly MethodInfo SetOrientationMethod = AccessTools.Method(typeof(AttackBehaviour), "SetOrientation");
+
+    private static bool Prefix(AttackBehaviour __instance, Animator animator, AnimatorStateInfo stateInfo)
+    {
+        Penitent owner = (Penitent)PenitentField.GetValue(__instance);
+        if (owner == null)
+        {
+            owner = animator.GetComponentInParent<Penitent>();
+            if (owner != null) PenitentField.SetValue(__instance, owner);
+        }
+
+        if (owner == null || !CoopLocal.IsGuestPlayer(owner, out int guestSlot))
+        {
+            return true; // P1 usa la lógica original
+        }
+
+        if (owner.Status.IsGrounded && !animator.GetCurrentAnimatorStateInfo(0).IsName("Combo_3"))
+        {
+            float axis = (Player2Input.GetRight(guestSlot) ? 1f : 0f) - (Player2Input.GetLeft(guestSlot) ? 1f : 0f);
+            SetOrientationMethod?.Invoke(__instance, new object[] { axis, animator });
+        }
+
+        return true; // El resto de OnStateUpdate corre normalmente con _penitent ya resuelto
+    }
 }
 
+// Ronda 91: Corrige CancelComboBehaviour (cancelar combo a Dash o Parry).
+// Vanilla asigna `Penitent = Core.Logic.Penitent;` de forma estricta a P1 y lee Rewired de P1.
+[HarmonyPatch(typeof(CancelComboBehaviour), "OnStateEnter")]
+internal static class CancelComboBehaviour_OnStateEnter_Patch
+{
+    private static readonly PropertyInfo PenitentProp = AccessTools.Property(typeof(CancelComboBehaviour), "Penitent");
 
+    private static void Prefix(CancelComboBehaviour __instance, Animator animator)
+    {
+        Penitent owner = animator.GetComponentInParent<Penitent>();
+        if (owner != null)
+        {
+            PenitentProp.SetValue(__instance, owner, null);
+        }
+    }
+}
+
+[HarmonyPatch(typeof(CancelComboBehaviour), "OnStateUpdate")]
+internal static class CancelComboBehaviour_OnStateUpdate_Patch
+{
+    private static readonly PropertyInfo PenitentProp = AccessTools.Property(typeof(CancelComboBehaviour), "Penitent");
+
+    private static void Prefix(CancelComboBehaviour __instance, Animator animator)
+    {
+        Penitent owner = animator.GetComponentInParent<Penitent>();
+        if (owner != null)
+        {
+            PenitentProp.SetValue(__instance, owner, null);
+            if (CoopLocal.IsGuestPlayer(owner, out int guestSlot))
+            {
+                if (Player2Input.GetParryDown(guestSlot))
+                {
+                    owner.CancelEffect?.PlayCancelEffect();
+                    owner.Parry?.StopCast();
+                    owner.Animator.SetBool("PARRY", true);
+                    owner.Animator.Play(Animator.StringToHash("ParryChance"));
+                }
+                else if (Player2Input.GetDashDown(guestSlot) || Player2Input.GetDashHeld(guestSlot))
+                {
+                    owner.CancelEffect?.PlayCancelEffect();
+                    owner.Parry?.StopCast();
+                    owner.Animator.SetTrigger("DASH");
+                    owner.Animator.ResetTrigger("JUMP");
+                    owner.Animator.SetBool("DASHING", true);
+                    owner.Dash?.Cast();
+                }
+            }
+        }
+    }
+}
+
+// Ronda 91: Corrige GroundAttackSubStateBehaviour para que IsRunningParry compruebe
+// el estado del dueño real en vez de Core.Logic.Penitent.Parry (P1).
+[HarmonyPatch(typeof(GroundAttackSubStateBehaviour), "OnStateEnter")]
+internal static class GroundAttackSubStateBehaviour_OnStateEnter_Patch
+{
+    private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(GroundAttackSubStateBehaviour), "_penitent");
+
+    private static void Prefix(GroundAttackSubStateBehaviour __instance, Animator animator)
+    {
+        Penitent owner = animator.GetComponentInParent<Penitent>();
+        if (owner != null)
+        {
+            PenitentField.SetValue(__instance, owner);
+        }
+    }
+}
+
+// Ronda 92: Corrige GroundAttackSubStateBehaviour.IsRunningParry para que verifique
+// el componente Parry del dueno real (P1..P4) en vez del hardcodeado Core.Logic.Penitent.Parry.
+[HarmonyPatch(typeof(GroundAttackSubStateBehaviour), "IsRunningParry")]
+internal static class GroundAttackSubStateBehaviour_IsRunningParry_Patch
+{
+    private static bool Prefix(GroundAttackSubStateBehaviour __instance, Animator animator, ref bool __result)
+    {
+        Penitent owner = animator != null ? animator.GetComponentInParent<Penitent>() : null;
+        if (owner == null) return true;
+
+        Parry parry = owner.Parry;
+        if (parry == null)
+        {
+            __result = false;
+            return false;
+        }
+
+        var state = animator.GetCurrentAnimatorStateInfo(0);
+        bool flag = state.IsName("ParryFailed") || parry.IsRunningParryAnim;
+        bool casting = parry.Casting;
+        __result = flag || casting;
+        return false;
+    }
+}
+
+}

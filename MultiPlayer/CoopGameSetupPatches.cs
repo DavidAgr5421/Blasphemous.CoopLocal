@@ -21,7 +21,7 @@ internal static class SelectSaveSlots_OnAcceptSlots_CoopSetup_Patch
     private static bool Prefix(SelectSaveSlots __instance, int idxSlot)
     {
         if (BypassIntercept) return true;
-        if (CoopGameSetupUI.IsOpen || SuppressVanillaSaveSlotsFrames > 0) return false;
+        if (CoopGameSetupUI.IsOpen || CoopJoinLobbyUI.IsOpen || SuppressVanillaSaveSlotsFrames > 0) return false;
         if (!__instance.IsShowing) return true;
 
         var slotsField = AccessTools.Field(typeof(SelectSaveSlots), "slots");
@@ -168,8 +168,29 @@ internal static class SelectSaveSlots_Update_CoopSetup_Shortcut_Patch
 {
     private static void Postfix(SelectSaveSlots __instance)
     {
-        if (!__instance.IsShowing || __instance.IsConfirming || CoopGameSetupUI.IsOpen) return;
+        if (!__instance.IsShowing || __instance.IsConfirming || CoopGameSetupUI.IsOpen || CoopJoinLobbyUI.IsOpen) return;
 
+        // Tecla J: Unirse a Partida Online (Join Lobby)
+        if (Input.GetKeyDown(KeyCode.J))
+        {
+            CoopJoinLobbyUI.Show(
+                onJoined: () =>
+                {
+                    SelectSaveSlots_OnAcceptSlots_CoopSetup_Patch.SuppressVanillaSaveSlotsFrames = 5;
+                    if (Main.CoopLocal != null)
+                    {
+                        Blasphemous.ModdingAPI.ModLog.Info("[JoinUI] Jugador unido a sala online. Esperando sesión...", Main.CoopLocal);
+                    }
+                },
+                onBack: () =>
+                {
+                    SelectSaveSlots_OnAcceptSlots_CoopSetup_Patch.SuppressVanillaSaveSlotsFrames = 3;
+                }
+            );
+            return;
+        }
+
+        // Tecla C / F4: Configurar partida Coop (Host)
         if (Input.GetKeyDown(KeyCode.C) || Input.GetKeyDown(KeyCode.F4))
         {
             int curSlot = __instance.SelectedSlot;
@@ -190,6 +211,21 @@ internal static class SelectSaveSlots_Update_CoopSetup_Shortcut_Patch
                         slotData.HasCompletedSetup = true;
                         CoopSaveManager.SaveSlot(curSlot);
                     }
+
+                    // Si algún jugador está configurado como RemoteSteam, crear el lobby de Steam como Host
+                    if (CoopGameConfig.Slots[1].Device == CoopDeviceType.RemoteSteam ||
+                        CoopGameConfig.Slots[2].Device == CoopDeviceType.RemoteSteam ||
+                        CoopGameConfig.Slots[3].Device == CoopDeviceType.RemoteSteam)
+                    {
+                        CoopLobbyManager.Instance.CreateHostLobby((success, code) =>
+                        {
+                            if (success && Main.CoopLocal != null)
+                            {
+                                Blasphemous.ModdingAPI.ModLog.Info($"[Host] Sala Steam creada con código: {code}", Main.CoopLocal);
+                            }
+                        });
+                    }
+
                     SelectSaveSlots_OnAcceptSlots_CoopSetup_Patch.SuppressVanillaSaveSlotsFrames = 3;
                     if (curSlot >= 0) __instance.OnSelectedSlots(curSlot);
                 },
@@ -200,6 +236,43 @@ internal static class SelectSaveSlots_Update_CoopSetup_Shortcut_Patch
                 }
             );
         }
+    }
+}
+
+/// <summary>
+/// Muestra un banner explicativo en la parte inferior de la pantalla de selección de slots
+/// para que el usuario conozca los atajos para crear o unirse a partidas.
+/// </summary>
+[HarmonyPatch(typeof(SelectSaveSlots), "OnGUI")]
+internal static class SelectSaveSlots_OnGUI_CoopHint_Patch
+{
+    private static GUIStyle hintStyle;
+
+    private static void Postfix(SelectSaveSlots __instance)
+    {
+        if (!__instance.IsShowing || CoopGameSetupUI.IsOpen || CoopJoinLobbyUI.IsOpen) return;
+
+        if (hintStyle == null)
+        {
+            hintStyle = new GUIStyle(GUI.skin.label)
+            {
+                alignment = TextAnchor.MiddleCenter,
+                fontSize = 16,
+                fontStyle = FontStyle.Bold
+            };
+            hintStyle.normal.textColor = new Color(1f, 0.88f, 0.45f, 0.95f);
+        }
+
+        string hint = "[C / F4] Crear/Configurar Partida Co-op   |   [J] Unirse a Partida Online (Join)";
+        float w = 720f;
+        float h = 32f;
+        float x = (Screen.width - w) * 0.5f;
+        float y = Screen.height - 45f;
+
+        GUI.color = new Color(0.04f, 0.04f, 0.06f, 0.78f);
+        GUI.DrawTexture(new Rect(x - 12f, y - 4f, w + 24f, h + 8f), Texture2D.whiteTexture);
+        GUI.color = Color.white;
+        GUI.Label(new Rect(x, y, w, h), hint, hintStyle);
     }
 }
 

@@ -105,6 +105,11 @@ internal static class CoopPlayerRegistry
         }
     }
 
+    internal static void UnregisterInstance(int playerIndex)
+    {
+        RegisterInstance(playerIndex, null);
+    }
+
     internal static bool TryGetSlot(Penitent penitent, out CoopPlayerSlot slot)
     {
         if (penitent == null)

@@ -550,6 +550,17 @@ internal static class Door_EnterDoor_Coop_Patch
 
     private static bool Prefix(Door __instance)
     {
+        if (Core.LevelManager != null && Core.LevelManager.InsideChangeLevel)
+        {
+            return false;
+        }
+
+        // Anti-infinite loop: prevent autoEnter doors from re-triggering for 1.2s after entering a room
+        if (__instance.autoEnter && UnityEngine.Time.time < CoopLocal.LastDoorTransitionTime + 1.2f)
+        {
+            return false;
+        }
+
         bool ladderRequired = (bool)LadderRequiredField.GetValue(__instance);
         bool canClimb = false;
         if (!ladderRequired)

@@ -6,7 +6,7 @@ using UnityEngine;
 
 namespace Blasphemous.CoopLocal;
 
-// Sincronización integral de visibilidad del HUD de P2 (salud, fervor, matraces y lágrimas):
+// Sincronización integral de visibilidad del HUD cooperativo (salud, fervor, matraces y lágrimas):
 // Se oculta automáticamente cuando el HUD de P1 está oculto por:
 // - Fundidos de pantalla (FadeWidget)
 // - Cinemáticas y Cutscenes (CinematicBars / MustShowGamePlayUI == false)
@@ -69,6 +69,9 @@ internal static class Player2HudFadeSync
     /// </summary>
     internal static bool ShouldP2HudBeVisible()
     {
+        // Si el editor interactivo de layout está abierto, NUNCA ocultar los elementos de HUD
+        if (HudLayoutDebugEditor.IsOpen) return true;
+
         // 1. Fundido activo a negro o cargando
         if (IsScreenFading()) return false;
 
@@ -115,6 +118,10 @@ internal static class Player2HudFadeSync
     internal static bool ShouldP2PurgeBeVisible()
     {
         if (!ShouldP2HudBeVisible()) return false;
+        if (CoopGameConfig.PlayerCount >= 3)
+        {
+            return true;
+        }
         GameplayWidget gw = Core.UI?.GameplayUI;
         if (gw != null && RightPartRootField != null)
         {
@@ -127,9 +134,10 @@ internal static class Player2HudFadeSync
     internal static void HideAllInstant()
     {
         isP2HudCurrentlyVisible = false;
-        Player2HealthBar.SetVisible(false, instant: true);
-        Player2FervourBar.SetVisible(false, instant: true);
+        CoopHealthBars.SetVisibleAll(false, instant: true);
+        CoopFervourBars.SetVisibleAll(false, instant: true);
         Player2PurgePoints.SetVisible(false, instant: true);
+        CoopPurgeHUD.SetVisible(false, instant: true);
         Player2ModeIndicator.SetMenuOverlayHidden(true);
     }
 
@@ -137,10 +145,38 @@ internal static class Player2HudFadeSync
     {
         if (IsScreenFading()) return;
         isP2HudCurrentlyVisible = true;
-        Player2HealthBar.SetVisible(true, instant: true);
-        Player2FervourBar.SetVisible(true, instant: true);
-        Player2PurgePoints.SetVisible(ShouldP2PurgeBeVisible(), instant: true);
+        CoopHealthBars.SetVisibleAll(true, instant: true);
+        CoopFervourBars.SetVisibleAll(true, instant: true);
+
+        if (CoopGameConfig.PlayerCount >= 3)
+        {
+            CoopPurgeHUD.SetVisible(ShouldP2PurgeBeVisible(), instant: true);
+            Player2PurgePoints.SetVisible(false, instant: true);
+            HideVanillaRightPartIn3Plus();
+        }
+        else
+        {
+            Player2PurgePoints.SetVisible(ShouldP2PurgeBeVisible(), instant: true);
+            CoopPurgeHUD.SetVisible(false, instant: true);
+        }
+
         Player2ModeIndicator.SetMenuOverlayHidden(false);
+    }
+
+    private static void HideVanillaRightPartIn3Plus()
+    {
+        if (CoopGameConfig.PlayerCount >= 3)
+        {
+            GameplayWidget gw = Core.UI?.GameplayUI;
+            if (gw != null && RightPartRootField != null)
+            {
+                var rightRoot = RightPartRootField.GetValue(gw) as GameObject;
+                if (rightRoot != null && rightRoot.activeSelf)
+                {
+                    rightRoot.SetActive(false);
+                }
+            }
+        }
     }
 
     internal static void SyncVisibility(bool instant = false)
@@ -152,16 +188,29 @@ internal static class Player2HudFadeSync
             isP2HudCurrentlyVisible = shouldBeVisible;
             if (shouldBeVisible)
             {
-                Player2HealthBar.SetVisible(true, instant);
-                Player2FervourBar.SetVisible(true, instant);
-                Player2PurgePoints.SetVisible(ShouldP2PurgeBeVisible(), instant);
+                CoopHealthBars.SetVisibleAll(true, instant);
+                CoopFervourBars.SetVisibleAll(true, instant);
+
+                if (CoopGameConfig.PlayerCount >= 3)
+                {
+                    CoopPurgeHUD.SetVisible(ShouldP2PurgeBeVisible(), instant);
+                    Player2PurgePoints.SetVisible(false, instant);
+                    HideVanillaRightPartIn3Plus();
+                }
+                else
+                {
+                    Player2PurgePoints.SetVisible(ShouldP2PurgeBeVisible(), instant);
+                    CoopPurgeHUD.SetVisible(false, instant);
+                }
+
                 Player2ModeIndicator.SetMenuOverlayHidden(false);
             }
             else
             {
-                Player2HealthBar.SetVisible(false, instant);
-                Player2FervourBar.SetVisible(false, instant);
+                CoopHealthBars.SetVisibleAll(false, instant);
+                CoopFervourBars.SetVisibleAll(false, instant);
                 Player2PurgePoints.SetVisible(false, instant);
+                CoopPurgeHUD.SetVisible(false, instant);
                 Player2ModeIndicator.SetMenuOverlayHidden(true);
             }
         }
@@ -169,7 +218,17 @@ internal static class Player2HudFadeSync
         {
             // Sincronización fina de Purge (monedas) según el estado de rightPartRoot
             bool purgeVisible = ShouldP2PurgeBeVisible();
-            Player2PurgePoints.SetVisible(purgeVisible, instant);
+            if (CoopGameConfig.PlayerCount >= 3)
+            {
+                CoopPurgeHUD.SetVisible(purgeVisible, instant);
+                Player2PurgePoints.SetVisible(false, instant);
+                HideVanillaRightPartIn3Plus();
+            }
+            else
+            {
+                Player2PurgePoints.SetVisible(purgeVisible, instant);
+                CoopPurgeHUD.SetVisible(false, instant);
+            }
         }
     }
 
@@ -180,7 +239,14 @@ internal static class Player2HudFadeSync
 
     internal static void ApplyCurrentFadeState()
     {
-        SyncVisibility(instant: true);
+        if (ShouldP2HudBeVisible())
+        {
+            ShowAllInstant();
+        }
+        else
+        {
+            HideAllInstant();
+        }
     }
 }
 
@@ -192,6 +258,7 @@ internal static class UIController_HudMenuOcclusion_Patch
         try
         {
             Player2HudFadeSync.RefreshMenuOcclusion();
+            CoopPurgeHUD.Tick();
         }
         catch (System.Exception ex)
         {

@@ -1221,6 +1221,7 @@ internal static class SwordElementalUpgrades
 
         NewInventory_Description desc = LayoutDescriptionField?.GetValue(layout) as NewInventory_Description;
         ApplyDescriptionTextScale(desc);
+        UpdateDebugBanner(layout, visible: true);
     }
 
     private static readonly FieldInfo LayoutDescriptionField = AccessTools.Field(typeof(NewInventory_LayoutSkill), "description");
@@ -1330,6 +1331,50 @@ internal static class SwordElementalUpgrades
             Transform lblSangrado = containerTrans.Find("Lbl_Sangrado");
             if (lblVeneno != null) UnityEngine.Object.Destroy(lblVeneno.gameObject);
             if (lblSangrado != null) UnityEngine.Object.Destroy(lblSangrado.gameObject);
+        }
+    }
+
+    private static float saveConfigCooldown = 0f;
+
+    internal static void UpdateDebugBanner(NewInventory_LayoutSkill layout, bool visible)
+    {
+        if (layout == null) return;
+        Transform bannerTrans = layout.transform.Find("ElementalDebugBanner");
+        GameObject bannerObj;
+        Text bannerText;
+
+        if (bannerTrans == null)
+        {
+            bannerObj = new GameObject("ElementalDebugBanner", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text), typeof(Outline));
+            bannerObj.transform.SetParent(layout.transform, false);
+            RectTransform rt = bannerObj.GetComponent<RectTransform>();
+            rt.anchorMin = new Vector2(0.5f, 0f);
+            rt.anchorMax = new Vector2(0.5f, 0f);
+            rt.pivot = new Vector2(0.5f, 0f);
+            rt.anchoredPosition = new Vector2(0f, 18f);
+            rt.sizeDelta = new Vector2(920f, 40f);
+
+            bannerText = bannerObj.GetComponent<Text>();
+            Text refTxt = layout.GetComponentInChildren<Text>(true);
+            if (refTxt != null) bannerText.font = refTxt.font;
+            bannerText.fontSize = 12;
+            bannerText.alignment = TextAnchor.MiddleCenter;
+            bannerText.color = new Color(1f, 0.92f, 0.45f, 1f);
+
+            Outline ol = bannerObj.GetComponent<Outline>();
+            ol.effectColor = new Color(0f, 0f, 0f, 0.95f);
+            ol.effectDistance = new Vector2(1f, -1f);
+        }
+        else
+        {
+            bannerObj = bannerTrans.gameObject;
+            bannerText = bannerObj.GetComponent<Text>();
+        }
+
+        bannerObj.SetActive(visible);
+        if (visible && bannerText != null)
+        {
+            bannerText.text = $"[DEBUG ÁRBOL] Pos: X={CoopGameConfig.TreeOffsetX:F1}, Y={CoopGameConfig.TreeOffsetY:F1} | Sep H={CoopGameConfig.ElementalBranchSpacing:F0} | Sep V={CoopGameConfig.ElementalNodeVerticalSpacing:F0} | Escala={CoopGameConfig.TreeScale:F2}\n[Flechas]: Mover | [Shift+Flechas]: Rápido | [N / M]: Separación H | [U / J]: Separación V | [. / -]: Escala | [F8/Enter]: Guardar";
         }
     }
 
@@ -1524,8 +1569,99 @@ internal static class SwordElementalUpgrades
         var cachedSkills = CachedSkillsField?.GetValue(layout) as List<NewInventory_Skill>;
         if (cachedSkills == null || cachedSkills.Count == 0) return;
 
-        int currentSelected = (int)SkillTreeUIHelper.CurrentSelectedField.GetValue(layout);
+        var skillsRoot = SkillsRootField?.GetValue(layout) as GameObject;
         float dt = Time.unscaledDeltaTime;
+
+        // =====================================================================
+        // 1. SISTEMA DEBUG ÁRBOL ELEMENTAL (Mover con Flechas, Escala . / -, Sep H: N/M, Sep V: U/J)
+        // =====================================================================
+        if (skillsRoot != null)
+        {
+            float moveStep = (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift)) ? 8f : 1.5f;
+            bool treeTransformChanged = false;
+
+            if (Input.GetKey(KeyCode.LeftArrow))
+            {
+                CoopGameConfig.TreeOffsetX -= moveStep;
+                treeTransformChanged = true;
+            }
+            if (Input.GetKey(KeyCode.RightArrow))
+            {
+                CoopGameConfig.TreeOffsetX += moveStep;
+                treeTransformChanged = true;
+            }
+            if (Input.GetKey(KeyCode.UpArrow))
+            {
+                CoopGameConfig.TreeOffsetY += moveStep;
+                treeTransformChanged = true;
+            }
+            if (Input.GetKey(KeyCode.DownArrow))
+            {
+                CoopGameConfig.TreeOffsetY -= moveStep;
+                treeTransformChanged = true;
+            }
+
+            if (Input.GetKeyDown(KeyCode.Period) || Input.GetKeyDown(KeyCode.KeypadPeriod) || Input.GetKeyDown(KeyCode.Plus) || Input.GetKeyDown(KeyCode.KeypadPlus))
+            {
+                CoopGameConfig.TreeScale = Mathf.Clamp(CoopGameConfig.TreeScale + 0.05f, 0.35f, 2.50f);
+                treeTransformChanged = true;
+            }
+            if (Input.GetKeyDown(KeyCode.Minus) || Input.GetKeyDown(KeyCode.KeypadMinus))
+            {
+                CoopGameConfig.TreeScale = Mathf.Clamp(CoopGameConfig.TreeScale - 0.05f, 0.35f, 2.50f);
+                treeTransformChanged = true;
+            }
+
+            if (Input.GetKey(KeyCode.M))
+            {
+                CoopGameConfig.ElementalBranchSpacing += moveStep * 2f;
+                treeTransformChanged = true;
+            }
+            if (Input.GetKey(KeyCode.N))
+            {
+                CoopGameConfig.ElementalBranchSpacing = Mathf.Max(20f, CoopGameConfig.ElementalBranchSpacing - moveStep * 2f);
+                treeTransformChanged = true;
+            }
+
+            if (Input.GetKey(KeyCode.U))
+            {
+                CoopGameConfig.ElementalNodeVerticalSpacing += moveStep;
+                treeTransformChanged = true;
+            }
+            if (Input.GetKey(KeyCode.J))
+            {
+                CoopGameConfig.ElementalNodeVerticalSpacing = Mathf.Max(15f, CoopGameConfig.ElementalNodeVerticalSpacing - moveStep);
+                treeTransformChanged = true;
+            }
+
+            if (treeTransformChanged)
+            {
+                UpdateElementalTreeTransform(skillsRoot);
+                UpdateDebugBanner(layout, visible: true);
+                saveConfigCooldown = 0.5f;
+            }
+
+            if (Input.GetKeyDown(KeyCode.F8) || Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))
+            {
+                CoopGameConfig.Save();
+                UpdateDebugBanner(layout, visible: true);
+                if (Main.CoopLocal != null)
+                {
+                    Blasphemous.ModdingAPI.ModLog.Info($"[ElementalTree Debug] Guardado permanente: Offset=({CoopGameConfig.TreeOffsetX:F1}, {CoopGameConfig.TreeOffsetY:F1}) | Sep H={CoopGameConfig.ElementalBranchSpacing:F0} | Sep V={CoopGameConfig.ElementalNodeVerticalSpacing:F0} | Escala={CoopGameConfig.TreeScale:F2}", Main.CoopLocal);
+                }
+            }
+
+            if (saveConfigCooldown > 0f)
+            {
+                saveConfigCooldown -= dt;
+                if (saveConfigCooldown <= 0f)
+                {
+                    CoopGameConfig.Save();
+                }
+            }
+        }
+
+        int currentSelected = (int)SkillTreeUIHelper.CurrentSelectedField.GetValue(layout);
         if (navCooldown > 0f) navCooldown -= dt;
 
         if (layout != lastObservedLayout)
@@ -1994,7 +2130,7 @@ internal sealed class EnemyElementalStatusController : MonoBehaviour
     private float poisonMaxDuration = 5f;
     private float poisonTickTimer;
     private int poisonHitCount = 0;
-    private int poisonHitThreshold = 6;
+    private int poisonHitThreshold = 4;
     private int poisonBonusPercent = 0; // 0, 50, 100, 150
     private int lastPoisonHitFrame = -1;
     private Penitent lastPoisonAttacker;
@@ -2106,7 +2242,7 @@ internal sealed class EnemyElementalStatusController : MonoBehaviour
         poisonRemainingTime = 0f;
         poisonTickTimer = 0f;
         poisonHitCount = 0;
-        poisonHitThreshold = 6;
+        poisonHitThreshold = 4;
         poisonBonusPercent = 0;
         lastPoisonHitFrame = -1;
         lastPoisonAttacker = null;
@@ -2209,26 +2345,22 @@ internal sealed class EnemyElementalStatusController : MonoBehaviour
         int baseHits;
         if (IsBossEnemy(target, maxHp))
         {
-            // Mínimo x2.5 veces el normal (normal es 6 golpes -> 15 golpes base en bosses) + golpes extra por perfil de jefe
-            baseHits = 15 + Combat.CoopEnemyScaling.GetBossExtraBleedHits(target);
+            // En bosses el número de golpes para detonar la primera etapa es 10 (ajustado para ser más accesible)
+            baseHits = 10;
         }
         else
         {
-            // Enemigos normales: 6 golpes base (+ resistencia adicional si tiene defensa alta)
-            int resistanceBonus = 0;
-            if (target != null && target.Stats != null && target.Stats.Defense != null && target.Stats.Defense.Final > 0f)
-            {
-                resistanceBonus = Mathf.Clamp(Mathf.RoundToInt(target.Stats.Defense.Final * 0.5f), 0, 3);
-            }
-            baseHits = 6 + resistanceBonus;
+            // Enemigos normales: exactamente 6 golpes para la primera etapa
+            baseHits = 6;
         }
 
-        if (bleedApplicationsCount > 0)
+        // Cada etapa subsiguiente incrementa los golpes requeridos multiplicando por 1.35 con función piso (floor)
+        int threshold = baseHits;
+        for (int i = 0; i < bleedApplicationsCount; i++)
         {
-            float mult = Mathf.Pow(1.25f, bleedApplicationsCount);
-            return Mathf.Max(baseHits + bleedApplicationsCount, Mathf.RoundToInt(baseHits * mult));
+            threshold = Mathf.Max(threshold + 1, Mathf.FloorToInt(threshold * 1.35f));
         }
-        return baseHits;
+        return threshold;
     }
 
     private int ComputePoisonThreshold(Enemy target)
@@ -2236,10 +2368,10 @@ internal sealed class EnemyElementalStatusController : MonoBehaviour
         float maxHp = GetEnemyMaxHealth();
         if (IsBossEnemy(target, maxHp))
         {
-            // Mínimo x2.5 veces el normal (normal es 6 golpes -> 15 golpes base en bosses) + golpes extra por perfil de jefe
-            return 15 + Combat.CoopEnemyScaling.GetBossExtraBleedHits(target);
+            return 12;
         }
-        return 6;
+        // Reducido en 2 golpes para la primera fase: 6 -> 4 golpes
+        return 4;
     }
 
     internal void ApplyPoison(Enemy target, Penitent attacker, int tier, int hitWeight = 1)
@@ -2257,12 +2389,12 @@ internal sealed class EnemyElementalStatusController : MonoBehaviour
         enemy = target;
         GetEnemyMaxHealth();
 
-        // Configurar umbral según sea jefe (mínimo x2.5) o enemigo regular si aún no ha escalado
+        // Configurar umbral según sea jefe o enemigo regular si aún no ha escalado
         if (poisonBonusPercent == 0 && poisonHitCount == 0)
         {
             poisonHitThreshold = ComputePoisonThreshold(target);
         }
-        else if (IsBossEnemy(target, GetEnemyMaxHealth()) && poisonHitThreshold < 15)
+        else if (IsBossEnemy(target, GetEnemyMaxHealth()) && poisonHitThreshold < 12)
         {
             poisonHitThreshold = ComputePoisonThreshold(target);
         }

@@ -437,7 +437,7 @@ internal static class PlatformCharacterInput_Update_Patch
         bool isMenuBlocked = GlobalBlockerTracker.AnyBlockerOtherThanPlayerLogic()
             || Player2MenuView.IsShowingAnyMenu
             || Time.frameCount == Player2MenuView.LastMenuToggleFrame
-            || Time.timeScale <= 0.0001f;
+            || Time.timeScale <= 0.0001f || CoopPlayerPauseMenu.IsOpen;
         bool blocked = PlayerLogicBlocker.IsBlocked(____penitent) || ____penitent.Status.Dead || isPrayerAnimPlaying || isHealingAnimPlaying || isMenuBlocked;
 
         bool rawDown = Player2Input.GetDown(slotIndex);
@@ -448,9 +448,30 @@ internal static class PlatformCharacterInput_Update_Patch
         bool crouch = !blocked && rawDown;
         bool attackUp = !blocked && Player2Input.GetUp(slotIndex);
         bool rawAttackKeyDown = Player2Input.GetAttackDown(slotIndex);
-        bool attack = !blocked && rawAttackKeyDown;
+        bool isParrySuccess = (____penitent.Parry != null && ____penitent.Parry.SuccessParry)
+            || (____penitent.Animator != null && (____penitent.Animator.GetCurrentAnimatorStateInfo(0).IsName("ParrySuccess") || ____penitent.Animator.GetCurrentAnimatorStateInfo(0).IsName("ParryRepost")));
+        bool attack = (!blocked || isParrySuccess) && !isMenuBlocked && !____penitent.Status.Dead && rawAttackKeyDown;
         bool rawDashKeyDown = Player2Input.GetDashDown(slotIndex);
         bool dash = !blocked && rawDashKeyDown;
+
+        // Ronda 91: Si el jugador tiene IS_IDLE_MODE activo en el Animator y pulsa cualquier accion o movimiento,
+        // cancelamos inmediatamente IS_IDLE_MODE y forzamos Animator.Play("Idle") para que la accion (ataque, salto, dash, movimiento)
+        // se ejecute sin ninguna perdida de fotogramas ni bloqueos.
+        if (____penitent.Animator != null && ____penitent.Animator.GetBool("IS_IDLE_MODE"))
+        {
+            bool hasImmediateInput = rawAttackKeyDown || attack || rawDashKeyDown || dash || rawJumpKey || jump || rawDown || crouch || left || right || attackUp;
+            if (hasImmediateInput)
+            {
+                ____penitent.Animator.SetBool("IS_IDLE_MODE", false);
+                ____penitent.Animator.Play("Idle");
+                ____penitent.Audio?.StopIdleModeBlood();
+                PlayerIdleMode idleMode = ____penitent.GetComponentInChildren<PlayerIdleMode>();
+                if (idleMode != null)
+                {
+                    PlayerIdleModeHelper.ForceSetPlayMode(idleMode, ____penitent);
+                }
+            }
+        }
         if (rawDashKeyDown)
         {
             // Raw, unfiltered check for the still-open "holding P1's dash button makes P2's own

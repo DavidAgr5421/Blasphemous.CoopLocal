@@ -61,15 +61,15 @@ internal static class PlayerFlask_RefreshFlask_P2_Patch
 
     private static bool Prefix(PlayerFlask __instance)
     {
-        if (__instance != Player2FervourBar.FlaskInstance)
+        int slot = CoopFervourBars.GetSlotForFlaskInstance(__instance);
+        if (slot <= 0)
         {
             return true;
         }
-        Penitent p2 = CoopLocal.Player2;
-        if (p2 == null)
-        {
-            return false;
-        }
+        Penitent p2 = CoopPlayerRegistry.GetPenitent(slot);
+        if (p2 == null || p2.Stats == null || p2.Stats.Flask == null) { return false; }
+        //
+        //
 
         List<Image> flasks = (List<Image>)FlasksField.GetValue(__instance);
         List<Sprite> flasksFull = (List<Sprite>)FlasksFullField.GetValue(__instance);

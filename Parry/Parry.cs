@@ -535,6 +535,28 @@ internal static class Penitent_Damage_Patch
     }
 }
 
+internal static class EnemyParryRegistry
+{
+    private static readonly Dictionary<Enemy, Penitent> _lastParryPenitent = new Dictionary<Enemy, Penitent>();
+
+    internal static void RecordParry(Enemy enemy, Penitent penitent)
+    {
+        if (enemy != null && penitent != null)
+        {
+            _lastParryPenitent[enemy] = penitent;
+        }
+    }
+
+    internal static Penitent GetParryingPenitent(Enemy enemy)
+    {
+        if (enemy != null && _lastParryPenitent.TryGetValue(enemy, out Penitent p) && p != null && !p.Status.Dead)
+        {
+            return p;
+        }
+        return null;
+    }
+}
+
 // PenitentSword.SuccessParryChance patch:
 // Resolves Enemy and ParriableProjectile using GetComponentInParent, ensures WeaponOwner,
 // registers aggro towards the parrying player, and directs enemy parry logic (Acolyte, Crisanta, etc.)
@@ -570,6 +592,8 @@ internal static class PenitentSword_SuccessParryChance_Patch
                 result = true;
                 if (ownerPenitent != null)
                 {
+                    EnemyParryRegistry.RecordParry(component, ownerPenitent);
+                    component.Target = ownerPenitent.gameObject;
                     Combat.EnemyTargetingSystem.RecordDamageAggro(component, ownerPenitent, 6f);
                 }
 
@@ -691,6 +715,78 @@ internal static class ActiveRiposte_AttackTrigger_Patch
 // and ReleaseChargedAttack are evaluated on the attacker entity.
 [HarmonyPatch(typeof(Gameplay.GameControllers.Entities.Enemy), nameof(Gameplay.GameControllers.Entities.Enemy.Execution))]
 internal static class Enemy_Execution_Patch
+{
+    private static void Prefix(Hit hit, out Penitent __state)
+    {
+        __state = null;
+        Penitent attacker = hit.AttackingEntity != null ? hit.AttackingEntity.GetComponentInParent<Penitent>() : null;
+        if (attacker != null && Core.Logic != null && attacker != Core.Logic.Penitent)
+        {
+            __state = Core.Logic.Penitent;
+            Core.Logic.Penitent = attacker;
+        }
+    }
+
+    private static void Finalizer(Penitent __state)
+    {
+        if (__state != null && Core.Logic != null)
+        {
+            Core.Logic.Penitent = __state;
+        }
+    }
+}
+
+// Acolyte parry distance adjustment patch:
+// Directs Acolyte's post-parry distance adjustment toward the specific parrying player instead of hardcoded P1
+[HarmonyPatch(typeof(Gameplay.GameControllers.Enemies.Acolyte.IA.AcolyteBehaviour), "AdjustParryDistance")]
+internal static class AcolyteBehaviour_AdjustParryDistance_Patch
+{
+    private static bool Prefix(Gameplay.GameControllers.Enemies.Acolyte.IA.AcolyteBehaviour __instance, ref System.Collections.IEnumerator __result)
+    {
+        __result = CustomAdjustParryDistance(__instance);
+        return false;
+    }
+
+    private static System.Collections.IEnumerator CustomAdjustParryDistance(Gameplay.GameControllers.Enemies.Acolyte.IA.AcolyteBehaviour behaviour)
+    {
+        if (behaviour == null) yield break;
+
+        float parryDistance = 2.5f;
+        Enemy enemy = behaviour.Entity as Enemy ?? behaviour.GetComponentInParent<Enemy>();
+        Penitent targetPenitent = EnemyParryRegistry.GetParryingPenitent(enemy) ?? 
+            (behaviour.Entity != null && behaviour.Entity.Target != null ? behaviour.Entity.Target.GetComponentInParent<Penitent>() : null) ?? 
+            Core.Logic?.Penitent;
+        if (targetPenitent == null) yield break;
+
+        float curDist = Vector2.Distance(behaviour.transform.position, targetPenitent.transform.position);
+        if (curDist > parryDistance)
+        {
+            behaviour.StopMovement();
+            var acolyte = enemy as Gameplay.GameControllers.Enemies.Acolyte.Acolyte ?? behaviour.GetComponentInParent<Gameplay.GameControllers.Enemies.Acolyte.Acolyte>();
+            if (acolyte != null && acolyte.MotionLerper != null)
+            {
+                float oldDistance = acolyte.MotionLerper.distanceToMove;
+                Vector2 dir = new Vector2((acolyte.Status.Orientation == EntityOrientation.Right) ? 1f : -1f, 0f);
+                acolyte.MotionLerper.distanceToMove = curDist - parryDistance;
+                acolyte.MotionLerper.StartLerping(dir);
+                float counter = 0.5f;
+                while (counter > 0f)
+                {
+                    counter -= Time.deltaTime;
+                    yield return null;
+                }
+                acolyte.MotionLerper.StopLerping();
+                acolyte.MotionLerper.distanceToMove = oldDistance;
+            }
+        }
+    }
+}
+
+// Enemy.GetStun patch:
+// Swaps Core.Logic.Penitent to the real attacker during GetStun so execution orientation,
+// stun effects, and hit audio match the attacking player entity.
+[HarmonyPatch(typeof(Gameplay.GameControllers.Entities.Enemy), nameof(Gameplay.GameControllers.Entities.Enemy.GetStun), new Type[] { typeof(Hit) })]
+internal static class Enemy_GetStun_Patch
 {
     private static void Prefix(Hit hit, out Penitent __state)
     {

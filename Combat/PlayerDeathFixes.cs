@@ -541,16 +541,15 @@ internal static class DrivePlayer_MoveToPosition_DeadP1_Patch
     private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(DrivePlayer), "_penitent");
     private static readonly FieldInfo CastingField = AccessTools.Field(typeof(DrivePlayer), "<Casting>k__BackingField");
 
-    private static bool Prefix(DrivePlayer __instance, Vector3 position, EntityOrientation orientation, bool autoRun, Action onStopMotion)
+    private static bool Prefix(DrivePlayer __instance, Vector2 position, EntityOrientation finalOrientation)
     {
         Penitent owner = (Penitent)PenitentField.GetValue(__instance);
         if (owner == null) owner = Core.Logic?.Penitent;
         if (owner != null && (owner.Status.Dead || Player1DeathState.IsPendingRevive()))
         {
             owner.transform.position = position;
-            owner.SetOrientation(orientation);
+            owner.SetOrientation(finalOrientation);
             CastingField?.SetValue(__instance, false);
-            onStopMotion?.Invoke();
             return false;
         }
         return true;

@@ -24,6 +24,7 @@ public class CoopLocal : BlasMod
     private static readonly Vector3 P2SpawnOffset = Vector3.zero;
 
     // Instancias de jugadores cooperativos
+    internal static float LastDoorTransitionTime = -999f;
     internal static Penitent Player2 { get; private set; }
     internal static Penitent Player3 { get; private set; }
     internal static Penitent Player4 { get; private set; }
@@ -71,6 +72,8 @@ public class CoopLocal : BlasMod
         SpawnManager.OnPlayerSpawn += OnPlayerSpawn;
         LevelManager.OnLevelLoaded += OnLevelLoaded;
         Player2HudFadeSync.Initialize();
+        HudLayoutConfig.Load();
+        HudLayoutDebugEditor.Initialize();
 
         // Round 52 - debug tool: F10 camera-target cycler (Coop/P1 only/P2 only). Its own
         // driver MonoBehaviour just needs to exist once, independent of P1/P2's own lifecycle -
@@ -84,6 +87,15 @@ public class CoopLocal : BlasMod
 
         // Menú de depuración y teletransporte a jefes (F2)
         Combat.BossDebugTeleportManager.EnsureCreated();
+
+        // Configuración de controles persistentes y menú de pausa independiente por jugador
+        CoopControlsConfig.EnsureLoaded();
+        CoopPlayerPauseMenu.Initialize();
+
+        // Inicialización de subsistemas de red P2P Steamworks
+        MultiPlayer.CoopLobbyManager.Initialize();
+        MultiPlayer.CoopNetworkManager.Initialize();
+        MultiPlayer.CoopClientWorldSync.Initialize();
     }
 
     protected override void OnDispose()
@@ -125,8 +137,16 @@ public class CoopLocal : BlasMod
     // confirmed via the same log comparison) without needing to special-case any of them by name.
     private void OnLevelLoaded(Level oldLevel, Level newLevel)
     {
+        LastDoorTransitionTime = Time.time;
         Combat.CoopEnemyScaling.OnLevelLoaded();
         Combat.BossDebugTeleportManager.OnLevelLoaded(oldLevel, newLevel);
+
+        if (newLevel != null && !string.IsNullOrEmpty(newLevel.LevelName))
+        {
+            MultiPlayer.CoopNetworkManager.Instance?.BroadcastSceneChange(newLevel.LevelName);
+        }
+        MultiPlayer.CoopClientWorldSync.Instance?.ClearPuppets();
+
         if (Core.Logic == null || Core.Logic.Penitent == null)
         {
             return;
@@ -143,6 +163,11 @@ public class CoopLocal : BlasMod
             if (extra != null)
             {
                 CopyLayersRecursively(Core.Logic.Penitent.transform, extra.transform);
+
+                // Align Y with P1 after ground distance has been calculated and applied
+                Vector3 currentPos = extra.transform.position;
+                extra.transform.position = new Vector3(currentPos.x, Core.Logic.Penitent.transform.position.y, currentPos.z);
+
                 int slot = CoopPlayerRegistry.GetPlayerIndex(extra);
                 if (slot > 0 && !Player2DeathState.IsPendingRevive(slot) && !extra.Status.Dead)
                 {
@@ -235,37 +260,21 @@ public class CoopLocal : BlasMod
         return Player2;
     }
 
-    internal static void SpawnAllGuestPlayers(Penitent p1)
+    internal static void SetPlayer(int index, Penitent p)
     {
-        if (!CoopGameConfig.IsCoopEnabled || CoopGameConfig.PlayerCount < 2)
+        switch (index)
         {
-            return;
+            case 1: Player2 = p; break;
+            case 2: Player3 = p; break;
+            case 3: Player4 = p; break;
         }
+    }
 
-        int activeCount = Mathf.Clamp(CoopGameConfig.PlayerCount, 2, 4);
+    internal static void IgnoreCollisionsBetweenAllPlayers()
+    {
+        Penitent p1 = Core.Logic != null ? Core.Logic.Penitent : null;
+        if (p1 == null) return;
 
-        // Spawn P2
-        if (!Player2DeathState.IsPendingRevive(1))
-        {
-            Vector3 p2Pos = p1.transform.position + new Vector3(-0.6f, 0f, 0f);
-            Player2 = SpawnSingleGuestPlayer(p1, 1, p2Pos);
-        }
-
-        // Spawn P3
-        if (activeCount >= 3 && !Player2DeathState.IsPendingRevive(2))
-        {
-            Vector3 p3Pos = p1.transform.position + new Vector3(0.6f, 0f, 0f);
-            Player3 = SpawnSingleGuestPlayer(p1, 2, p3Pos);
-        }
-
-        // Spawn P4
-        if (activeCount >= 4 && !Player2DeathState.IsPendingRevive(3))
-        {
-            Vector3 p4Pos = p1.transform.position + new Vector3(1.2f, 0f, 0f);
-            Player4 = SpawnSingleGuestPlayer(p1, 3, p4Pos);
-        }
-
-        // Ignorar colisiones entre todos los jugadores
         List<Penitent> all = new List<Penitent> { p1 };
         foreach (var extra in GetAllExtraPlayers())
         {
@@ -286,34 +295,237 @@ public class CoopLocal : BlasMod
                 }
             }
         }
+    }
+
+    internal static void SpawnAllGuestPlayers(Penitent p1)
+    {
+        if (!CoopGameConfig.IsCoopEnabled || CoopGameConfig.PlayerCount < 2)
+        {
+            return;
+        }
+
+        int maxPlayers = Mathf.Clamp(CoopGameConfig.PlayerCount, 2, 4);
+
+        EntityOrientation p1Orientation = (p1 != null && p1.Status != null) ? p1.Status.Orientation : EntityOrientation.Right;
+        float forward = (p1Orientation == EntityOrientation.Left) ? -1.0f : 1.0f;
+        const float spacing = 0.75f;
+
+        // Solo instanciar jugadores que esten activos localmente o conectados online
+        if (CoopGameConfig.Slots[1].IsActiveInGame && !Player2DeathState.IsPendingRevive(1))
+        {
+            Vector3 p2Pos = p1.transform.position + new Vector3(forward * spacing, 0f, 0f);
+            Player2 = SpawnSingleGuestPlayer(p1, 1, p2Pos, p1Orientation);
+        }
+
+        if (maxPlayers >= 3 && CoopGameConfig.Slots[2].IsActiveInGame && !Player2DeathState.IsPendingRevive(2))
+        {
+            Vector3 p3Pos = p1.transform.position + new Vector3(forward * (spacing * 2f), 0f, 0f);
+            Player3 = SpawnSingleGuestPlayer(p1, 2, p3Pos, p1Orientation);
+        }
+
+        if (maxPlayers >= 4 && CoopGameConfig.Slots[3].IsActiveInGame && !Player2DeathState.IsPendingRevive(3))
+        {
+            Vector3 p4Pos = p1.transform.position + new Vector3(forward * (spacing * 3f), 0f, 0f);
+            Player4 = SpawnSingleGuestPlayer(p1, 3, p4Pos, p1Orientation);
+        }
+
+        IgnoreCollisionsBetweenAllPlayers();
 
         // Registrar P1 en CoopPlayerRegistry y asignar etiqueta
         CoopPlayerRegistry.RegisterInstance(0, p1);
         AddNameLabel(p1, CoopPlayerRegistry.GetDisplayName(0), CoopPlayerRegistry.GetLabelColor(0), outlineColor: CoopPlayerRegistry.GetOutlineColor(0));
 
-        // Registrar targets en la cámara
+        // Registrar targets en la camara
         if (CameraManager.Instance != null && CameraManager.Instance.ProCamera2D != null)
         {
             CameraManager_UpdateNewCameraParams_Patch.AddPlayer2AsCameraTarget(CameraManager.Instance.ProCamera2D);
         }
 
-        // HUD para P2
-        if (Player2 != null)
+        // HUD Cooperativo
+        int connectedCount = CoopGameConfig.GetActiveConnectedPlayerCount();
+        if (connectedCount <= 2)
         {
-            Player2HealthBar.EnsureCreated(Player2);
-            Player2FervourBar.EnsureCreated(Player2);
-            Player2PurgePoints.EnsureCreated(Player2);
-            Player2HealthBar.BringToFront();
-            Player2HudFadeSync.ApplyCurrentFadeState();
+            if (Player2 != null)
+            {
+                CoopHealthBars.EnsureCreated(1, Player2);
+                CoopFervourBars.EnsureCreated(1, Player2);
+                Player2PurgePoints.EnsureCreated(Player2);
+            }
+        }
+        else
+        {
+            if (Player2 != null)
+            {
+                CoopHealthBars.EnsureCreated(1, Player2);
+                CoopFervourBars.EnsureCreated(1, Player2);
+            }
+            if (Player3 != null)
+            {
+                CoopHealthBars.EnsureCreated(2, Player3);
+                CoopFervourBars.EnsureCreated(2, Player3);
+            }
+            if (Player4 != null)
+            {
+                CoopHealthBars.EnsureCreated(3, Player4);
+                CoopFervourBars.EnsureCreated(3, Player4);
+            }
+            try
+            {
+                CoopPurgeHUD.EnsureCreatedAll();
+            }
+            catch (System.Exception ex)
+            {
+                if (Main.CoopLocal != null)
+                {
+                    Blasphemous.ModdingAPI.ModLog.Error($"[CoopLocal] Error creating Purge HUD: {ex}", Main.CoopLocal);
+                }
+            }
+        }
+
+        CoopFervourBars.BringToFrontAll();
+        CoopHealthBars.BringToFrontAll();
+        Player2HudFadeSync.ApplyCurrentFadeState();
+
+        Combat.CoopEnemyScaling.SetDefaultsForPlayerCount(connectedCount);
+    }
+
+    public static void SpawnGuestPlayerDynamically(int slotIndex)
+    {
+        if (slotIndex < 1 || slotIndex > 3) return;
+        if (GetPlayer(slotIndex) != null) return;
+
+        Penitent p1 = Core.Logic != null ? Core.Logic.Penitent : null;
+        if (p1 == null) return;
+
+        EntityOrientation p1Orientation = p1.Status != null ? p1.Status.Orientation : EntityOrientation.Right;
+        float forward = (p1Orientation == EntityOrientation.Left) ? -1.0f : 1.0f;
+        Vector3 spawnPos = p1.transform.position + new Vector3(forward * (0.8f * slotIndex), 0f, 0f);
+
+        Penitent guest = SpawnSingleGuestPlayer(p1, slotIndex, spawnPos, p1Orientation);
+        SetPlayer(slotIndex, guest);
+        CoopGameConfig.Slots[slotIndex].IsOnlineConnected = true;
+
+        IgnoreCollisionsBetweenAllPlayers();
+
+        if (CameraManager.Instance != null && CameraManager.Instance.ProCamera2D != null)
+        {
+            CameraManager_UpdateNewCameraParams_Patch.AddPlayer2AsCameraTarget(CameraManager.Instance.ProCamera2D);
+        }
+
+        int connectedCount = CoopGameConfig.GetActiveConnectedPlayerCount();
+        if (connectedCount <= 2)
+        {
+            if (Player2 != null)
+            {
+                CoopHealthBars.EnsureCreated(1, Player2);
+                CoopFervourBars.EnsureCreated(1, Player2);
+                Player2PurgePoints.EnsureCreated(Player2);
+            }
+            CoopPurgeHUD.DestroyAll();
+        }
+        else
+        {
+            if (Player2PurgePoints.CloneRect != null)
+            {
+                Player2PurgePoints.SetVisible(false, instant: true);
+            }
+            CoopHealthBars.EnsureCreated(slotIndex, guest);
+            CoopFervourBars.EnsureCreated(slotIndex, guest);
+            try
+            {
+                CoopPurgeHUD.EnsureCreatedAll();
+            }
+            catch { }
+        }
+
+        CoopFervourBars.BringToFrontAll();
+        CoopHealthBars.BringToFrontAll();
+        Player2HudFadeSync.ApplyCurrentFadeState();
+
+        Combat.CoopEnemyScaling.SetDefaultsForPlayerCount(connectedCount);
+
+        string pName = CoopPlayerRegistry.GetDisplayName(slotIndex);
+        Core.Audio?.PlayOneShot("event:/SFX/UI/EquipItem");
+        if (Gameplay.UI.UIController.instance != null)
+        {
+            Gameplay.UI.UIController.instance.ShowPopUp($"¡{pName} se ha unido!", string.Empty, 2.5f, blockPlayer: false);
+        }
+
+        if (Main.CoopLocal != null)
+        {
+            Blasphemous.ModdingAPI.ModLog.Info($"[CoopHotPlug] P{slotIndex + 1} ({pName}) se ha unido dinámicamente. Jugadores activos: {connectedCount}", Main.CoopLocal);
         }
     }
 
-    private static Penitent SpawnSingleGuestPlayer(Penitent p1, int slotIndex, Vector3 spawnPosition)
+    public static void DespawnGuestPlayerDynamically(int slotIndex)
+    {
+        if (slotIndex < 1 || slotIndex > 3) return;
+        Penitent guest = GetPlayer(slotIndex);
+        if (guest == null) return;
+
+        string pName = CoopPlayerRegistry.GetDisplayName(slotIndex);
+
+        Player2SkillManager.Persist();
+        Player2InventoryManager.Persist();
+        if (!guest.Status.Dead)
+        {
+            Player2StatsSync.SaveCurrentVitals(guest, slotIndex);
+        }
+
+        if (CameraManager.Instance != null && CameraManager.Instance.ProCamera2D != null)
+        {
+            CameraManager.Instance.ProCamera2D.RemoveCameraTarget(guest.transform);
+        }
+
+        CoopHealthBars.DestroySlot(slotIndex);
+        CoopFervourBars.DestroySlot(slotIndex);
+        CoopPurgeHUD.DestroySlot(slotIndex);
+
+        CoopPlayerRegistry.UnregisterInstance(slotIndex);
+        SetPlayer(slotIndex, null);
+        CoopGameConfig.Slots[slotIndex].IsOnlineConnected = false;
+        Object.Destroy(guest.gameObject);
+
+        int connectedCount = CoopGameConfig.GetActiveConnectedPlayerCount();
+        Combat.CoopEnemyScaling.SetDefaultsForPlayerCount(connectedCount);
+
+        if (connectedCount <= 2 && Player2 != null)
+        {
+            CoopPurgeHUD.DestroyAll();
+            Player2PurgePoints.EnsureCreated(Player2);
+        }
+
+        Core.Audio?.PlayOneShot("event:/SFX/UI/UnequipItem");
+        if (Gameplay.UI.UIController.instance != null)
+        {
+            Gameplay.UI.UIController.instance.ShowPopUp($"¡{pName} se ha desconectado!", string.Empty, 2.5f, blockPlayer: false);
+        }
+
+        if (Main.CoopLocal != null)
+        {
+            Blasphemous.ModdingAPI.ModLog.Info($"[CoopHotPlug] P{slotIndex + 1} ({pName}) se ha desconectado dinámicamente. Jugadores activos: {connectedCount}", Main.CoopLocal);
+        }
+    }
+
+    public static void ToggleGuestPlayerDynamically(int slotIndex)
+    {
+        if (GetPlayer(slotIndex) == null)
+        {
+            SpawnGuestPlayerDynamically(slotIndex);
+        }
+        else
+        {
+            DespawnGuestPlayerDynamically(slotIndex);
+        }
+    }
+
+    private static Penitent SpawnSingleGuestPlayer(Penitent p1, int slotIndex, Vector3 spawnPosition, EntityOrientation orientation = EntityOrientation.Right)
     {
         Penitent pPrefab = Resources.Load<Penitent>("Core/Penitent");
         Penitent guest = Object.Instantiate(pPrefab, spawnPosition, Quaternion.identity);
         Object.DontDestroyOnLoad(guest.gameObject);
         CopyLayersRecursively(p1.transform, guest.transform);
+        guest.SetOrientation(orientation);
         guest.PlatformCharacterController.PlatformCharacterPhysics.GravityScale = 3f;
 
         CoopSaveManager.EnsureLoadedForCurrentSlot();

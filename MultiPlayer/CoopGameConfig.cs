@@ -13,6 +13,7 @@ public enum CoopDeviceType
     Gamepad2 = 3,
     Gamepad3 = 4,
     Gamepad4 = 5,
+    RemoteSteam = 6,
 }
 
 [Serializable]
@@ -23,6 +24,17 @@ internal sealed class PlayerSlotConfig
     public int ColorIndex;
     public CoopDeviceType Device;
     public string SkinId;
+    public bool IsOnlineConnected = false;
+
+    public bool IsActiveInGame
+    {
+        get
+        {
+            if (PlayerIndex == 0) return true;
+            if (Device == CoopDeviceType.RemoteSteam) return IsOnlineConnected;
+            return true;
+        }
+    }
 
     public PlayerSlotConfig(int index, string name, int colorIndex, CoopDeviceType device, string skinId = "")
     {
@@ -31,6 +43,7 @@ internal sealed class PlayerSlotConfig
         ColorIndex = colorIndex;
         Device = device;
         SkinId = skinId;
+        IsOnlineConnected = false;
     }
 }
 
@@ -44,13 +57,13 @@ internal static class CoopGameConfig
     public static int PlayerCount = 2; // 1 a 4
     public static bool EnableElementalUpgrades = true;
 
-    // Configuración visual del árbol elemental (posición y escala calibradas por el usuario)
-    public static float TreeOffsetX = -2.0f;
-    public static float TreeOffsetY = 4.0f;
-    public static float TreeScale = 1.10f;
+    // Configuración visual del árbol elemental (posición y escala calibradas permanentemente)
+    public static float TreeOffsetX = 1.0f;
+    public static float TreeOffsetY = -8.0f;
+    public static float TreeScale = 0.85f;
     public static float SkillTextScale = 1.0f; // Escala del texto de descripciones ({ aumenta, } disminuye)
-    public static float ElementalBranchSpacing = 178f; // Distancia horizontal entre rama Veneno y Sangrado (calibrado)
-    public static float ElementalNodeVerticalSpacing = 51f; // Distancia vertical entre niveles I, II y III
+    public static float ElementalBranchSpacing = 220f; // Distancia horizontal entre rama Veneno y Sangrado (calibrado)
+    public static float ElementalNodeVerticalSpacing = 79.5f; // Distancia vertical entre niveles I, II y III
 
     public static readonly PlayerSlotConfig[] Slots = new PlayerSlotConfig[4]
     {
@@ -354,7 +367,7 @@ internal static class CoopGameConfig
                         }
                         else if (key.EndsWith("_Device"))
                         {
-                            if (int.TryParse(val, out int d)) Slots[pIdx].Device = (CoopDeviceType)Mathf.Clamp(d, 0, 5);
+                            if (int.TryParse(val, out int d)) Slots[pIdx].Device = (CoopDeviceType)Mathf.Clamp(d, 0, 6);
                         }
                         else if (key.EndsWith("_Skin"))
                         {
@@ -367,6 +380,18 @@ internal static class CoopGameConfig
         catch { }
     }
 
+    public static int GetActiveConnectedPlayerCount()
+    {
+        if (!IsCoopEnabled) return 1;
+        int maxConfigured = Mathf.Clamp(PlayerCount, 1, 4);
+        int count = 1; // P1
+        for (int i = 1; i < maxConfigured; i++)
+        {
+            if (Slots[i].IsActiveInGame) count++;
+        }
+        return count;
+    }
+
     public static string GetDeviceDisplayName(CoopDeviceType dev)
     {
         return dev switch
@@ -376,6 +401,7 @@ internal static class CoopGameConfig
             CoopDeviceType.Gamepad2 => "MANDO 2",
             CoopDeviceType.Gamepad3 => "MANDO 3",
             CoopDeviceType.Gamepad4 => "MANDO 4",
+            CoopDeviceType.RemoteSteam => "🌐 STEAM EN LÍNEA",
             _ => "[ Presiona Botón / Tecla ]"
         };
     }

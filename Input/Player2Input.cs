@@ -1,3 +1,4 @@
+using Blasphemous.CoopLocal.MultiPlayer;
 using Com.LuisPedroFonseca.ProCamera2D;
 using CreativeSpore.SmartColliders;
 using Framework.FrameworkCore;
@@ -101,8 +102,8 @@ internal static class Player2Keys
 // not reported as unstable, so left on its raw indices rather than switched to name lookup too.
 internal static class Player2Pad
 {
-    private const int AxisLeftStickX = 0;
-    private const int AxisLeftStickY = 1;
+    internal const int AxisLeftStickX = 0;
+    internal const int AxisLeftStickY = 1;
     private const float AxisThreshold = 0.5f;
 
     internal static Rewired.Joystick GetPadForSlot(int slotIndex)
@@ -175,41 +176,162 @@ internal static class Player2Pad
     internal static bool GetDown(Rewired.Joystick pad) =>
         pad != null && ((pad.GetAxis(AxisLeftStickY) <= -AxisThreshold) || ButtonHeld(pad, "D-Pad Down", "DPad Down", "Dpad Down"));
 
-    internal static bool GetJumpHeld(Rewired.Joystick pad) =>
-        ButtonHeld(pad, "A Button", "Button A", "Action Button 1", "Cross", "Button 0", "A");
+    internal static bool GetJumpHeld(Rewired.Joystick pad, int slotIndex = -1)
+    {
+        if (slotIndex >= 0)
+        {
+            string mapped = CoopControlsConfig.GetBindings(slotIndex).PadJump;
+            if (!string.IsNullOrEmpty(mapped))
+            {
+                if (ButtonHeld(pad, mapped)) return true;
+                if (AxisHeld(pad, "JumpTrigger", mapped)) return true;
+            }
+        }
+        return ButtonHeld(pad, "A Button", "Button A", "Action Button 1", "Cross", "Button 0", "A");
+    }
 
     internal static bool GetSelectDown(Rewired.Joystick pad) =>
         ButtonDown(pad, "A Button", "Button A", "Action Button 1", "Cross", "Button 0", "A");
 
-    internal static bool GetAttackDown(Rewired.Joystick pad) =>
-        ButtonDown(pad, "X Button", "Button X", "Action Button 3", "Square", "Button 2", "X");
+    internal static bool GetAttackDown(Rewired.Joystick pad, int slotIndex = -1)
+    {
+        if (slotIndex >= 0)
+        {
+            string mapped = CoopControlsConfig.GetBindings(slotIndex).PadAttack;
+            if (!string.IsNullOrEmpty(mapped))
+            {
+                if (ButtonDown(pad, mapped)) return true;
+                if (AxisDown(pad, "AttackTrigger", mapped)) return true;
+            }
+        }
+        return ButtonDown(pad, "X Button", "Button X", "Action Button 3", "Square", "Button 2", "X");
+    }
 
-    internal static bool GetAttackUp(Rewired.Joystick pad) =>
-        ButtonUp(pad, "X Button", "Button X", "Action Button 3", "Square", "Button 2", "X");
+    internal static bool GetAttackUp(Rewired.Joystick pad, int slotIndex = -1)
+    {
+        if (slotIndex >= 0)
+        {
+            string mapped = CoopControlsConfig.GetBindings(slotIndex).PadAttack;
+            if (!string.IsNullOrEmpty(mapped))
+            {
+                if (ButtonUp(pad, mapped)) return true;
+                if (AxisUp(pad, "AttackTrigger", mapped)) return true;
+            }
+        }
+        return ButtonUp(pad, "X Button", "Button X", "Action Button 3", "Square", "Button 2", "X");
+    }
 
-    internal static bool GetAttackHeld(Rewired.Joystick pad) =>
-        ButtonHeld(pad, "X Button", "Button X", "Action Button 3", "Square", "Button 2", "X");
+    internal static bool GetAttackHeld(Rewired.Joystick pad, int slotIndex = -1)
+    {
+        if (slotIndex >= 0)
+        {
+            string mapped = CoopControlsConfig.GetBindings(slotIndex).PadAttack;
+            if (!string.IsNullOrEmpty(mapped))
+            {
+                if (ButtonHeld(pad, mapped)) return true;
+                if (AxisHeld(pad, "AttackTrigger", mapped)) return true;
+            }
+        }
+        return ButtonHeld(pad, "X Button", "Button X", "Action Button 3", "Square", "Button 2", "X");
+    }
 
-    internal static bool GetParryDown(Rewired.Joystick pad) =>
-        ButtonDown(pad, "Left Bumper", "LB", "L1", "Left Shoulder");
+    internal static bool GetParryDown(Rewired.Joystick pad, int slotIndex = -1)
+    {
+        if (slotIndex >= 0)
+        {
+            string mapped = CoopControlsConfig.GetBindings(slotIndex).PadParry;
+            if (!string.IsNullOrEmpty(mapped))
+            {
+                if (ButtonDown(pad, mapped)) return true;
+                if (AxisDown(pad, "ParryTrigger", mapped)) return true;
+            }
+        }
+        return ButtonDown(pad, "Left Bumper", "LB", "L1", "Left Shoulder");
+    }
 
-    internal static bool GetHealDown(Rewired.Joystick pad) =>
-        ButtonDown(pad, "Right Bumper", "RB", "R1", "Right Shoulder");
+    internal static bool GetHealDown(Rewired.Joystick pad, int slotIndex = -1)
+    {
+        if (slotIndex >= 0)
+        {
+            string mapped = CoopControlsConfig.GetBindings(slotIndex).PadHeal;
+            if (!string.IsNullOrEmpty(mapped))
+            {
+                if (ButtonDown(pad, mapped)) return true;
+                if (AxisDown(pad, "HealTrigger", mapped)) return true;
+            }
+        }
+        return ButtonDown(pad, "Right Bumper", "RB", "R1", "Right Shoulder");
+    }
 
-    internal static bool GetInteractDown(Rewired.Joystick pad) =>
-        ButtonDown(pad, "Y Button", "Button Y", "Action Button 4", "Triangle", "Button 3", "Y");
+    internal static bool GetInteractDown(Rewired.Joystick pad, int slotIndex = -1)
+    {
+        if (slotIndex >= 0)
+        {
+            string mapped = CoopControlsConfig.GetBindings(slotIndex).PadInteract;
+            if (!string.IsNullOrEmpty(mapped))
+            {
+                if (ButtonDown(pad, mapped)) return true;
+                if (AxisDown(pad, "InteractTrigger", mapped)) return true;
+            }
+        }
+        return ButtonDown(pad, "Y Button", "Button Y", "Action Button 4", "Triangle", "Button 3", "Y");
+    }
 
-    internal static bool GetDashDown(Rewired.Joystick pad) =>
-        AxisDown(pad, "DashTrigger", "Right Trigger", "RT", "R2");
+    internal static bool GetDashDown(Rewired.Joystick pad, int slotIndex = -1)
+    {
+        if (slotIndex >= 0)
+        {
+            string mapped = CoopControlsConfig.GetBindings(slotIndex).PadDash;
+            if (!string.IsNullOrEmpty(mapped))
+            {
+                if (AxisDown(pad, "DashTrigger", mapped)) return true;
+                if (ButtonDown(pad, mapped)) return true;
+            }
+        }
+        return AxisDown(pad, "DashTrigger", "Right Trigger", "RT", "R2") || ButtonDown(pad, "Right Trigger", "RT", "R2");
+    }
 
-    internal static bool GetDashHeld(Rewired.Joystick pad) =>
-        AxisHeld(pad, "DashTrigger", "Right Trigger", "RT", "R2");
+    internal static bool GetDashHeld(Rewired.Joystick pad, int slotIndex = -1)
+    {
+        if (slotIndex >= 0)
+        {
+            string mapped = CoopControlsConfig.GetBindings(slotIndex).PadDash;
+            if (!string.IsNullOrEmpty(mapped))
+            {
+                if (AxisHeld(pad, "DashTrigger", mapped)) return true;
+                if (ButtonHeld(pad, mapped)) return true;
+            }
+        }
+        return AxisHeld(pad, "DashTrigger", "Right Trigger", "RT", "R2") || ButtonHeld(pad, "Right Trigger", "RT", "R2");
+    }
 
-    internal static bool GetPrayerActivateDown(Rewired.Joystick pad) =>
-        AxisDown(pad, "PrayerTrigger", "Left Trigger", "LT", "L2");
+    internal static bool GetPrayerActivateDown(Rewired.Joystick pad, int slotIndex = -1)
+    {
+        if (slotIndex >= 0)
+        {
+            string mapped = CoopControlsConfig.GetBindings(slotIndex).PadPrayer;
+            if (!string.IsNullOrEmpty(mapped))
+            {
+                if (AxisDown(pad, "PrayerTrigger", mapped)) return true;
+                if (ButtonDown(pad, mapped)) return true;
+            }
+        }
+        return AxisDown(pad, "PrayerTrigger", "Left Trigger", "LT", "L2") || ButtonDown(pad, "Left Trigger", "LT", "L2");
+    }
 
-    internal static bool GetPrayerActivateUp(Rewired.Joystick pad) =>
-        AxisUp(pad, "PrayerTrigger", "Left Trigger", "LT", "L2");
+    internal static bool GetPrayerActivateUp(Rewired.Joystick pad, int slotIndex = -1)
+    {
+        if (slotIndex >= 0)
+        {
+            string mapped = CoopControlsConfig.GetBindings(slotIndex).PadPrayer;
+            if (!string.IsNullOrEmpty(mapped))
+            {
+                if (AxisUp(pad, "PrayerTrigger", mapped)) return true;
+                if (ButtonUp(pad, mapped)) return true;
+            }
+        }
+        return AxisUp(pad, "PrayerTrigger", "Left Trigger", "LT", "L2") || ButtonUp(pad, "Left Trigger", "LT", "L2");
+    }
 
     internal static bool Left => GetLeft(Pad);
     internal static bool Right => GetRight(Pad);
@@ -224,6 +346,13 @@ internal static class Player2Pad
     internal static bool HealDown => GetHealDown(Pad);
     internal static bool InteractDown => GetInteractDown(Pad);
     internal static bool GetStartDown(Rewired.Joystick pad) => ButtonDown(pad, "Start", "Options", "Menu", "Back", "Select", "View", "Share");
+    internal static bool GetButtonDownMapped(Rewired.Joystick pad, string mapped)
+    {
+        if (pad == null || string.IsNullOrEmpty(mapped)) return false;
+        if (ButtonDown(pad, mapped)) return true;
+        if (AxisDown(pad, "MappedTrigger_" + mapped, mapped)) return true;
+        return false;
+    }
     internal static bool StartDown => GetStartDown(Pad);
 
     internal static bool GetCancelDown(Rewired.Joystick pad) => ButtonDown(pad, "B Button", "Button B", "Action Button 2", "Circle", "Button 1", "B");
@@ -535,107 +664,180 @@ internal static class Player2Input
     // Métodos para consultar input por ranura de jugador (P2=1, P3=2, P4=3)
     internal static bool GetLeft(int slotIndex)
     {
-        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKey(Player2Keys.Left);
+        if (slotIndex >= 0 && slotIndex < 4 && CoopGameConfig.Slots[slotIndex].Device == CoopDeviceType.RemoteSteam)
+            return CoopNetworkManager.GetRemoteButton(slotIndex, CoopButtonFlags.Left) || CoopNetworkManager.GetRemoteAxisX(slotIndex) < -0.3f;
+        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKey(CoopControlsConfig.GetBindings(slotIndex).KeyLeft);
         var pad = Player2Pad.GetPadForSlot(slotIndex);
         return Player2Pad.GetLeft(pad);
     }
 
     internal static bool GetRight(int slotIndex)
     {
-        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKey(Player2Keys.Right);
+        if (slotIndex >= 0 && slotIndex < 4 && CoopGameConfig.Slots[slotIndex].Device == CoopDeviceType.RemoteSteam)
+            return CoopNetworkManager.GetRemoteButton(slotIndex, CoopButtonFlags.Right) || CoopNetworkManager.GetRemoteAxisX(slotIndex) > 0.3f;
+        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKey(CoopControlsConfig.GetBindings(slotIndex).KeyRight);
         var pad = Player2Pad.GetPadForSlot(slotIndex);
         return Player2Pad.GetRight(pad);
     }
 
     internal static bool GetUp(int slotIndex)
     {
-        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKey(Player2Keys.Up);
+        if (slotIndex >= 0 && slotIndex < 4 && CoopGameConfig.Slots[slotIndex].Device == CoopDeviceType.RemoteSteam)
+            return CoopNetworkManager.GetRemoteButton(slotIndex, CoopButtonFlags.Up) || CoopNetworkManager.GetRemoteAxisY(slotIndex) > 0.3f;
+        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKey(CoopControlsConfig.GetBindings(slotIndex).KeyUp);
         var pad = Player2Pad.GetPadForSlot(slotIndex);
         return Player2Pad.GetUp(pad);
     }
 
     internal static bool GetDown(int slotIndex)
     {
-        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKey(Player2Keys.Down);
+        if (slotIndex >= 0 && slotIndex < 4 && CoopGameConfig.Slots[slotIndex].Device == CoopDeviceType.RemoteSteam)
+            return CoopNetworkManager.GetRemoteButton(slotIndex, CoopButtonFlags.Down) || CoopNetworkManager.GetRemoteAxisY(slotIndex) < -0.3f;
+        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKey(CoopControlsConfig.GetBindings(slotIndex).KeyDown);
         var pad = Player2Pad.GetPadForSlot(slotIndex);
         return Player2Pad.GetDown(pad);
     }
 
     internal static bool GetJumpHeld(int slotIndex)
     {
-        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKey(Player2Keys.Jump);
+        if (slotIndex >= 0 && slotIndex < 4 && CoopGameConfig.Slots[slotIndex].Device == CoopDeviceType.RemoteSteam)
+            return CoopNetworkManager.GetRemoteButton(slotIndex, CoopButtonFlags.Jump);
+        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKey(CoopControlsConfig.GetBindings(slotIndex).KeyJump);
         var pad = Player2Pad.GetPadForSlot(slotIndex);
-        return Player2Pad.GetJumpHeld(pad);
+        return Player2Pad.GetJumpHeld(pad, slotIndex);
     }
 
     internal static bool GetAttackDown(int slotIndex)
     {
-        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKeyDown(Player2Keys.Attack);
+        if (slotIndex >= 0 && slotIndex < 4 && CoopGameConfig.Slots[slotIndex].Device == CoopDeviceType.RemoteSteam)
+            return CoopNetworkManager.GetRemoteButtonDown(slotIndex, CoopButtonFlags.Attack);
+        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKeyDown(CoopControlsConfig.GetBindings(slotIndex).KeyAttack);
         var pad = Player2Pad.GetPadForSlot(slotIndex);
-        return Player2Pad.GetAttackDown(pad);
+        return Player2Pad.GetAttackDown(pad, slotIndex);
     }
 
     internal static bool GetAttackUp(int slotIndex)
     {
-        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKeyUp(Player2Keys.Attack);
+        if (slotIndex >= 0 && slotIndex < 4 && CoopGameConfig.Slots[slotIndex].Device == CoopDeviceType.RemoteSteam)
+            return CoopNetworkManager.GetRemoteButtonUp(slotIndex, CoopButtonFlags.Attack);
+        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKeyUp(CoopControlsConfig.GetBindings(slotIndex).KeyAttack);
         var pad = Player2Pad.GetPadForSlot(slotIndex);
-        return Player2Pad.GetAttackUp(pad);
+        return Player2Pad.GetAttackUp(pad, slotIndex);
     }
 
     internal static bool GetAttackHeld(int slotIndex)
     {
-        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKey(Player2Keys.Attack);
+        if (slotIndex >= 0 && slotIndex < 4 && CoopGameConfig.Slots[slotIndex].Device == CoopDeviceType.RemoteSteam)
+            return CoopNetworkManager.GetRemoteButton(slotIndex, CoopButtonFlags.Attack);
+        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKey(CoopControlsConfig.GetBindings(slotIndex).KeyAttack);
         var pad = Player2Pad.GetPadForSlot(slotIndex);
-        return Player2Pad.GetAttackHeld(pad);
+        return Player2Pad.GetAttackHeld(pad, slotIndex);
     }
 
     internal static bool GetDashDown(int slotIndex)
     {
-        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKeyDown(Player2Keys.Dash);
+        if (slotIndex >= 0 && slotIndex < 4 && CoopGameConfig.Slots[slotIndex].Device == CoopDeviceType.RemoteSteam)
+            return CoopNetworkManager.GetRemoteButtonDown(slotIndex, CoopButtonFlags.Dash);
+        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKeyDown(CoopControlsConfig.GetBindings(slotIndex).KeyDash);
         var pad = Player2Pad.GetPadForSlot(slotIndex);
-        return Player2Pad.GetDashDown(pad);
+        return Player2Pad.GetDashDown(pad, slotIndex);
     }
 
     internal static bool GetDashHeld(int slotIndex)
     {
-        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKey(Player2Keys.Dash);
+        if (slotIndex >= 0 && slotIndex < 4 && CoopGameConfig.Slots[slotIndex].Device == CoopDeviceType.RemoteSteam)
+            return CoopNetworkManager.GetRemoteButton(slotIndex, CoopButtonFlags.Dash);
+        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKey(CoopControlsConfig.GetBindings(slotIndex).KeyDash);
         var pad = Player2Pad.GetPadForSlot(slotIndex);
-        return Player2Pad.GetDashHeld(pad);
+        return Player2Pad.GetDashHeld(pad, slotIndex);
     }
 
     internal static bool GetParryDown(int slotIndex)
     {
-        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKeyDown(Player2Keys.Parry);
+        if (slotIndex >= 0 && slotIndex < 4 && CoopGameConfig.Slots[slotIndex].Device == CoopDeviceType.RemoteSteam)
+            return CoopNetworkManager.GetRemoteButtonDown(slotIndex, CoopButtonFlags.Parry);
+        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKeyDown(CoopControlsConfig.GetBindings(slotIndex).KeyParry);
         var pad = Player2Pad.GetPadForSlot(slotIndex);
-        return Player2Pad.GetParryDown(pad);
+        return Player2Pad.GetParryDown(pad, slotIndex);
     }
 
     internal static bool GetHealDown(int slotIndex)
     {
-        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKeyDown(Player2Keys.Heal);
+        if (slotIndex >= 0 && slotIndex < 4 && CoopGameConfig.Slots[slotIndex].Device == CoopDeviceType.RemoteSteam)
+            return CoopNetworkManager.GetRemoteButtonDown(slotIndex, CoopButtonFlags.Heal);
+        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKeyDown(CoopControlsConfig.GetBindings(slotIndex).KeyHeal);
         var pad = Player2Pad.GetPadForSlot(slotIndex);
-        return Player2Pad.GetHealDown(pad);
+        return Player2Pad.GetHealDown(pad, slotIndex);
     }
 
     internal static bool GetInteractDown(int slotIndex)
     {
-        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKeyDown(Player2Keys.Interact);
+        if (slotIndex >= 0 && slotIndex < 4 && CoopGameConfig.Slots[slotIndex].Device == CoopDeviceType.RemoteSteam)
+            return CoopNetworkManager.GetRemoteButtonDown(slotIndex, CoopButtonFlags.Interact);
+        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKeyDown(CoopControlsConfig.GetBindings(slotIndex).KeyInteract);
         var pad = Player2Pad.GetPadForSlot(slotIndex);
-        return Player2Pad.GetInteractDown(pad);
+        return Player2Pad.GetInteractDown(pad, slotIndex);
     }
 
     internal static bool GetPrayerActivateDown(int slotIndex)
     {
-        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKeyDown(Player2Keys.PrayerActivate);
+        if (slotIndex >= 0 && slotIndex < 4 && CoopGameConfig.Slots[slotIndex].Device == CoopDeviceType.RemoteSteam)
+            return CoopNetworkManager.GetRemoteButtonDown(slotIndex, CoopButtonFlags.Prayer);
+        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKeyDown(CoopControlsConfig.GetBindings(slotIndex).KeyPrayer);
         var pad = Player2Pad.GetPadForSlot(slotIndex);
-        return Player2Pad.GetPrayerActivateDown(pad);
+        return Player2Pad.GetPrayerActivateDown(pad, slotIndex);
     }
 
     internal static bool GetPrayerActivateUp(int slotIndex)
     {
-        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKeyUp(Player2Keys.PrayerActivate);
+        if (slotIndex >= 0 && slotIndex < 4 && CoopGameConfig.Slots[slotIndex].Device == CoopDeviceType.RemoteSteam)
+            return CoopNetworkManager.GetRemoteButtonUp(slotIndex, CoopButtonFlags.Prayer);
+        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKeyUp(CoopControlsConfig.GetBindings(slotIndex).KeyPrayer);
         var pad = Player2Pad.GetPadForSlot(slotIndex);
-        return Player2Pad.GetPrayerActivateUp(pad);
+        return Player2Pad.GetPrayerActivateUp(pad, slotIndex);
+    }
+
+    internal static bool GetPauseDown(int slotIndex)
+    {
+        if (slotIndex >= 0 && slotIndex < 4 && CoopGameConfig.Slots[slotIndex].Device == CoopDeviceType.RemoteSteam)
+            return CoopNetworkManager.GetRemoteButtonDown(slotIndex, CoopButtonFlags.Pause);
+        if (slotIndex == ActiveKeyboardPlayerIndex)
+        {
+            KeyCode k = CoopControlsConfig.GetBindings(slotIndex).KeyPause;
+            return Input.GetKeyDown(k != KeyCode.None ? k : KeyCode.Escape);
+        }
+        var pad = Player2Pad.GetPadForSlot(slotIndex);
+        if (pad != null)
+        {
+            string mapped = CoopControlsConfig.GetBindings(slotIndex).PadPause;
+            if (!string.IsNullOrEmpty(mapped))
+            {
+                if (Player2Pad.GetButtonDownMapped(pad, mapped)) return true;
+            }
+            return Player2Pad.GetStartDown(pad);
+        }
+        return false;
+    }
+
+    internal static bool HasAnyInput(int slotIndex)
+    {
+        if (slotIndex >= 0 && slotIndex < 4 && CoopGameConfig.Slots[slotIndex].Device == CoopDeviceType.RemoteSteam)
+            return CoopNetworkManager.HasRemoteInput(slotIndex);
+        if (slotIndex == ActiveKeyboardPlayerIndex && Input.anyKey) return true;
+        var pad = Player2Pad.GetPadForSlot(slotIndex);
+        if (pad != null)
+        {
+            if (pad.GetAnyButton() || pad.GetAnyButtonDown()) return true;
+            if (Mathf.Abs(pad.GetAxis(0)) >= 0.2f || Mathf.Abs(pad.GetAxis(1)) >= 0.2f) return true;
+        }
+        return GetLeft(slotIndex) || GetRight(slotIndex) || GetUp(slotIndex) || GetDown(slotIndex)
+            || GetAttackDown(slotIndex) || GetAttackHeld(slotIndex)
+            || GetJumpHeld(slotIndex)
+            || GetDashDown(slotIndex) || GetDashHeld(slotIndex)
+            || GetParryDown(slotIndex)
+            || GetHealDown(slotIndex)
+            || GetInteractDown(slotIndex)
+            || GetPrayerActivateDown(slotIndex);
     }
 
     internal static bool Left => Mode == Player2InputMode.Gamepad ? Player2Pad.Left : Input.GetKey(Player2Keys.Left);
@@ -664,6 +866,8 @@ internal static class Player2Input
 
     internal static bool GetMenuDown(int slotIndex)
     {
+        if (slotIndex >= 0 && slotIndex < 4 && CoopGameConfig.Slots[slotIndex].Device == CoopDeviceType.RemoteSteam)
+            return CoopNetworkManager.GetRemoteButtonDown(slotIndex, CoopButtonFlags.Menu);
         if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKeyDown(Player2Keys.Menu);
         var pad = Player2Pad.GetPadForSlot(slotIndex);
         return pad != null && Player2Pad.GetStartDown(pad);
@@ -726,7 +930,41 @@ internal static class Player2Input
             Combat.BossDebugTeleportManager.ToggleMenu();
         }
 
+        // Menú de Pausa / Opciones / Configuración de Controles independiente para cada jugador
+        if (!CoopGameSetupUI.IsOpen && !HudLayoutDebugEditor.IsOpen && !Combat.BossDebugTeleportManager.IsMenuOpen && !(Gameplay.UI.UIController.instance != null && Gameplay.UI.UIController.instance.IsShowingMenu))
+        {
+            if (!CoopPlayerPauseMenu.IsOpen && CoopGameConfig.IsCoopEnabled)
+            {
+                int maxPlayers = Mathf.Clamp(CoopGameConfig.PlayerCount, 2, 4);
+                for (int slot = 1; slot < maxPlayers; slot++)
+                {
+                    if (GetPauseDown(slot))
+                    {
+                        CoopPlayerPauseMenu.OpenMenu(slot);
+                        break;
+                    }
+                }
+            }
+        }
+
         // Dentro de Tick(), lógica P2 para abrir menú de inventario y atajo F6/F7 de fervor máximo:
+        // Atajo de prueba Hot-Plug dinámico (F10 + 2 / 3 / 4 para conectar/desconectar P2, P3, P4)
+        if (Input.GetKey(KeyCode.F10))
+        {
+            if (Input.GetKeyDown(KeyCode.Alpha2) || Input.GetKeyDown(KeyCode.Keypad2))
+            {
+                CoopLocal.ToggleGuestPlayerDynamically(1);
+            }
+            else if (Input.GetKeyDown(KeyCode.Alpha3) || Input.GetKeyDown(KeyCode.Keypad3))
+            {
+                CoopLocal.ToggleGuestPlayerDynamically(2);
+            }
+            else if (Input.GetKeyDown(KeyCode.Alpha4) || Input.GetKeyDown(KeyCode.Keypad4))
+            {
+                CoopLocal.ToggleGuestPlayerDynamically(3);
+            }
+        }
+
         if (Input.GetKeyDown(KeyCode.F6) || Input.GetKeyDown(KeyCode.F7))
         {
             var p1 = Framework.Managers.Core.Logic.Penitent;
@@ -783,7 +1021,8 @@ internal static class Player2Input
         // HUD/HudPositionTuner.cs por si se necesita retomar el ajuste manual del HUD más adelante;
         // solo se dejó de invocar su Tick().
         // Player2HudPositionTuner.Tick();
-Player2PurgePoints.Tick();
+        Player2PurgePoints.Tick();
+        CoopPurgeHUD.Tick();
         }
 
         // Opening the shared inventory/prayer menu isn't per-player state (there's only one

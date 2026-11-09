@@ -176,9 +176,24 @@ internal static class DeadScreenWidget_OnPenitentReady_Patch
 {
     private static void Prefix(Gameplay.UI.Others.Buttons.DeadScreenWidget __instance, Gameplay.GameControllers.Penitent.Penitent penitent)
     {
-        if (penitent != null)
+        if (penitent != null && penitent.OnDead != null)
         {
-            penitent.OnDead = (Framework.Managers.Core.SimpleEvent)System.Delegate.Remove(penitent.OnDead, new Framework.Managers.Core.SimpleEvent(__instance.OnDead));
+            try
+            {
+                Delegate[] invocations = penitent.OnDead.GetInvocationList();
+                for (int i = 0; i < invocations.Length; i++)
+                {
+                    Delegate del = invocations[i];
+                    if (del != null && del.Target == (object)__instance && del.Method != null && del.Method.Name == "OnDead")
+                    {
+                        penitent.OnDead = (Framework.Managers.Core.SimpleEvent)Delegate.Remove(penitent.OnDead, del);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                DashParryDebugLog.Log($"[CoopDeath] Error removing DeadScreenWidget.OnDead: {ex.Message}");
+            }
         }
         DeadScreenWidget_OnDead_Guard_Patch.IsDeadScreenActive = false;
     }

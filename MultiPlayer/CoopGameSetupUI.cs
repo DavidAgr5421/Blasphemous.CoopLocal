@@ -758,6 +758,21 @@ internal sealed class CoopGameSetupUI : MonoBehaviour
             {
                 BypassDeviceAssignment();
             }
+
+        // Asignar jugador como Steam Online con tecla [O] o [F3] (solo invitados P2..P4)
+        if (currentAssignSlotIndex >= 1 && (Input.GetKeyDown(KeyCode.O) || Input.GetKeyDown(KeyCode.F3)))
+        {
+            CoopGameConfig.AssignDevice(currentAssignSlotIndex, CoopDeviceType.RemoteSteam);
+            CoopGameConfig.Slots[currentAssignSlotIndex].IsOnlineConnected = false;
+            Core.Audio?.PlayOneShot("event:/SFX/UI/EquipItem");
+            if (deviceAssignStatusText != null)
+            {
+                deviceAssignStatusText.color = new Color(0.35f, 0.85f, 1f, 1f);
+                deviceAssignStatusText.text = $"✔ ¡{CoopGameConfig.Slots[currentAssignSlotIndex].Name} configurado como 🌐 Steam Online!";
+            }
+            assignSuccessTimer = 0.50f;
+            return;
+        }
             return;
         }
 
@@ -1153,7 +1168,10 @@ internal sealed class CoopGameSetupUI : MonoBehaviour
 
         if (deviceAssignPromptText != null)
         {
-            deviceAssignPromptText.text = "Presiona el botón del control que vas a usar o teclado.";
+            if (currentAssignSlotIndex == 0)
+                deviceAssignPromptText.text = "Presiona el botón del control que vas a usar o teclado (Host P1).";
+            else
+                deviceAssignPromptText.text = "Presiona el botón del control, teclado, o tecla [O] para 🌐 Steam Online.";
         }
 
         if (deviceAssignStatusText != null)
@@ -1432,13 +1450,13 @@ internal sealed class CoopGameSetupUI : MonoBehaviour
 
         // Fila 4: Preajuste
         string presetLabel = $"Recomendado ({activePlayers} Jugadores)";
-        if (Mathf.Approximately(curEm, 1.0f) && Mathf.Approximately(curHm, 1.0f) && Mathf.Approximately(curBr, 0.0f))
+        if (Mathf.Approximately(curEm, 1.0f) && Mathf.Approximately(curHm, 1.0f) && Mathf.Approximately(curBr, 1.0f))
         {
             presetLabel = "Modo Clásico Vanilla (1.0x / 1.0x / Sin Resistencia)";
         }
-        else if (Mathf.Approximately(curEm, 2.5f) && Mathf.Approximately(curHm, 2.5f) && Mathf.Approximately(curBr, 1.70f))
+        else if (Mathf.Approximately(curEm, 2.5f) && Mathf.Approximately(curHm, 2.5f) && Mathf.Approximately(curBr, 3.5f))
         {
-            presetLabel = "Modo Pesadilla (x2.5 Enemigos / x2.5 Vida / Resistencia Extrema)";
+            presetLabel = "Modo Pesadilla (x2.5 Enemigos / x2.5 Vida / x3.5 Jefes)";
         }
         else if (Mathf.Approximately(curEm, 3.0f) && Mathf.Approximately(curHm, 2.0f))
         {
@@ -1667,21 +1685,21 @@ internal sealed class CoopGameSetupUI : MonoBehaviour
                         // Caos total
                         Combat.CoopEnemyScaling.ActiveEnemyMultiplier = 3.0f;
                         Combat.CoopEnemyScaling.ActiveHealthMultiplier = 2.0f;
-                        Combat.CoopEnemyScaling.ActiveBossResistanceFactor = 1.0f;
+                        Combat.CoopEnemyScaling.ActiveBossResistanceFactor = 2.75f;
                     }
                     else
                     {
                         // Pesadilla
                         Combat.CoopEnemyScaling.ActiveEnemyMultiplier = 2.5f;
                         Combat.CoopEnemyScaling.ActiveHealthMultiplier = 2.5f;
-                        Combat.CoopEnemyScaling.ActiveBossResistanceFactor = 1.70f;
+                        Combat.CoopEnemyScaling.ActiveBossResistanceFactor = 3.5f;
                     }
                 }
                 else
                 {
                     Combat.CoopEnemyScaling.ActiveEnemyMultiplier = 1.0f;
                     Combat.CoopEnemyScaling.ActiveHealthMultiplier = 1.0f;
-                    Combat.CoopEnemyScaling.ActiveBossResistanceFactor = 0.0f;
+                    Combat.CoopEnemyScaling.ActiveBossResistanceFactor = 1.0f;
                 }
                 break;
         }

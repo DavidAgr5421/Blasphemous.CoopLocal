@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Reflection;
 using Framework.FrameworkCore;
@@ -29,8 +29,8 @@ namespace Blasphemous.CoopLocal.Combat;
 /// Sistema de Enfoque y Selección Dinámica de Objetivo para Enemigos y Jefes (P1, P2, P3, P4).
 /// Permite que los enemigos detecten, persigan, miren y ataquen a cualquiera de los jugadores,
 /// basándose en proximidad (jugador vivo más cercano) y agresividad/retaliación al recibir daño.
-/// Ronda 96: Soporte completo para enemigos con poste/tronco (BellCarrier, Processioner, ChainedAngel, Flagellant, etc.)
-/// interceptando Entity.Update para cubrir el 100% de subclases que omiten Enemy.OnUpdate.
+/// Para Jefes (Bosses), delega en BossTargetController aplicando histéresis estricta de 10-14s y
+/// protección de animaciones para prevenir oscilaciones o indecisión ("dudando / trabado").
 /// </summary>
 internal static class EnemyTargetingSystem
 {
@@ -43,12 +43,19 @@ internal static class EnemyTargetingSystem
     private static readonly Dictionary<Enemy, AggroData> EnemyAggroTable = new Dictionary<Enemy, AggroData>();
 
     /// <summary>
-    /// Registra agresión / represalia: cuando un jugador hiere a un enemigo,
+    /// Registra agresión / represalia: cuando un jugador hiere a un enemigo estándar,
     /// dicho enemigo fija como prioridad atacar a ese jugador durante 'duration' segundos.
+    /// Para jefes, delega en BossTargetController acumulando estadísticas sin flip-flopping.
     /// </summary>
     public static void RecordDamageAggro(Enemy enemy, Penitent attacker, float duration = 5.0f)
     {
         if (enemy == null || attacker == null || attacker.Status.Dead) return;
+
+        if (BossTargetController.IsBoss(enemy))
+        {
+            BossTargetController.RecordBossDamage(enemy, attacker, 10.0f);
+            return;
+        }
 
         EnemyAggroTable[enemy] = new AggroData
         {
@@ -108,12 +115,19 @@ internal static class EnemyTargetingSystem
 
     /// <summary>
     /// Selecciona el mejor jugador objetivo para un enemigo:
+    /// Si es un Jefe, delega en BossTargetController (histéresis de 10-14s y protección de combo).
+    /// Si es un enemigo estándar:
     /// 1. Prioriza represalia si un jugador lo dañó recientemente y sigue vivo y a distancia razonable.
     /// 2. En caso contrario, elige al jugador vivo más cercano.
     /// </summary>
     public static Penitent GetBestTarget(Enemy enemy)
     {
         if (enemy == null) return Core.Logic?.Penitent;
+
+        if (BossTargetController.IsBoss(enemy))
+        {
+            return BossTargetController.GetOrUpdateBossTarget(enemy);
+        }
 
         List<Penitent> players = GetActiveLivingPlayers();
         if (players.Count == 0)
@@ -209,6 +223,7 @@ internal static class EnemyTargetingSystem
     public static void Clear()
     {
         EnemyAggroTable.Clear();
+        BossTargetController.Clear();
     }
 
     public static void CleanDeadOrInvalidEnemies()
@@ -250,7 +265,6 @@ internal static class Entity_Update_Targeting_Patch
         }
     }
 }
-
 
 /// <summary>
 /// Parche en EnemyBehaviour.GetTarget: intercepta las consultas de la IA / BehaviourTree
@@ -426,8 +440,9 @@ internal static class RunnerBehaviour_OnPlayerDead_Patch
 }
 
 /// <summary>
-/// Parche en EnemyDamageArea.TakeDamage: cuando un enemigo es golpeado por un jugador,
-/// registra represalia inmediata (aggro) hacia dicho atacante para que el enemigo se gire y lo ataque.
+/// Parche en EnemyDamageArea.TakeDamage: cuando un enemigo es golpeado por un jugador:
+/// - Si es un jefe: registra el daño en BossTargetController (sin romper la fijación actual de 10-14s).
+/// - Si es un enemigo estándar: registra represalia inmediata (aggro) hacia dicho atacante.
 /// </summary>
 [HarmonyPatch(typeof(EnemyDamageArea), nameof(EnemyDamageArea.TakeDamage))]
 internal static class EnemyDamageArea_TakeDamage_Aggro_Patch
@@ -442,7 +457,14 @@ internal static class EnemyDamageArea_TakeDamage_Aggro_Patch
         Enemy enemy = __instance.GetComponent<Enemy>() ?? __instance.GetComponentInParent<Enemy>();
         if (enemy == null || enemy.Status.Dead) return;
 
-        EnemyTargetingSystem.RecordDamageAggro(enemy, attacker, 5.0f);
+        if (BossTargetController.IsBoss(enemy))
+        {
+            BossTargetController.RecordBossDamage(enemy, attacker, hit.DamageAmount);
+        }
+        else
+        {
+            EnemyTargetingSystem.RecordDamageAggro(enemy, attacker, 5.0f);
+        }
     }
 }
 
@@ -456,7 +478,7 @@ internal static class AmanecidasBehaviour_LookAtPenitent_Patch
     private static bool Prefix(AmanecidasBehaviour __instance)
     {
         Enemy enemy = __instance.GetComponentInParent<Enemy>();
-        Penitent target = EnemyTargetingSystem.GetBestTarget(enemy);
+        Penitent target = BossTargetController.GetCurrentLockedTarget(enemy);
         if (target != null)
         {
             __instance.LookAtTarget(target.transform.position);
@@ -472,7 +494,7 @@ internal static class CrisantaBehaviour_LookAtPenitent_Patch
     private static bool Prefix(CrisantaBehaviour __instance)
     {
         Enemy enemy = __instance.GetComponentInParent<Enemy>();
-        Penitent target = EnemyTargetingSystem.GetBestTarget(enemy);
+        Penitent target = BossTargetController.GetCurrentLockedTarget(enemy);
         if (target != null)
         {
             __instance.LookAtTarget(target.transform.position);
@@ -488,7 +510,7 @@ internal static class EsdrasBehaviour_LookAtPenitent_Patch
     private static bool Prefix(EsdrasBehaviour __instance)
     {
         Enemy enemy = __instance.GetComponentInParent<Enemy>();
-        Penitent target = EnemyTargetingSystem.GetBestTarget(enemy);
+        Penitent target = BossTargetController.GetCurrentLockedTarget(enemy);
         if (target != null)
         {
             __instance.LookAtTarget(target.transform.position);
@@ -504,7 +526,7 @@ internal static class PontiffOldmanBehaviour_LookAtPenitent_Patch
     private static bool Prefix(PontiffOldmanBehaviour __instance)
     {
         Enemy enemy = __instance.GetComponentInParent<Enemy>();
-        Penitent target = EnemyTargetingSystem.GetBestTarget(enemy);
+        Penitent target = BossTargetController.GetCurrentLockedTarget(enemy);
         if (target != null)
         {
             __instance.LookAtTarget(target.transform.position);

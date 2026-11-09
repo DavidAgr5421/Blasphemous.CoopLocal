@@ -86,6 +86,19 @@ internal static class IdleAnimatonBehaviour_OnStateEnter_Patch
     }
 }
 
+[HarmonyPatch(typeof(IdleAnimatonBehaviour), "OnStateExit")]
+internal static class IdleAnimatonBehaviour_OnStateExit_Patch
+{
+    private static void Prefix(Animator animator, ref Penitent ____penitent)
+    {
+        Penitent owner = animator.GetComponentInParent<Penitent>();
+        if (owner != null)
+        {
+            ____penitent = owner;
+        }
+    }
+}
+
 [HarmonyPatch(typeof(MoveAnimationBehaviour), "OnStateEnter")]
 internal static class MoveAnimationBehaviour_OnStateEnter_Patch
 {

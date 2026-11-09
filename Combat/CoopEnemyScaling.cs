@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Framework.FrameworkCore;
 using Framework.Managers;
 using Gameplay.GameControllers.Entities;
+using HarmonyLib;
 using UnityEngine;
 
 namespace Blasphemous.CoopLocal.Combat;
@@ -72,16 +73,16 @@ public static class CoopEnemyScaling
     public static readonly float[] EnemyCountMultipliers = { 1.0f, 1.5f, 2.0f, 2.5f, 3.0f };
     public static readonly string[] EnemyCountLabels = { "1.0x (Normal)", "1.5x (+50%)", "2.0x (Doble)", "2.5x (+150%)", "3.0x (Triple)" };
 
-    public static readonly float[] HealthMultipliers = { 2.5f, 3.25f, 4.0f, 5.0f };
-    public static readonly string[] HealthLabels = { "+150% (x2.5)", "+225% (x3.25)", "+300% (x4.0)", "+400% (x5.0)" };
+    public static readonly float[] HealthMultipliers = { 1.5f, 1.75f, 2.0f, 2.25f, 2.5f };
+    public static readonly string[] HealthLabels = { "+50% (x1.5)", "+75% (x1.75)", "+100% (x2.0)", "+125% (x2.25)", "+150% (x2.5)" };
 
-    public static readonly float[] BossResistanceLevels = { 2.5f, 3.25f, 4.0f };
-    public static readonly string[] BossResistanceLabels = { "Estándar (30% - 65%)", "Alta (45% - 80%)", "Extrema (60% - 90%)" };
+    public static readonly float[] BossResistanceLevels = { 2.0f, 2.75f, 3.5f };
+    public static readonly string[] BossResistanceLabels = { "Estándar (x2.0)", "Alta (x2.75)", "Extrema (x3.5)" };
 
     // Configuración activa
     public static float ActiveEnemyMultiplier = 1.0f;
-    public static float ActiveHealthMultiplier = 2.5f;
-    public static float ActiveBossResistanceFactor = 2.5f;
+    public static float ActiveHealthMultiplier = 1.5f;
+    public static float ActiveBossResistanceFactor = 2.0f;
 
     // Catálogo de resistencias por ID de Jefe
     private static readonly Dictionary<string, BossResistanceProfile> BossProfiles = new(StringComparer.OrdinalIgnoreCase)
@@ -130,19 +131,19 @@ public static class CoopEnemyScaling
                 break;
             case 2:
                 ActiveEnemyMultiplier = 1.5f;
-                ActiveHealthMultiplier = 2.5f;
-                ActiveBossResistanceFactor = 2.5f;
+                ActiveHealthMultiplier = 1.5f;
+                ActiveBossResistanceFactor = 2.0f;
                 break;
             case 3:
                 ActiveEnemyMultiplier = 2.0f;
-                ActiveHealthMultiplier = 3.25f;
-                ActiveBossResistanceFactor = 3.25f;
+                ActiveHealthMultiplier = 2.0f;
+                ActiveBossResistanceFactor = 2.75f;
                 break;
             case 4:
             default:
                 ActiveEnemyMultiplier = 2.5f;
-                ActiveHealthMultiplier = 4.0f;
-                ActiveBossResistanceFactor = 4.0f;
+                ActiveHealthMultiplier = 2.5f;
+                ActiveBossResistanceFactor = 3.5f;
                 break;
         }
     }
@@ -205,28 +206,25 @@ public static class CoopEnemyScaling
     {
         if (!IsBoss(enemy)) return 0f;
         BossResistanceProfile profile = GetBossProfile(enemy);
-        float effectiveFactor = Mathf.Clamp(ActiveBossResistanceFactor, 2.5f, 4.0f);
-        float mult = Mathf.Lerp(1.0f, 1.35f, Mathf.InverseLerp(2.5f, 4.0f, effectiveFactor));
+        float effectiveFactor = Mathf.Clamp(ActiveBossResistanceFactor, 2.0f, 3.5f);
+        float mult = Mathf.Lerp(1.0f, 1.35f, Mathf.InverseLerp(2.0f, 3.5f, effectiveFactor));
         float rawRes = profile.BasePoisonResistance * mult;
-        return Mathf.Clamp(rawRes, 0.30f, 0.90f);
+        return Mathf.Clamp(rawRes, 0.20f, 0.90f);
     }
 
     public static float GetBossBleedResistance(Enemy enemy)
     {
         if (!IsBoss(enemy)) return 0f;
         BossResistanceProfile profile = GetBossProfile(enemy);
-        float effectiveFactor = Mathf.Clamp(ActiveBossResistanceFactor, 2.5f, 4.0f);
-        float mult = Mathf.Lerp(1.0f, 1.35f, Mathf.InverseLerp(2.5f, 4.0f, effectiveFactor));
+        float effectiveFactor = Mathf.Clamp(ActiveBossResistanceFactor, 2.0f, 3.5f);
+        float mult = Mathf.Lerp(1.0f, 1.35f, Mathf.InverseLerp(2.0f, 3.5f, effectiveFactor));
         float rawRes = profile.BaseBleedResistance * mult;
-        return Mathf.Clamp(rawRes, 0.30f, 0.90f);
+        return Mathf.Clamp(rawRes, 0.20f, 0.90f);
     }
 
     public static int GetBossExtraBleedHits(Enemy enemy)
     {
-        if (!IsBoss(enemy)) return 0;
-        BossResistanceProfile profile = GetBossProfile(enemy);
-        float effectiveFactor = Mathf.Max(2.5f, ActiveBossResistanceFactor);
-        return Mathf.RoundToInt(profile.ExtraBleedHits * (effectiveFactor / 2.5f));
+        return 0;
     }
 
     /// <summary>
@@ -323,7 +321,7 @@ public static class CoopEnemyScaling
         }
     }
 
-    private static void ScaleEnemyHp(Enemy enemy, float mult)
+    public static void ScaleEnemyHp(Enemy enemy, float mult)
     {
         if (enemy == null) return;
         if (enemy.GetComponent<CoopScaledEnemyTag>() != null) return;
@@ -331,9 +329,26 @@ public static class CoopEnemyScaling
         float effectiveMult = mult;
         if (IsBoss(enemy) && CoopGameConfig.IsCoopEnabled)
         {
-            int players = Mathf.Max(2, CoopGameConfig.PlayerCount);
-            float bossMinMult = 2.5f + (players - 2) * 1.0f; // 2P: 2.5f, 3P: 3.5f, 4P: 4.5f
-            effectiveMult = Mathf.Max(mult, bossMinMult);
+            // Para jefes: escala de x2.0 (2 jugadores) hasta x3.5 (4 jugadores) máximo
+            int players = Mathf.Clamp(CoopGameConfig.PlayerCount, 2, 4);
+            float playerBaseline = 2.0f + (players - 2) * 0.75f; // 2P: 2.0f, 3P: 2.75f, 4P: 3.5f
+
+            if (mult > 1.01f)
+            {
+                // Mapear proporcionalmente la dificultad de enemigos normales [1.5x, 2.5x] a la escala de jefes [2.0x, 3.5x]
+                float t = Mathf.InverseLerp(1.5f, 2.5f, mult);
+                float customBossMult = Mathf.Lerp(2.0f, 3.5f, t);
+                effectiveMult = Mathf.Clamp(Mathf.Max(customBossMult, playerBaseline), 2.0f, 3.5f);
+            }
+            else
+            {
+                effectiveMult = Mathf.Clamp(playerBaseline, 2.0f, 3.5f);
+            }
+        }
+        else if (!IsBoss(enemy) && CoopGameConfig.IsCoopEnabled && mult > 1.01f)
+        {
+            // Para enemigos normales: inicia en x1.5 hasta x2.5 máximo
+            effectiveMult = Mathf.Clamp(mult, 1.5f, 2.5f);
         }
 
         if (effectiveMult <= 1.01f) return;
@@ -351,20 +366,32 @@ public static class CoopEnemyScaling
             if (baseHp > 0f)
             {
                 float newMaxHp = baseHp * effectiveMult;
-                float bonus = newMaxHp - baseHp;
 
-                // CRÍTICO: En VariableAttribute, CurrentMaxWithoutFactor = Mathf.Min(CalculateValue(), MaxValue).
-                // En los enemigos de Blasphemous, Life.MaxValue se inicializa a LifeMaximun (suele ser igual a Base o 500f).
-                // Si MaxValue NO se incrementa junto con el bonus, SetPermanentBonus se topa con el techo MaxValue y la vida NO sube.
-                if (enemy.Stats.Life.MaxValue < newMaxHp)
-                {
-                    enemy.Stats.Life.MaxValue = newMaxHp;
-                }
-                enemy.Stats.Life.SetPermanentBonus(bonus);
+                // CRÍTICO: En VariableAttribute (Life), set_MaxValue(newMaxHp) ya actualiza internamente
+                // _maxValue = newMaxHp y llama a base.set_Base(newMaxHp), recalculando la vida.
+                // Si adicionalmente se llamara a SetPermanentBonus(bonus), ese bono se sumaría dos veces
+                // a Final (Final = Base + PermanetBonus = newMaxHp + bonus), mientras Current se clampea
+                // a MaxValue (newMaxHp). Como resultado, la barra de vida del jefe leía:
+                // BarTarget = Current / Final = newMaxHp / (newMaxHp + bonus) (~60%), apareciendo incompleta.
+                //
+                // Por ello:
+                // 1) Asignamos MaxValue = newMaxHp (lo que setea Base = newMaxHp).
+                // 2) Seteamos PermanetBonus a 0 para que Final == Base == newMaxHp.
+                // 3) SetToCurrentMax() setea Current a newMaxHp.
+                // 4) Actualizamos LifeBase y LifeMaximun en EntityStats.
+                enemy.Stats.Life.MaxValue = newMaxHp;
+                enemy.Stats.Life.SetPermanentBonus(0f);
                 enemy.Stats.Life.SetToCurrentMax();
-                if (enemy.Stats.Life.Current < newMaxHp)
+                enemy.Stats.Life.Current = newMaxHp;
+
+                enemy.Stats.LifeBase = newMaxHp;
+                enemy.Stats.LifeMaximun = newMaxHp;
+
+                if (IsBoss(enemy) && Main.CoopLocal != null)
                 {
-                    enemy.Stats.Life.Current = newMaxHp;
+                    Blasphemous.ModdingAPI.ModLog.Info(
+                        $"[CoopEnemyScaling] Boss '{enemy.name}' escalado: Base={enemy.Stats.Life.Base:F0}, Final={enemy.Stats.Life.Final:F0}, Current={enemy.Stats.Life.Current:F0}, CurrentMax={enemy.Stats.Life.CurrentMax:F0} (x{effectiveMult:F2})",
+                        Main.CoopLocal);
                 }
             }
         }
@@ -410,17 +437,12 @@ public static class CoopEnemyScaling
                     if (baseHp > 0f && ActiveHealthMultiplier > 1.01f)
                     {
                         float newMaxHp = baseHp * ActiveHealthMultiplier;
-                        float bonus = newMaxHp - baseHp;
-                        if (cloneEnemy.Stats.Life.MaxValue < newMaxHp)
-                        {
-                            cloneEnemy.Stats.Life.MaxValue = newMaxHp;
-                        }
-                        cloneEnemy.Stats.Life.SetPermanentBonus(bonus);
+                        cloneEnemy.Stats.Life.MaxValue = newMaxHp;
+                        cloneEnemy.Stats.Life.SetPermanentBonus(0f);
                         cloneEnemy.Stats.Life.SetToCurrentMax();
-                        if (cloneEnemy.Stats.Life.Current < newMaxHp)
-                        {
-                            cloneEnemy.Stats.Life.Current = newMaxHp;
-                        }
+                        cloneEnemy.Stats.Life.Current = newMaxHp;
+                        cloneEnemy.Stats.LifeBase = newMaxHp;
+                        cloneEnemy.Stats.LifeMaximun = newMaxHp;
                     }
                     else
                     {
@@ -430,5 +452,69 @@ public static class CoopEnemyScaling
             }
         }
         catch { }
+    }
+}
+
+/// <summary>
+/// Intercepta el inicio de la barra de vida de cualquier Jefe para asegurar que esté completamente llena (100%)
+/// y que el escalado de salud se aplique correctamente incluso si el jefe apareció después de una cinemática.
+/// </summary>
+[HarmonyPatch(typeof(Gameplay.UI.UIController), "ShowBossHealth")]
+internal static class UIController_ShowBossHealth_CoopScaling_Patch
+{
+    private static void Prefix(Entity entity)
+    {
+        if (entity is Enemy enemy)
+        {
+            CoopEnemyScaling.ScaleEnemyHp(enemy, CoopEnemyScaling.ActiveHealthMultiplier);
+
+            // Garantizar que la vida actual iguale a la vida máxima final
+            if (enemy.Stats != null && enemy.Stats.Life != null)
+            {
+                if (enemy.Stats.Life.Current < enemy.Stats.Life.Final)
+                {
+                    enemy.Stats.Life.Current = enemy.Stats.Life.Final;
+                }
+            }
+        }
+    }
+
+    private static void Postfix(Gameplay.UI.UIController __instance)
+    {
+        if (__instance == null) return;
+
+        // Asegurar que las barras de relleno del widget BossHealth comiencen al 100%
+        try
+        {
+            var bhField = AccessTools.Field(typeof(Gameplay.UI.UIController), "bossHealth");
+            var bh = bhField?.GetValue(__instance) as Gameplay.UI.Others.UIGameLogic.BossHealth;
+            if (bh != null)
+            {
+                var healthImg = AccessTools.Field(typeof(Gameplay.UI.Others.UIGameLogic.BossHealth), "health")?.GetValue(bh) as UnityEngine.UI.Image;
+                var lossImg = AccessTools.Field(typeof(Gameplay.UI.Others.UIGameLogic.BossHealth), "loss")?.GetValue(bh) as UnityEngine.UI.Image;
+                if (healthImg != null) healthImg.fillAmount = 1f;
+                if (lossImg != null) lossImg.fillAmount = 1f;
+            }
+        }
+        catch { }
+    }
+}
+
+/// <summary>
+/// Garantiza que el ratio de vida del jefe nunca devuelva menos de 1.0f si el jefe tiene toda su vida.
+/// </summary>
+[HarmonyPatch(typeof(Gameplay.UI.Others.UIGameLogic.BossHealth), "get_BarTarget")]
+internal static class BossHealth_BarTarget_Clamp_Patch
+{
+    private static void Postfix(Gameplay.UI.Others.UIGameLogic.BossHealth __instance, ref float __result)
+    {
+        if (__result > 1f)
+        {
+            __result = 1f;
+        }
+        else if (__result < 0f)
+        {
+            __result = 0f;
+        }
     }
 }
