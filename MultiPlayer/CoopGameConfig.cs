@@ -60,17 +60,17 @@ internal static class CoopGameConfig
     public static bool VerboseDebugLog = false;
 
     // Configuración visual del árbol elemental (posición y escala calibradas para 3 columnas: Veneno | Vanilla | Sangrado | Electricidad)
-    public const float DefaultTreeOffsetX = -30.0f;
-    public const float DefaultTreeOffsetY = 2.5f;
-    public const float DefaultTreeScale = 0.68f;
+    public const float DefaultTreeOffsetX = 1.0f;
+    public const float DefaultTreeOffsetY = -1.5f;
+    public const float DefaultTreeScale = 0.73f;
     public const float DefaultSkillTextScale = 1.0f; // Escala del texto de descripciones ({ aumenta, } disminuye)
-    public const float DefaultElementalBranchSpacing = 247.0f; // Distancia horizontal entre rama Veneno y Sangrado (calibrado)
-    public const float DefaultElementalNodeVerticalSpacing = 73.0f; // Distancia vertical entre niveles I, II y III
-    public const float DefaultElectricoColumnOffset = 62.0f; // Desplazamiento horizontal de la columna Electricidad a la derecha de Sangrado
-    public const float DefaultMaldicionColumnOffset = 62.0f; // Desplazamiento horizontal de la columna Maldición a la izquierda de Veneno
-    public const float DefaultDescPanelOffsetX = 0.0f; // Desplazamiento del panel de descripción del menú de habilidades (relativo a su posición base)
-    public const float DefaultDescPanelOffsetY = 0.0f;
-    public const float DefaultDescPanelScale = 1.0f;
+    public const float DefaultElementalBranchSpacing = 237.0f; // Distancia horizontal entre rama Veneno y Sangrado (calibrado)
+    public const float DefaultElementalNodeVerticalSpacing = 86.0f; // Distancia vertical entre niveles I, II y III
+    public const float DefaultElectricoColumnOffset = 37.0f; // Desplazamiento horizontal de la columna Electricidad a la derecha de Sangrado
+    public const float DefaultMaldicionColumnOffset = 38.0f; // Desplazamiento horizontal de la columna Maldición a la izquierda de Veneno
+    public const float DefaultDescPanelOffsetX = 6.0f; // Desplazamiento del panel de descripción del menú de habilidades (relativo a su posición base)
+    public const float DefaultDescPanelOffsetY = 4.0f;
+    public const float DefaultDescPanelScale = 0.99f;
 
     // Versión del layout del árbol. Si el cfg guardado tiene una versión menor, se restablecen los parámetros de árbol/descripción a los defaults actuales.
     public const int CurrentTreeLayoutVersion = 2;
