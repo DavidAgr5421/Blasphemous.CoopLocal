@@ -75,17 +75,17 @@ internal static class WallJump_OnUpdate_P2_Patch
     private static readonly int WallClimbContactAnim = Animator.StringToHash("WallClimbContact");
     private static readonly int JumpForwardAnim = Animator.StringToHash("Jump Forward");
 
-    private static readonly FieldInfo StickToWallField = AccessTools.Field(typeof(WallJump), "_stickToWall");
-    private static readonly FieldInfo WallHitField = AccessTools.Field(typeof(WallJump), "_wallHit");
-    private static readonly FieldInfo PlayerStickedOrientationField = AccessTools.Field(typeof(WallJump), "playerStickedOrientation");
-    private static readonly FieldInfo JumpOffWallField = AccessTools.Field(typeof(WallJump), "_jumpOffWall");
-    private static readonly FieldInfo StickCoolDownTimerField = AccessTools.Field(typeof(WallJump), "_stickCoolDownTimer");
-    private static readonly FieldInfo JumpOffCoolDownTimerField = AccessTools.Field(typeof(WallJump), "_jumpOffCoolDownTimer");
-    private static readonly FieldInfo IsJumpOffStackedField = AccessTools.Field(typeof(WallJump), "_isJumpOffStacked");
-    private static readonly FieldInfo WallJumpTimerField = AccessTools.Field(typeof(WallJump), "_wallJumpTimer");
-    private static readonly FieldInfo DefaultRayCastDistanceField = AccessTools.Field(typeof(WallJump), "_defaultRayCastDistance");
-    private static readonly FieldInfo DisabledAbilityWhenUseField = AccessTools.Field(typeof(WallJump), "DisabledAbilityWhenUse");
-    private static readonly MethodInfo DisableAbilityMethod = AccessTools.Method(typeof(WallJump), "DisableAbility");
+    private static readonly FieldInfo StickToWallField = Reflect.Field(typeof(WallJump), "_stickToWall");
+    private static readonly FieldInfo WallHitField = Reflect.Field(typeof(WallJump), "_wallHit");
+    private static readonly FieldInfo PlayerStickedOrientationField = Reflect.Field(typeof(WallJump), "playerStickedOrientation");
+    private static readonly FieldInfo JumpOffWallField = Reflect.Field(typeof(WallJump), "_jumpOffWall");
+    private static readonly FieldInfo StickCoolDownTimerField = Reflect.Field(typeof(WallJump), "_stickCoolDownTimer");
+    private static readonly FieldInfo JumpOffCoolDownTimerField = Reflect.Field(typeof(WallJump), "_jumpOffCoolDownTimer");
+    private static readonly FieldInfo IsJumpOffStackedField = Reflect.Field(typeof(WallJump), "_isJumpOffStacked");
+    private static readonly FieldInfo WallJumpTimerField = Reflect.Field(typeof(WallJump), "_wallJumpTimer");
+    private static readonly FieldInfo DefaultRayCastDistanceField = Reflect.Field(typeof(WallJump), "_defaultRayCastDistance");
+    private static readonly FieldInfo DisabledAbilityWhenUseField = Reflect.Field(typeof(WallJump), "DisabledAbilityWhenUse");
+    private static readonly MethodInfo DisableAbilityMethod = Reflect.Method(typeof(WallJump), "DisableAbility");
 
     // Round 72 - safety-net release: same private method vanilla itself uses for its own
     // "let go early" cancel gesture and the damage/camera-shake knockoff paths (EntityOwnerOnDamaged/
@@ -93,7 +93,7 @@ internal static class WallJump_OnUpdate_P2_Patch
     // the retry-timeout release restores gravity/blocker/Animator state exactly like every other
     // vanilla unhang path does, and the Postfix below (WallJump_UnhangByEvent_BlockerTracking_Patch)
     // still fires because Harmony patches the method itself, not a particular call site.
-    private static readonly MethodInfo UnhangByEventMethod = AccessTools.Method(typeof(WallJump), "UnhangByEvent");
+    private static readonly MethodInfo UnhangByEventMethod = Reflect.Method(typeof(WallJump), "UnhangByEvent");
 
     // Logging edge-triggered para hipótesis familia 4 (Ronda 64) - solo para diagnóstico, no fix.
     private static bool _lastStickOnWallBool;
@@ -475,8 +475,8 @@ internal static class WallJump_UnhangByEvent_BlockerTracking_Patch
 [HarmonyPatch(typeof(Gameplay.GameControllers.Penitent.Animator.AnimatorInyector), "AirAttack")]
 internal static class AnimatorInyector_AirAttack_OrderDebugLogger_Patch
 {
-    private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(Gameplay.GameControllers.Penitent.Animator.AnimatorInyector), "_penitent");
-    private static readonly FieldInfo PlayerInputField = AccessTools.Field(typeof(Gameplay.GameControllers.Penitent.Animator.AnimatorInyector), "_playerInput");
+    private static readonly FieldInfo PenitentField = Reflect.Field(typeof(Gameplay.GameControllers.Penitent.Animator.AnimatorInyector), "_penitent");
+    private static readonly FieldInfo PlayerInputField = Reflect.Field(typeof(Gameplay.GameControllers.Penitent.Animator.AnimatorInyector), "_playerInput");
 
     private static void Postfix(object __instance)
     {

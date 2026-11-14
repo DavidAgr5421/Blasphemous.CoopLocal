@@ -364,10 +364,10 @@ internal static class CameraTargetModeIndicator
 [HarmonyPatch(typeof(CameraPlayerOffset), nameof(CameraPlayerOffset.UpdateNewParams))]
 internal static class CameraPlayerOffset_UpdateNewParams_Patch
 {
-    private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(CameraPlayerOffset), "_penitent");
-    private static readonly FieldInfo ProCameraField = AccessTools.Field(typeof(CameraPlayerOffset), "_proCamera2D");
-    private static readonly FieldInfo PlayerCurrentOrientationField = AccessTools.Field(typeof(CameraPlayerOffset), "_playerCurrentOrientation");
-    private static readonly FieldInfo PlayerLastOrientationField = AccessTools.Field(typeof(CameraPlayerOffset), "_playerLastOrientation");
+    private static readonly FieldInfo PenitentField = Reflect.Field(typeof(CameraPlayerOffset), "_penitent");
+    private static readonly FieldInfo ProCameraField = Reflect.Field(typeof(CameraPlayerOffset), "_proCamera2D");
+    private static readonly FieldInfo PlayerCurrentOrientationField = Reflect.Field(typeof(CameraPlayerOffset), "_playerCurrentOrientation");
+    private static readonly FieldInfo PlayerLastOrientationField = Reflect.Field(typeof(CameraPlayerOffset), "_playerLastOrientation");
 
     private static void Postfix(CameraPlayerOffset __instance)
     {
@@ -416,7 +416,7 @@ internal static class CameraPlayerOffset_UpdateNewParams_Patch
                     offset.x = targetX;
                     proCamera2D.OverallOffset = offset;
                 }
-                var prop = AccessTools.Property(typeof(CameraPlayerOffset), "DefaultTargetOffset");
+                var prop = Reflect.Property(typeof(CameraPlayerOffset), "DefaultTargetOffset");
                 if (prop != null)
                 {
                     prop.SetValue(__instance, proCamera2D.OverallOffset, null);
@@ -437,7 +437,7 @@ internal static class CameraPlayerOffset_UpdateNewParams_Patch
                 offset.x = 0f;
                 proCamera2D.OverallOffset = offset;
             }
-            var prop = AccessTools.Property(typeof(CameraPlayerOffset), "DefaultTargetOffset");
+            var prop = Reflect.Property(typeof(CameraPlayerOffset), "DefaultTargetOffset");
             if (prop != null)
             {
                 prop.SetValue(__instance, proCamera2D.OverallOffset, null);
@@ -450,7 +450,7 @@ internal static class CameraPlayerOffset_UpdateNewParams_Patch
 [HarmonyPatch(typeof(CameraPlayerOffset), "LateUpdate")]
 internal static class CameraPlayerOffset_LateUpdate_Patch
 {
-    private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(CameraPlayerOffset), "_penitent");
+    private static readonly FieldInfo PenitentField = Reflect.Field(typeof(CameraPlayerOffset), "_penitent");
 
     private static bool Prefix(CameraPlayerOffset __instance)
     {

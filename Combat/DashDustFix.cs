@@ -15,7 +15,7 @@ namespace Blasphemous.CoopLocal;
 // DamageArea null, no ejecutar (return early) en vez de tirar NRE.
 internal static class DashDustFixShared
 {
-    internal static readonly FieldInfo PenitentField = AccessTools.Field(typeof(DashDustGenerator), "_penitent");
+    internal static readonly FieldInfo PenitentField = Reflect.Field(typeof(DashDustGenerator), "_penitent");
 }
 
 [HarmonyPatch(typeof(DashDustGenerator), "GetDashDustPosition")]

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System;
 using UnityEngine;
 using Framework.Managers;
@@ -77,6 +78,11 @@ public class HudLayoutDebugEditor : MonoBehaviour
     private static readonly float[] TreeParamMin = { float.NegativeInfinity, float.NegativeInfinity, 0.3f, 10f, 15f, 0f, 0.5f, float.NegativeInfinity, float.NegativeInfinity, 0.3f, 0f };
     private static readonly float[] TreeParamMax = { float.PositiveInfinity, float.PositiveInfinity, 3.0f, 1500f, 100f, 400f, 3.5f, float.PositiveInfinity, float.PositiveInfinity, 3.0f, 400f };
     private int treeSelectedIndex = 0;
+
+    // Capas (orden de dibujo) de los elementos HUD: se reaplican periódicamente porque los HUD se recrean al cambiar de sala/jugadores.
+    private float layerApplyTimer = 0f;
+    private bool layersDirty = true;
+    private const int MinLayer = -20, MaxLayer = 20;
     private float treeRepeatTimer = 0f;
     private Rect treeWindowRect = new Rect(16f, 100f, 420f, 395f);
     private const int TreeWindowId = 574830;
@@ -191,6 +197,14 @@ public class HudLayoutDebugEditor : MonoBehaviour
             return;
         }
 
+        layerApplyTimer -= Time.unscaledDeltaTime;
+        if (layersDirty || layerApplyTimer <= 0f)
+        {
+            layerApplyTimer = 0.5f;
+            layersDirty = false;
+            ApplyLayers();
+        }
+
         if (!IsOpen) return;
 
         if (Input.GetKeyDown(KeyCode.Escape))
@@ -204,6 +218,8 @@ public class HudLayoutDebugEditor : MonoBehaviour
         if (currentTab == EditorTab.Hud)
         {
             HandleSelectionInput();
+            if (Input.GetKeyDown(KeyCode.PageUp)) ChangeLayer(selectedIndex, +1);
+            if (Input.GetKeyDown(KeyCode.PageDown)) ChangeLayer(selectedIndex, -1);
             HandleMovementInput();
             HandleScaleInput();
 
@@ -229,6 +245,76 @@ public class HudLayoutDebugEditor : MonoBehaviour
             {
                 statusMessage = "";
             }
+        }
+    }
+
+    private static int GetLayer(int index) => HudLayoutConfig.Current.GetLayer(index);
+
+    private void ChangeLayer(int index, int delta)
+    {
+        var cfg = HudLayoutConfig.Current;
+        cfg.ValidateDefaults();
+        if (index < 0 || index >= cfg.layers.Length) return;
+        cfg.layers[index] = Mathf.Clamp(cfg.layers[index] + delta, MinLayer, MaxLayer);
+        layersDirty = true;
+        SetStatus($"Capa de {ElementNames[index]}: {cfg.layers[index]} (mayor = al frente). Guarda con F8/Enter.");
+    }
+
+    private void SetLayer(int index, int value)
+    {
+        var cfg = HudLayoutConfig.Current;
+        cfg.ValidateDefaults();
+        if (index < 0 || index >= cfg.layers.Length) return;
+        cfg.layers[index] = Mathf.Clamp(value, MinLayer, MaxLayer);
+        layersDirty = true;
+    }
+
+    /// <summary>
+    /// Reordena los elementos HUD que comparten padre según su capa (mayor = encima), sin tocar al resto de hijos del canvas:
+    /// los elementos ocupan los mismos huecos de sibling-index que ya tenían, solo cambia quién va en cada hueco.
+    /// Con todas las capas en 0 el orden queda como estaba (desempate por orden actual).
+    /// </summary>
+    private void ApplyLayers()
+    {
+        try
+        {
+            var cfg = HudLayoutConfig.Current;
+            var groups = new Dictionary<Transform, List<KeyValuePair<int, RectTransform>>>();
+            for (int i = 4; i < ElementNames.Length; i++) // P1 es el HUD vanilla: solo P2-P4
+            {
+                RectTransform rect = GetTargetRect(i);
+                if (rect == null || rect.parent == null) continue;
+                if (!groups.TryGetValue(rect.parent, out var list))
+                {
+                    list = new List<KeyValuePair<int, RectTransform>>();
+                    groups[rect.parent] = list;
+                }
+                bool dup = false;
+                for (int k = 0; k < list.Count; k++) if (list[k].Value == rect) { dup = true; break; }
+                if (!dup) list.Add(new KeyValuePair<int, RectTransform>(i, rect));
+            }
+
+            foreach (var kv in groups)
+            {
+                var list = kv.Value;
+                if (list.Count < 2) continue;
+                var slots = new List<int>();
+                foreach (var e in list) slots.Add(e.Value.GetSiblingIndex());
+                slots.Sort();
+                list.Sort((a, b) =>
+                {
+                    int c = cfg.GetLayer(a.Key).CompareTo(cfg.GetLayer(b.Key));
+                    return c != 0 ? c : a.Value.GetSiblingIndex().CompareTo(b.Value.GetSiblingIndex());
+                });
+                for (int k = 0; k < list.Count; k++)
+                {
+                    if (list[k].Value.GetSiblingIndex() != slots[k]) list[k].Value.SetSiblingIndex(slots[k]);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            if (Main.CoopLocal != null) Blasphemous.ModdingAPI.ModLog.Warn($"[HudEditor] ApplyLayers: {ex.Message}", Main.CoopLocal);
         }
     }
 
@@ -349,183 +435,20 @@ public class HudLayoutDebugEditor : MonoBehaviour
         SyncToConfig(index, target.anchoredPosition, newScale);
     }
 
+    // Índice del editor = jugador * 4 + elemento (Vida, Fervor, Dec. Vida, Monedas).
+    private static CoopPlayerContext PlayerOf(int index) => CoopPlayers.Get(index / 4);
+    private static CoopPlayerContext.HudElement ElementOf(int index) => (CoopPlayerContext.HudElement)(index % 4);
+
     private RectTransform GetTargetRect(int index)
     {
-        switch (index)
-        {
-            // P1
-            case 0: return CoopHealthBars.P1HealthRect;
-            case 1: return CoopFervourBars.P1FervourRect;
-            case 2: return CoopHealthBars.GetDecorationRect(0);
-            case 3: return CoopPurgeHUD.GetSlotRect(0);
-
-            // P2
-            case 4: return CoopHealthBars.GetSlot(1)?.CloneRect;
-            case 5: return CoopFervourBars.GetSlot(1)?.CloneRect;
-            case 6: return CoopHealthBars.GetDecorationRect(1);
-            case 7: return isMultiLayout ? CoopPurgeHUD.GetSlotRect(1) : Player2PurgePoints.CloneRect;
-
-            // P3
-            case 8: return CoopHealthBars.GetSlot(2)?.CloneRect;
-            case 9: return CoopFervourBars.GetSlot(2)?.CloneRect;
-            case 10: return CoopHealthBars.GetDecorationRect(2);
-            case 11: return CoopPurgeHUD.GetSlotRect(2);
-
-            // P4
-            case 12: return CoopHealthBars.GetSlot(3)?.CloneRect;
-            case 13: return CoopFervourBars.GetSlot(3)?.CloneRect;
-            case 14: return CoopHealthBars.GetDecorationRect(3);
-            case 15: return CoopPurgeHUD.GetSlotRect(3);
-
-            default: return null;
-        }
+        if (index < 0 || index >= ElementNames.Length) return null;
+        return PlayerOf(index).HudRect(ElementOf(index), isMultiLayout);
     }
 
     private void SyncToConfig(int index, Vector2 pos, float scale)
     {
-        var cfg = HudLayoutConfig.Current;
-
-        switch (index)
-        {
-            // P1
-            case 0:
-                cfg.p1_health.x = pos.x; cfg.p1_health.y = pos.y; cfg.p1_health.scale = scale;
-                break;
-            case 1:
-                cfg.p1_fervour.x = pos.x; cfg.p1_fervour.y = pos.y; cfg.p1_fervour.scale = scale;
-                break;
-            case 2:
-                cfg.p1_health_deco.x = pos.x; cfg.p1_health_deco.y = pos.y; cfg.p1_health_deco.scale = scale;
-                break;
-            case 3:
-                cfg.p1_coins.x = pos.x; cfg.p1_coins.y = pos.y; cfg.p1_coins.scale = scale;
-                var s0c = CoopPurgeHUD.GetSlot(0);
-                if (s0c != null)
-                {
-                    s0c.AnchoredPosition = pos; s0c.Scale = scale;
-                    if (s0c.RootRect != null) { s0c.RootRect.anchoredPosition = pos; s0c.RootRect.localScale = Vector3.one * scale; }
-                }
-                break;
-
-            // P2
-            case 4:
-                if (!isMultiLayout)
-                {
-                    cfg.p2_health_2p.x = pos.x; cfg.p2_health_2p.y = pos.y; cfg.p2_health_2p.scale = scale;
-                }
-                else
-                {
-                    cfg.p2_health.x = pos.x; cfg.p2_health.y = pos.y; cfg.p2_health.scale = scale;
-                }
-                var s1 = CoopHealthBars.GetSlot(1);
-                if (s1 != null)
-                {
-                    s1.AnchoredPosition = pos; s1.Scale = scale;
-                    if (s1.CloneRect != null) { s1.CloneRect.anchoredPosition = pos; s1.CloneRect.localScale = Vector3.one * scale; }
-                }
-                break;
-            case 5:
-                if (!isMultiLayout)
-                {
-                    cfg.p2_fervour_2p.x = pos.x; cfg.p2_fervour_2p.y = pos.y; cfg.p2_fervour_2p.scale = scale;
-                }
-                else
-                {
-                    cfg.p2_fervour.x = pos.x; cfg.p2_fervour.y = pos.y; cfg.p2_fervour.scale = scale;
-                }
-                var sf1 = CoopFervourBars.GetSlot(1);
-                if (sf1 != null)
-                {
-                    sf1.AnchoredPosition = pos; sf1.Scale = scale;
-                    if (sf1.CloneRect != null) { sf1.CloneRect.anchoredPosition = pos; sf1.CloneRect.localScale = Vector3.one * scale; }
-                }
-                break;
-            case 6:
-                cfg.p2_health_deco.x = pos.x; cfg.p2_health_deco.y = pos.y; cfg.p2_health_deco.scale = scale;
-                break;
-            case 7:
-                if (!isMultiLayout)
-                {
-                    cfg.p2_coins_2p.x = pos.x; cfg.p2_coins_2p.y = pos.y; cfg.p2_coins_2p.scale = scale;
-                    Player2PurgePoints.AnchoredPosition = pos;
-                    Player2PurgePoints.TextScale = scale;
-                }
-                else
-                {
-                    cfg.p2_coins.x = pos.x; cfg.p2_coins.y = pos.y; cfg.p2_coins.scale = scale;
-                    var slot = CoopPurgeHUD.GetSlot(1);
-                    if (slot != null)
-                    {
-                        slot.AnchoredPosition = pos; slot.Scale = scale;
-                        if (slot.RootRect != null) { slot.RootRect.anchoredPosition = pos; slot.RootRect.localScale = Vector3.one * scale; }
-                    }
-                }
-                break;
-
-            // P3
-            case 8:
-                cfg.p3_health.x = pos.x; cfg.p3_health.y = pos.y; cfg.p3_health.scale = scale;
-                var s2 = CoopHealthBars.GetSlot(2);
-                if (s2 != null)
-                {
-                    s2.AnchoredPosition = pos; s2.Scale = scale;
-                    if (s2.CloneRect != null) { s2.CloneRect.anchoredPosition = pos; s2.CloneRect.localScale = Vector3.one * scale; }
-                }
-                break;
-            case 9:
-                cfg.p3_fervour.x = pos.x; cfg.p3_fervour.y = pos.y; cfg.p3_fervour.scale = scale;
-                var sf2 = CoopFervourBars.GetSlot(2);
-                if (sf2 != null)
-                {
-                    sf2.AnchoredPosition = pos; sf2.Scale = scale;
-                    if (sf2.CloneRect != null) { sf2.CloneRect.anchoredPosition = pos; sf2.CloneRect.localScale = Vector3.one * scale; }
-                }
-                break;
-            case 10:
-                cfg.p3_health_deco.x = pos.x; cfg.p3_health_deco.y = pos.y; cfg.p3_health_deco.scale = scale;
-                break;
-            case 11:
-                cfg.p3_coins.x = pos.x; cfg.p3_coins.y = pos.y; cfg.p3_coins.scale = scale;
-                var s3c = CoopPurgeHUD.GetSlot(2);
-                if (s3c != null)
-                {
-                    s3c.AnchoredPosition = pos; s3c.Scale = scale;
-                    if (s3c.RootRect != null) { s3c.RootRect.anchoredPosition = pos; s3c.RootRect.localScale = Vector3.one * scale; }
-                }
-                break;
-
-            // P4
-            case 12:
-                cfg.p4_health.x = pos.x; cfg.p4_health.y = pos.y; cfg.p4_health.scale = scale;
-                var s3 = CoopHealthBars.GetSlot(3);
-                if (s3 != null)
-                {
-                    s3.AnchoredPosition = pos; s3.Scale = scale;
-                    if (s3.CloneRect != null) { s3.CloneRect.anchoredPosition = pos; s3.CloneRect.localScale = Vector3.one * scale; }
-                }
-                break;
-            case 13:
-                cfg.p4_fervour.x = pos.x; cfg.p4_fervour.y = pos.y; cfg.p4_fervour.scale = scale;
-                var sf3 = CoopFervourBars.GetSlot(3);
-                if (sf3 != null)
-                {
-                    sf3.AnchoredPosition = pos; sf3.Scale = scale;
-                    if (sf3.CloneRect != null) { sf3.CloneRect.anchoredPosition = pos; sf3.CloneRect.localScale = Vector3.one * scale; }
-                }
-                break;
-            case 14:
-                cfg.p4_health_deco.x = pos.x; cfg.p4_health_deco.y = pos.y; cfg.p4_health_deco.scale = scale;
-                break;
-            case 15:
-                cfg.p4_coins.x = pos.x; cfg.p4_coins.y = pos.y; cfg.p4_coins.scale = scale;
-                var s4c = CoopPurgeHUD.GetSlot(3);
-                if (s4c != null)
-                {
-                    s4c.AnchoredPosition = pos; s4c.Scale = scale;
-                    if (s4c.RootRect != null) { s4c.RootRect.anchoredPosition = pos; s4c.RootRect.localScale = Vector3.one * scale; }
-                }
-                break;
-        }
+        if (index < 0 || index >= ElementNames.Length) return;
+        PlayerOf(index).ApplyHudTransform(ElementOf(index), pos, scale, isMultiLayout);
     }
 
     public void SaveCurrentLayout()
@@ -545,6 +468,8 @@ public class HudLayoutDebugEditor : MonoBehaviour
 
     public void ResetToDefaults()
     {
+        System.Array.Clear(HudLayoutConfig.Current.layers, 0, HudLayoutConfig.Current.layers.Length);
+        layersDirty = true;
         var cfg = new CoopHudLayoutConfig();
         cfg.ValidateDefaults();
 
@@ -731,8 +656,28 @@ public class HudLayoutDebugEditor : MonoBehaviour
         GUILayout.Label($"<b>Seleccionado [{selectedIndex + 1}/{(isMultiLayout ? ElementNames.Length : 8)}]: {ElementNames[selectedIndex]}</b>  |  {posText}");
         GUI.color = Color.white;
 
+        // Capas (orden de dibujo): solo P2-P4; P1 es el HUD original del juego
+        GUILayout.BeginHorizontal();
+        if (selectedIndex >= 4)
+        {
+            GUILayout.Label($"<b>Capa:</b> {GetLayer(selectedIndex)}  (mayor = al frente)", GUILayout.Width(220));
+            if (GUILayout.Button("▼ Atrás (PgDn)", GUILayout.Width(110))) ChangeLayer(selectedIndex, -1);
+            if (GUILayout.Button("▲ Frente (PgUp)", GUILayout.Width(115))) ChangeLayer(selectedIndex, +1);
+            if (GUILayout.Button("Capa 0", GUILayout.Width(60))) SetLayer(selectedIndex, 0);
+            var lc = HudLayoutConfig.Current;
+            string all = "";
+            for (int i = 4; i < (isMultiLayout ? ElementNames.Length : 8); i++)
+                if (lc.GetLayer(i) != 0) all += $"{ElementNames[i]}:{lc.GetLayer(i)}  ";
+            GUILayout.Label(all.Length > 0 ? $"<size=10>{all}</size>" : "<size=10>(todas las capas en 0)</size>");
+        }
+        else
+        {
+            GUILayout.Label("<size=11>Las capas solo aplican a P2-P4 (el HUD de P1 es el original del juego).</size>");
+        }
+        GUILayout.EndHorizontal();
+
         // Controles de ayuda
-        GUILayout.Label("<size=11>Controles: <b>Tab/Click</b>: Seleccionar | <b>Flechas/WASD</b>: Mover (Shift: x10, Ctrl: x0.25) | <b>+/-</b>: Escala | <b>F8/Enter</b>: Guardar</size>");
+        GUILayout.Label("<size=11>Controles: <b>Tab/Click</b>: Seleccionar | <b>PgUp/PgDn</b>: Capa | <b>Flechas/WASD</b>: Mover (Shift: x10, Ctrl: x0.25) | <b>+/-</b>: Escala | <b>F8/Enter</b>: Guardar</size>");
 
         // Botones de acción inferior
         GUILayout.BeginHorizontal();
@@ -1021,7 +966,7 @@ public class HudLayoutDebugEditor : MonoBehaviour
 
             DrawRectOutline(screenRect, outlineColor, 2f);
         }
-        catch { }
+        catch (System.Exception __swallowed) { SwallowedExceptions.Report(__swallowed, "HudLayoutDebugEditor.cs:969"); }
     }
 
     private static Vector2 WorldToGUIPoint(Camera cam, Vector3 worldPoint)

@@ -116,11 +116,11 @@ internal static class PrieDieu_ShallowActivationLogic_HealPlayer2_Patch
 [HarmonyPatch(typeof(GrabCliffLede), "Update")]
 internal static class GrabCliffLede_Update_DebugLogger_Patch
 {
-    private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(GrabCliffLede), "_penitent");
-    private static readonly FieldInfo GrabbedCliffLedeField = AccessTools.Field(typeof(GrabCliffLede), "_grabbedCliffLede");
-    private static readonly FieldInfo IsGrabbedCliffLedeField = AccessTools.Field(typeof(GrabCliffLede), "_isGrabbedCliffLede");
-    private static readonly FieldInfo IsAirAttackingField = AccessTools.Field(typeof(GrabCliffLede), "_isAirAttacking");
-    private static readonly FieldInfo RemainCooldownField = AccessTools.Field(typeof(GrabCliffLede), "remainCooldown");
+    private static readonly FieldInfo PenitentField = Reflect.Field(typeof(GrabCliffLede), "_penitent");
+    private static readonly FieldInfo GrabbedCliffLedeField = Reflect.Field(typeof(GrabCliffLede), "_grabbedCliffLede");
+    private static readonly FieldInfo IsGrabbedCliffLedeField = Reflect.Field(typeof(GrabCliffLede), "_isGrabbedCliffLede");
+    private static readonly FieldInfo IsAirAttackingField = Reflect.Field(typeof(GrabCliffLede), "_isAirAttacking");
+    private static readonly FieldInfo RemainCooldownField = Reflect.Field(typeof(GrabCliffLede), "remainCooldown");
     private static string lastLoggedState;
 
     private static void Postfix(GrabCliffLede __instance)

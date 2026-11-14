@@ -28,37 +28,47 @@ public class HudElementPosition
 [Serializable]
 public class CoopHudLayoutConfig
 {
-    public bool isCustomSaved = false;
+    public bool isCustomSaved = true; // los defaults son el layout calibrado y horneado
 
     // --- Configuración P1 (Izquierda superior) ---
-    public HudElementPosition p1_health = new HudElementPosition(-61.56955f, -22.6314621f, 0.9200001f);
-    public HudElementPosition p1_fervour = new HudElementPosition(36.0f, -24.75f, 0.6800003f);
+    public HudElementPosition p1_health = new HudElementPosition(-69.06955f, -26.3814621f, 1.0f);
+    public HudElementPosition p1_fervour = new HudElementPosition(39.0f, -24.0f, 0.7000003f);
     public HudElementPosition p1_health_deco = new HudElementPosition(124.0f, 42.0f, 1.0f);
-    public HudElementPosition p1_coins = new HudElementPosition(92.0f, -32.0f, 0.5500003f);
+    public HudElementPosition p1_coins = new HudElementPosition(52.0f, -30.0f, 0.6300002f);
 
     // --- Configuración P2 (Derecha inferior) ---
-    public HudElementPosition p2_health = new HudElementPosition(-113.0f, -305.0f, 0.65f);
-    public HudElementPosition p2_fervour = new HudElementPosition(-66.0f, -297.75f, 0.65f);
+    public HudElementPosition p2_health = new HudElementPosition(-121.25f, -312.0f, 0.65f);
+    public HudElementPosition p2_fervour = new HudElementPosition(-79.0f, -304.25f, 0.65f);
     public HudElementPosition p2_health_deco = new HudElementPosition(124.0f, 42.0f, 1.0f);
-    public HudElementPosition p2_coins = new HudElementPosition(-11.0f, -331.0f, 0.5900003f);
+    public HudElementPosition p2_coins = new HudElementPosition(-4.0f, -343.0f, 0.5900003f);
 
     // --- Configuración P3 (Izquierda inferior) ---
-    public HudElementPosition p3_health = new HudElementPosition(-45.0f, -303.25f, 0.65f);
-    public HudElementPosition p3_fervour = new HudElementPosition(2.0f, -295.75f, 0.65f);
+    public HudElementPosition p3_health = new HudElementPosition(-42.0f, -317.75f, 0.65f);
+    public HudElementPosition p3_fervour = new HudElementPosition(3.0f, -310.75f, 0.65f);
     public HudElementPosition p3_health_deco = new HudElementPosition(124.0f, 42.0f, 1.0f);
     public HudElementPosition p3_coins = new HudElementPosition(81.0f, -330.0f, 0.5900003f);
 
     // --- Configuración P4 (Derecha superior) ---
-    public HudElementPosition p4_health = new HudElementPosition(-113.25f, -8.0f, 0.65f);
-    public HudElementPosition p4_fervour = new HudElementPosition(-69.0f, -1.25f, 0.63f);
+    public HudElementPosition p4_health = new HudElementPosition(-113.25f, -7.75f, 0.65f);
+    public HudElementPosition p4_fervour = new HudElementPosition(-70.0f, -1.25f, 0.63f);
     public HudElementPosition p4_health_deco = new HudElementPosition(124.0f, 42.0f, 1.0f);
-    public HudElementPosition p4_coins = new HudElementPosition(-7.0f, -30.0f, 0.5300003f);
+    public HudElementPosition p4_coins = new HudElementPosition(-4.0f, -33.0f, 0.5900003f);
 
     // --- Configuración 2 Jugadores (Comportamiento original preservado) ---
-    public HudElementPosition p2_health_2p = new HudElementPosition(-119.0f, -20.0f, 0.65f);
-    public HudElementPosition p2_fervour_2p = new HudElementPosition(-75.0f, 7.0f, 0.65f);
-    public HudElementPosition p2_coins_2p = new HudElementPosition(-170.0f, -8.0f, 1.0f);
+    public HudElementPosition p2_health_2p = new HudElementPosition(-119.0f, -18.25f, 0.65f);
+    public HudElementPosition p2_fervour_2p = new HudElementPosition(-75.0f, 8.0f, 0.65f);
+    public HudElementPosition p2_coins_2p = new HudElementPosition(-170.0f, -7.0f, 1.0f);
     public HudElementPosition p2_coins_icon_2p = new HudElementPosition(5.0f, -21.0f, 1.0f);
+
+    // Capas (orden de dibujo) de los 16 elementos del editor F7: [jugador*4 + (0 vida, 1 fervor, 2 dec. vida, 3 monedas)].
+    // Mayor valor = dibujado por encima. 0 = orden natural. Solo reordena entre hermanos del mismo canvas.
+    public int[] layers = new int[16];
+
+    public int GetLayer(int elementIndex)
+    {
+        if (layers == null || elementIndex < 0 || elementIndex >= layers.Length) return 0;
+        return layers[elementIndex];
+    }
 
     public HudElementPosition GetHealthConfig(int slotIndex)
     {
@@ -110,33 +120,36 @@ public class CoopHudLayoutConfig
 
     public void ValidateDefaults()
     {
-        if (p1_health == null) p1_health = new HudElementPosition(-61.56955f, -22.6314621f, 0.9200001f);
-        if (p1_fervour == null) p1_fervour = new HudElementPosition(36.0f, -24.75f, 0.6800003f);
-        if (p1_health_deco == null) p1_health_deco = new HudElementPosition(124.0f, 42.0f, 1.0f);
-        if (p1_coins == null) p1_coins = new HudElementPosition(92.0f, -32.0f, 0.5500003f);
+        if (layers == null) layers = new int[16];
+        else if (layers.Length != 16) System.Array.Resize(ref layers, 16);
 
-        if (p2_health == null) p2_health = new HudElementPosition(-113.0f, -305.0f, 0.65f);
+        if (p1_health == null) p1_health = new HudElementPosition(-69.06955f, -26.3814621f, 1.0f);
+        if (p1_fervour == null) p1_fervour = new HudElementPosition(39.0f, -24.0f, 0.7000003f);
+        if (p1_health_deco == null) p1_health_deco = new HudElementPosition(124.0f, 42.0f, 1.0f);
+        if (p1_coins == null) p1_coins = new HudElementPosition(52.0f, -30.0f, 0.6300002f);
+
+        if (p2_health == null) p2_health = new HudElementPosition(-121.25f, -312.0f, 0.65f);
         if (p2_health.y > -150f && p2_fervour != null && p2_fervour.y < -200f)
         {
             p2_health.y = -305.0f;
         }
-        if (p2_fervour == null) p2_fervour = new HudElementPosition(-66.0f, -297.75f, 0.65f);
+        if (p2_fervour == null) p2_fervour = new HudElementPosition(-79.0f, -304.25f, 0.65f);
         if (p2_health_deco == null) p2_health_deco = new HudElementPosition(124.0f, 42.0f, 1.0f);
-        if (p2_coins == null) p2_coins = new HudElementPosition(-11.0f, -331.0f, 0.5900003f);
+        if (p2_coins == null) p2_coins = new HudElementPosition(-4.0f, -343.0f, 0.5900003f);
 
-        if (p3_health == null) p3_health = new HudElementPosition(-45.0f, -303.25f, 0.65f);
-        if (p3_fervour == null) p3_fervour = new HudElementPosition(2.0f, -295.75f, 0.65f);
+        if (p3_health == null) p3_health = new HudElementPosition(-42.0f, -317.75f, 0.65f);
+        if (p3_fervour == null) p3_fervour = new HudElementPosition(3.0f, -310.75f, 0.65f);
         if (p3_health_deco == null) p3_health_deco = new HudElementPosition(124.0f, 42.0f, 1.0f);
         if (p3_coins == null) p3_coins = new HudElementPosition(81.0f, -330.0f, 0.5900003f);
 
-        if (p4_health == null) p4_health = new HudElementPosition(-113.25f, -8.0f, 0.65f);
-        if (p4_fervour == null) p4_fervour = new HudElementPosition(-69.0f, -1.25f, 0.63f);
+        if (p4_health == null) p4_health = new HudElementPosition(-113.25f, -7.75f, 0.65f);
+        if (p4_fervour == null) p4_fervour = new HudElementPosition(-70.0f, -1.25f, 0.63f);
         if (p4_health_deco == null) p4_health_deco = new HudElementPosition(124.0f, 42.0f, 1.0f);
-        if (p4_coins == null) p4_coins = new HudElementPosition(-7.0f, -30.0f, 0.5300003f);
+        if (p4_coins == null) p4_coins = new HudElementPosition(-4.0f, -33.0f, 0.5900003f);
 
-        if (p2_health_2p == null) p2_health_2p = new HudElementPosition(-119.0f, -20.0f, 0.65f);
-        if (p2_fervour_2p == null) p2_fervour_2p = new HudElementPosition(-75.0f, 7.0f, 0.65f);
-        if (p2_coins_2p == null) p2_coins_2p = new HudElementPosition(-170.0f, -8.0f, 1.0f);
+        if (p2_health_2p == null) p2_health_2p = new HudElementPosition(-119.0f, -18.25f, 0.65f);
+        if (p2_fervour_2p == null) p2_fervour_2p = new HudElementPosition(-75.0f, 8.0f, 0.65f);
+        if (p2_coins_2p == null) p2_coins_2p = new HudElementPosition(-170.0f, -7.0f, 1.0f);
         if (p2_coins_icon_2p == null) p2_coins_icon_2p = new HudElementPosition(5.0f, -21.0f, 1.0f);
     }
 }
@@ -169,7 +182,7 @@ public static class HudLayoutConfig
                     return Path.Combine(Path.Combine(p, "CoopLocalMod"), "coop_hud_layout.json");
                 }
             }
-            catch { }
+            catch (System.Exception __swallowed) { SwallowedExceptions.Report(__swallowed, "HudLayoutConfig.cs:185"); }
             return null;
         }
     }
@@ -186,7 +199,7 @@ public static class HudLayoutConfig
                     return Path.Combine(Path.Combine(Path.Combine(baseDir, "Modding"), "config"), "coop_hud_layout.json");
                 }
             }
-            catch { }
+            catch (System.Exception __swallowed) { SwallowedExceptions.Report(__swallowed, "HudLayoutConfig.cs:202"); }
             try
             {
                 string curDir = Directory.GetCurrentDirectory();
@@ -195,7 +208,7 @@ public static class HudLayoutConfig
                     return Path.Combine(Path.Combine(Path.Combine(curDir, "Modding"), "config"), "coop_hud_layout.json");
                 }
             }
-            catch { }
+            catch (System.Exception __swallowed) { SwallowedExceptions.Report(__swallowed, "HudLayoutConfig.cs:211"); }
             return null;
         }
     }

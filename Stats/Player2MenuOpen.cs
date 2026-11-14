@@ -16,9 +16,9 @@ internal static class CoopMenuOwnerBanner
     private const string GameTmpFontName = "MajesticExtended_FullLatin";
 
     private static readonly FieldInfo TabLabelField =
-        AccessTools.Field(typeof(NewInventoryWidget), "tabLabel");
+        Reflect.Field(typeof(NewInventoryWidget), "tabLabel");
     private static readonly FieldInfo NewInventoryMenuField =
-        AccessTools.Field(typeof(UIController), "newInventoryMenu");
+        Reflect.Field(typeof(UIController), "newInventoryMenu");
 
     private static GameObject inventoryBannerObj;
     private static Text inventoryBannerText;
@@ -271,11 +271,11 @@ internal static class NewInventoryWidget_ShowSkills_P2View_Patch
 internal static class UIController_MenuNavigation_P2_Patch
 {
     private static readonly FieldInfo NewInventoryMenuField =
-        AccessTools.Field(typeof(UIController), "newInventoryMenu");
+        Reflect.Field(typeof(UIController), "newInventoryMenu");
     private static readonly FieldInfo CurrentTabTypeField =
-        AccessTools.Field(typeof(NewInventoryWidget), "currentTabType");
+        Reflect.Field(typeof(NewInventoryWidget), "currentTabType");
     private static readonly MethodInfo SelectTabMethod =
-        AccessTools.Method(typeof(NewInventoryWidget), "SelectTab",
+        Reflect.Method(typeof(NewInventoryWidget), "SelectTab",
             new[] { typeof(NewInventoryWidget.TabType), typeof(bool) });
 
     private static void Postfix(UIController __instance)

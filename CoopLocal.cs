@@ -147,12 +147,15 @@ public class CoopLocal : BlasMod
         SpawnManager.OnPlayerSpawn += OnPlayerSpawn;
 
         LevelManager.OnLevelLoaded += OnLevelLoaded;
+        LevelManager.OnBeforeLevelLoad += OnBeforeLevelLoad_EnemySync;
 
         Player2HudFadeSync.Initialize();
 
         HudLayoutConfig.Load();
 
         HudLayoutDebugEditor.EnsureCreated();
+        CoopUiFontScaler.EnsureCreated();
+        CoopGuestHeartEffects.EnsureCreated();
         Player2InventoryManager.SyncAllVanillaInventoryToCoopPlayers();
 
 
@@ -212,6 +215,7 @@ public class CoopLocal : BlasMod
         SpawnManager.OnPlayerSpawn -= OnPlayerSpawn;
 
         LevelManager.OnLevelLoaded -= OnLevelLoaded;
+        LevelManager.OnBeforeLevelLoad -= OnBeforeLevelLoad_EnemySync;
 
         Player2HudFadeSync.Dispose();
 
@@ -279,11 +283,20 @@ public class CoopLocal : BlasMod
 
     // confirmed via the same log comparison) without needing to special-case any of them by name.
 
+    private void OnBeforeLevelLoad_EnemySync(Level oldLevel, Level newLevel)
+    {
+        MultiPlayer.EnemySyncRegistry.Clear();
+        MultiPlayer.EnemySyncWorld.OnSceneChanged();
+    }
+
     private void OnLevelLoaded(Level oldLevel, Level newLevel)
     {
         LastDoorTransitionTime = Time.time;
         DoorTransitionGuard.ResetOnLevelLoaded();
+        Reflect.LogSummary();
         Combat.CoopEnemyScaling.OnLevelLoaded();
+        MultiPlayer.EnemySyncRegistry.OnLevelLoadedLog();
+        MultiPlayer.EnemySyncClient.SendSceneReady();
 
         Combat.BossDebugTeleportManager.OnLevelLoaded(oldLevel, newLevel);
 
@@ -715,12 +728,7 @@ public class CoopLocal : BlasMod
 
     internal static void RebuildCoopHud()
     {
-        CoopHealthBars.DestroySlot(1);
-        CoopHealthBars.DestroySlot(2);
-        CoopHealthBars.DestroySlot(3);
-        CoopFervourBars.DestroySlot(1);
-        CoopFervourBars.DestroySlot(2);
-        CoopFervourBars.DestroySlot(3);
+        foreach (CoopPlayerContext ctx in CoopPlayers.All) ctx.DestroyHud();
         CoopPurgeHUD.DestroyAll();
 
         if (!CoopGameConfig.IsHudLayout3Plus)
@@ -728,8 +736,7 @@ public class CoopLocal : BlasMod
             Player2HudFadeSync.RestoreVanillaRightPartIn2P();
             if (Player2 != null)
             {
-                CoopHealthBars.EnsureCreated(1, Player2);
-                CoopFervourBars.EnsureCreated(1, Player2);
+                CoopPlayers.Get(1).EnsureGuestBars();
                 Player2PurgePoints.EnsureCreated(Player2);
             }
             else
@@ -743,21 +750,7 @@ public class CoopLocal : BlasMod
             {
                 Player2PurgePoints.SetVisible(false, instant: true);
             }
-            if (Player2 != null)
-            {
-                CoopHealthBars.EnsureCreated(1, Player2);
-                CoopFervourBars.EnsureCreated(1, Player2);
-            }
-            if (Player3 != null)
-            {
-                CoopHealthBars.EnsureCreated(2, Player3);
-                CoopFervourBars.EnsureCreated(2, Player3);
-            }
-            if (Player4 != null)
-            {
-                CoopHealthBars.EnsureCreated(3, Player4);
-                CoopFervourBars.EnsureCreated(3, Player4);
-            }
+            foreach (CoopPlayerContext ctx in CoopPlayers.ActiveGuests) ctx.EnsureGuestBars();
             try
             {
                 CoopPurgeHUD.EnsureCreatedAll();
@@ -899,11 +892,7 @@ public class CoopLocal : BlasMod
 
 
 
-        CoopHealthBars.DestroySlot(slotIndex);
-
-        CoopFervourBars.DestroySlot(slotIndex);
-
-        CoopPurgeHUD.DestroySlot(slotIndex);
+        CoopPlayers.Get(slotIndex)?.DestroyHud();
 
 
 
@@ -1368,164 +1357,3 @@ public class CoopLocal : BlasMod
 // the renderer via a scale change in some code paths, so this keeps the label's own local
 
 // scale pinned to (1,1,1) every frame regardless of what the parent does.
-
-internal class KeepLocalTransform : MonoBehaviour
-
-{
-
-    private void LateUpdate()
-
-    {
-
-        transform.localScale = Vector3.one;
-
-    }
-
-}
-
-
-
-
-
-// Debug-only: a translucent red rectangle that tracks P2's real damage-taking collider
-
-// (PenitentDamageArea's own BoxCollider2D) every frame, so a hit landing on P2 can be visually
-
-// confirmed against the collider itself rather than the sprite (which is usually bigger than the
-
-// actual hitbox). Parented directly to the DamageArea's own transform - not P2's root - and driven
-
-// from that same collider's offset/size every frame, so it automatically follows
-
-// PenitentDamageArea.ResizeDamageArea()'s own crouch/dash/jump-forward-triggered resizes without
-
-// needing to know about any of those cases itself.
-
-internal class Player2HitboxVisualizer : MonoBehaviour
-
-{
-
-    private const string ChildName = "CoopLocalHitboxVisualizer";
-
-
-
-    private static Sprite overlaySprite;
-
-
-
-    private BoxCollider2D targetCollider;
-
-
-
-    internal static void EnsureCreated(Penitent p2)
-
-    {
-
-        if (p2.DamageArea == null)
-
-        {
-
-            return;
-
-        }
-
-        Transform damageAreaTransform = p2.DamageArea.transform;
-
-        if (damageAreaTransform.Find(ChildName) != null)
-
-        {
-
-            return;
-
-        }
-
-
-
-        BoxCollider2D collider = p2.DamageArea.GetComponent<BoxCollider2D>();
-
-        if (collider == null)
-
-        {
-
-            return;
-
-        }
-
-
-
-        GameObject overlayObject = new GameObject(ChildName);
-
-        overlayObject.transform.SetParent(damageAreaTransform, worldPositionStays: false);
-
-
-
-        SpriteRenderer renderer = overlayObject.AddComponent<SpriteRenderer>();
-
-        renderer.sprite = GetOverlaySprite();
-
-        renderer.color = new Color(1f, 0f, 0f, 0.35f);
-
-        renderer.sortingLayerName = "Player";
-
-        renderer.sortingOrder = 1000;
-
-
-
-        Player2HitboxVisualizer visualizer = overlayObject.AddComponent<Player2HitboxVisualizer>();
-
-        visualizer.targetCollider = collider;
-
-    }
-
-
-
-    // Center pivot (0.5, 0.5) here, unlike Player2StatusBars' left-pivot sprite - a BoxCollider2D's
-
-    // own offset is already its center, so a center-pivoted sprite can copy that offset directly
-
-    // as localPosition without any extra math.
-
-    private static Sprite GetOverlaySprite()
-
-    {
-
-        if (overlaySprite == null)
-
-        {
-
-            Texture2D texture = new Texture2D(1, 1);
-
-            texture.SetPixel(0, 0, Color.white);
-
-            texture.Apply();
-
-            overlaySprite = Sprite.Create(texture, new Rect(0f, 0f, 1f, 1f), new Vector2(0.5f, 0.5f), 1f);
-
-        }
-
-        return overlaySprite;
-
-    }
-
-
-
-    private void LateUpdate()
-
-    {
-
-        if (targetCollider == null)
-
-        {
-
-            return;
-
-        }
-
-        transform.localPosition = targetCollider.offset;
-
-        transform.localScale = new Vector3(targetCollider.size.x, targetCollider.size.y, 1f);
-
-    }
-
-}
-

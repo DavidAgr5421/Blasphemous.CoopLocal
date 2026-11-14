@@ -40,12 +40,12 @@ internal class HealthBarSlotInfo
 
 internal static class CoopHealthBars
 {
-    private static readonly MethodInfo OnPenitentReadyMethod = AccessTools.Method(typeof(PlayerHealth), "OnPenitentReady");
-    private static readonly FieldInfo LastBarWidthField = AccessTools.Field(typeof(PlayerHealth), "lastBarWidth");
-    private static readonly FieldInfo BackgroundMidField = AccessTools.Field(typeof(PlayerHealth), "backgroundMid");
-    private static readonly MethodInfo CalculateHealthBarSizeMethod = AccessTools.Method(typeof(PlayerHealth), "CalculateHealthBarSize");
-    private static readonly MethodInfo CalculateHealthBarMethod = AccessTools.Method(typeof(PlayerHealth), "CalculateHealthBar");
-    private static readonly MethodInfo CalculateLossBarMethod = AccessTools.Method(typeof(PlayerHealth), "CalculateLossBar");
+    private static readonly MethodInfo OnPenitentReadyMethod = Reflect.Method(typeof(PlayerHealth), "OnPenitentReady");
+    private static readonly FieldInfo LastBarWidthField = Reflect.Field(typeof(PlayerHealth), "lastBarWidth");
+    private static readonly FieldInfo BackgroundMidField = Reflect.Field(typeof(PlayerHealth), "backgroundMid");
+    private static readonly MethodInfo CalculateHealthBarSizeMethod = Reflect.Method(typeof(PlayerHealth), "CalculateHealthBarSize");
+    private static readonly MethodInfo CalculateHealthBarMethod = Reflect.Method(typeof(PlayerHealth), "CalculateHealthBar");
+    private static readonly MethodInfo CalculateLossBarMethod = Reflect.Method(typeof(PlayerHealth), "CalculateLossBar");
     private static readonly HealthBarSlotInfo[] slots = new HealthBarSlotInfo[4];
     private static PlayerHealth originalCache;
     private static Vector2 p1InitialPos;
@@ -228,6 +228,13 @@ internal static class CoopHealthBars
 
         GameObject cloneObject = UnityEngine.Object.Instantiate(sourceToClone, cloneParent);
         cloneObject.name = $"PlayerHealth_P{slotIndex + 1}";
+        HudCloneCleaner.DumpOnce("Health ORIGINAL parent", sourceToClone.transform);
+        // Por simetría: que el clon de vida no arrastre una copia de fervor/matraces de P1.
+        int stripped = HudCloneCleaner.StripForeign(cloneObject,
+            new[] { typeof(PlayerFervour), typeof(PlayerFlask) },
+            new[] { typeof(PlayerHealth) });
+        if (stripped > 0) DashParryDebugLog.Log($"[HudClone] Health P{slotIndex + 1}: eliminados {stripped} sub-árboles de fervor duplicados.");
+        HudCloneCleaner.DumpOnce("Health CLONE (tras limpiar)", cloneObject.transform);
         slot.InstanceRoot = cloneObject;
         slot.Instance = cloneObject.GetComponentInChildren<PlayerHealth>();
 
@@ -242,47 +249,13 @@ internal static class CoopHealthBars
         if (rect != null)
         {
             bool is3Plus = CoopGameConfig.IsHudLayout3Plus;
-            var cfg = HudLayoutConfig.Current;
-
-            if (slotIndex == 1) // P2
-            {
-                if (!is3Plus)
-                {
-                    // Modo 2 Jugadores: esquina inferior derecha (comportamiento original idéntico)
-                    rect.anchorMin = new Vector2(1f, 0f);
-                    rect.anchorMax = new Vector2(1f, 0f);
-                    rect.pivot = new Vector2(1f, 0f);
-                    slot.Scale = cfg.p2_health_2p.scale;
-                    slot.AnchoredPosition = cfg.p2_health_2p.Position;
-                }
-                else
-                {
-                    // Modo 3-4 Jugadores: esquina superior derecha
-                    rect.anchorMin = new Vector2(1f, 1f);
-                    rect.anchorMax = new Vector2(1f, 1f);
-                    rect.pivot = new Vector2(1f, 1f);
-                    slot.Scale = cfg.p2_health.scale;
-                    slot.AnchoredPosition = cfg.p2_health.Position;
-                }
-            }
-            else if (slotIndex == 2) // P3
-            {
-                // Modo 3-4 Jugadores: lado izquierdo, debajo de P1
-                rect.anchorMin = new Vector2(0f, 1f);
-                rect.anchorMax = new Vector2(0f, 1f);
-                rect.pivot = new Vector2(0f, 1f);
-                slot.Scale = cfg.p3_health.scale;
-                slot.AnchoredPosition = cfg.p3_health.Position;
-            }
-            else if (slotIndex == 3) // P4
-            {
-                // Modo 3-4 Jugadores: lado derecho, debajo de P2
-                rect.anchorMin = new Vector2(1f, 1f);
-                rect.anchorMax = new Vector2(1f, 1f);
-                rect.pivot = new Vector2(1f, 1f);
-                slot.Scale = cfg.p4_health.scale;
-                slot.AnchoredPosition = cfg.p4_health.Position;
-            }
+            // Ancla, posición y escala salen del contexto del jugador (layout guardado + modo 2P / 3-4P).
+            CoopPlayerContext.HudPlacement placement = CoopPlayers.Get(slotIndex).GetHudPlacement(CoopPlayerContext.HudElement.Health, is3Plus);
+            rect.anchorMin = placement.Anchor;
+            rect.anchorMax = placement.Anchor;
+            rect.pivot = placement.Anchor;
+            slot.Scale = placement.Scale;
+            slot.AnchoredPosition = placement.Position;
 
             rect.anchoredPosition = slot.AnchoredPosition;
             rect.localScale = Vector3.one * slot.Scale;
@@ -303,13 +276,18 @@ internal static class CoopHealthBars
 
         if (slot.Instance != null)
         {
+            slot.Instance.enabled = true;
+            var driver = cloneObject.GetComponent<CoopHealthBarDriver>();
+            if (driver == null) driver = cloneObject.AddComponent<CoopHealthBarDriver>();
+            driver.Init(slotIndex, slot.Instance);
+
             if (CalculateHealthBarSizeMethod != null) CalculateHealthBarSizeMethod.Invoke(slot.Instance, null);
             if (CalculateHealthBarMethod != null) CalculateHealthBarMethod.Invoke(slot.Instance, null);
             if (CalculateLossBarMethod != null) CalculateLossBarMethod.Invoke(slot.Instance, null);
 
             // Asegurar que la barra de vida y de pérdida comiencen 100% llenas de forma inmediata
-            FieldInfo hField = AccessTools.Field(typeof(PlayerHealth), "health");
-            FieldInfo lField = AccessTools.Field(typeof(PlayerHealth), "loss");
+            FieldInfo hField = Reflect.Field(typeof(PlayerHealth), "health");
+            FieldInfo lField = Reflect.Field(typeof(PlayerHealth), "loss");
             float targetRatio = (penitent.Stats?.Life != null && penitent.Stats.Life.Final > 0f)
                 ? (penitent.Stats.Life.Current / penitent.Stats.Life.Final)
                 : 1f;
@@ -319,6 +297,83 @@ internal static class CoopHealthBars
             if (hImg != null) hImg.fillAmount = targetRatio;
             if (lImg != null) lImg.fillAmount = targetRatio;
         }
+    }
+}
+
+// Driver propio de la barra de vida clonada (P2-P4). Se ejecuta en LateUpdate (después del Update
+// vanilla/parcheado) y escribe el relleno directamente desde las stats del jugador dueño, de modo
+// que la barra siempre refleja la vida real aunque el PlayerHealth clon esté desactivado, su
+// _damageTimeElapsed quede desincronizado o una capa quede mal ordenada.
+internal sealed class CoopHealthBarDriver : MonoBehaviour
+{
+    private static readonly FieldInfo HealthField = Reflect.Field(typeof(PlayerHealth), "health");
+    private static readonly FieldInfo LossField = Reflect.Field(typeof(PlayerHealth), "loss");
+
+    private int slotIndex;
+    private PlayerHealth health;
+    private Image healthImg;
+    private Image lossImg;
+    private float lossHoldTimer;
+    private float lastTarget = 1f;
+
+    internal void Init(int slot, PlayerHealth instance)
+    {
+        slotIndex = slot;
+        health = instance;
+        healthImg = HealthField?.GetValue(instance) as Image;
+        lossImg = LossField?.GetValue(instance) as Image;
+        EnforceLayerOrder();
+    }
+
+    // La barra de pérdida va detrás de la de vida, ambas delante del fondo.
+    private void EnforceLayerOrder()
+    {
+        if (healthImg == null || lossImg == null) return;
+        if (healthImg.transform.parent == lossImg.transform.parent
+            && healthImg.transform.GetSiblingIndex() < lossImg.transform.GetSiblingIndex())
+        {
+            int hi = healthImg.transform.GetSiblingIndex();
+            int li = lossImg.transform.GetSiblingIndex();
+            lossImg.transform.SetSiblingIndex(hi);
+            healthImg.transform.SetSiblingIndex(li);
+        }
+    }
+
+    private void LateUpdate()
+    {
+        if (health == null || healthImg == null) return;
+        Penitent p = CoopPlayerRegistry.GetPenitent(slotIndex);
+        if (p == null || p.Stats == null || p.Stats.Life == null || p.Stats.Life.Final <= 0f) return;
+
+        if (!health.enabled) health.enabled = true;
+        if (!healthImg.enabled) healthImg.enabled = true;
+        if (lossImg != null && !lossImg.enabled) lossImg.enabled = true;
+
+        float target = Mathf.Clamp01(p.Stats.Life.Current / p.Stats.Life.Final);
+        float dt = Time.unscaledDeltaTime;
+
+        // Vida: baja rápido, sube rápido.
+        healthImg.fillAmount = Mathf.MoveTowards(healthImg.fillAmount, target, 1.6f * dt);
+        if (Mathf.Abs(healthImg.fillAmount - target) < 0.002f) healthImg.fillAmount = target;
+
+        // Pérdida: se queda un instante y luego cae hacia la vida actual.
+        if (lossImg != null)
+        {
+            if (target < lastTarget - 0.0001f) lossHoldTimer = 0.35f;
+            if (lossImg.fillAmount < target)
+            {
+                lossImg.fillAmount = target;
+            }
+            else if (lossHoldTimer > 0f)
+            {
+                lossHoldTimer -= dt;
+            }
+            else
+            {
+                lossImg.fillAmount = Mathf.MoveTowards(lossImg.fillAmount, target, 0.5f * dt);
+            }
+        }
+        lastTarget = target;
     }
 }
 
@@ -382,13 +437,13 @@ internal static class PlayerHealth_BarTarget_P2_Patch
 [HarmonyPatch(typeof(PlayerHealth), "CalculateHealthBarSize")]
 internal static class PlayerHealth_CalculateHealthBarSize_P2_Patch
 {
-    private static readonly FieldInfo LastBarWidthField = AccessTools.Field(typeof(PlayerHealth), "lastBarWidth");
-    private static readonly FieldInfo BackgroundStartSizeField = AccessTools.Field(typeof(PlayerHealth), "backgroundStartSize");
-    private static readonly FieldInfo EndFillSizeField = AccessTools.Field(typeof(PlayerHealth), "endFillSize");
-    private static readonly FieldInfo BackgroundMidField = AccessTools.Field(typeof(PlayerHealth), "backgroundMid");
-    private static readonly FieldInfo HealthTransformField = AccessTools.Field(typeof(PlayerHealth), "healthTransform");
-    private static readonly FieldInfo LossTransformField = AccessTools.Field(typeof(PlayerHealth), "lossTransform");
-    private static readonly FieldInfo BackgroundFillTransformField = AccessTools.Field(typeof(PlayerHealth), "backgroundFillTransform");
+    private static readonly FieldInfo LastBarWidthField = Reflect.Field(typeof(PlayerHealth), "lastBarWidth");
+    private static readonly FieldInfo BackgroundStartSizeField = Reflect.Field(typeof(PlayerHealth), "backgroundStartSize");
+    private static readonly FieldInfo EndFillSizeField = Reflect.Field(typeof(PlayerHealth), "endFillSize");
+    private static readonly FieldInfo BackgroundMidField = Reflect.Field(typeof(PlayerHealth), "backgroundMid");
+    private static readonly FieldInfo HealthTransformField = Reflect.Field(typeof(PlayerHealth), "healthTransform");
+    private static readonly FieldInfo LossTransformField = Reflect.Field(typeof(PlayerHealth), "lossTransform");
+    private static readonly FieldInfo BackgroundFillTransformField = Reflect.Field(typeof(PlayerHealth), "backgroundFillTransform");
 
     private static bool Prefix(PlayerHealth __instance)
     {
@@ -431,9 +486,9 @@ internal static class PlayerHealth_CalculateHealthBarSize_P2_Patch
 [HarmonyPatch(typeof(PlayerHealth), "CalculateLossBar")]
 internal static class PlayerHealth_CalculateLossBar_P2_Patch
 {
-    private static readonly FieldInfo LossField = AccessTools.Field(typeof(PlayerHealth), "loss");
-    private static readonly FieldInfo CurveField = AccessTools.Field(typeof(PlayerHealth), "HealthLossAnimationCurve");
-    private static readonly FieldInfo DamageTimeElapsedField = AccessTools.Field(typeof(PlayerHealth), "_damageTimeElapsed");
+    private static readonly FieldInfo LossField = Reflect.Field(typeof(PlayerHealth), "loss");
+    private static readonly FieldInfo CurveField = Reflect.Field(typeof(PlayerHealth), "HealthLossAnimationCurve");
+    private static readonly FieldInfo DamageTimeElapsedField = Reflect.Field(typeof(PlayerHealth), "_damageTimeElapsed");
 
     private static bool Prefix(PlayerHealth __instance)
     {
@@ -467,9 +522,9 @@ internal static class PlayerHealth_CalculateLossBar_P2_Patch
 [HarmonyPatch(typeof(PlayerHealth), "CalculateHealthBar")]
 internal static class PlayerHealth_CalculateHealthBar_P2_Patch
 {
-    private static readonly FieldInfo HealthField = AccessTools.Field(typeof(PlayerHealth), "health");
-    private static readonly FieldInfo SpeedField = AccessTools.Field(typeof(PlayerHealth), "speed");
-    private static readonly FieldInfo DamageTimeElapsedField = AccessTools.Field(typeof(PlayerHealth), "_damageTimeElapsed");
+    private static readonly FieldInfo HealthField = Reflect.Field(typeof(PlayerHealth), "health");
+    private static readonly FieldInfo SpeedField = Reflect.Field(typeof(PlayerHealth), "speed");
+    private static readonly FieldInfo DamageTimeElapsedField = Reflect.Field(typeof(PlayerHealth), "_damageTimeElapsed");
 
     private static bool Prefix(PlayerHealth __instance)
     {

@@ -61,6 +61,17 @@ public class CoopClientWorldSync : MonoBehaviour
     {
         if (!CoopNetworkManager.IsOnlineClient) return;
 
+        // Vanilla re-habilita el SpriteRenderer del penitente local tras cambios de escena;
+        // mientras existan títeres, mantenerlo oculto para evitar el duplicado fantasma
+        if (puppets.Count > 0)
+        {
+            Penitent localPenitent = Core.Logic?.Penitent;
+            if (localPenitent != null && localPenitent.SpriteRenderer != null)
+            {
+                localPenitent.SpriteRenderer.enabled = false;
+            }
+        }
+
         // Suavizar movimiento de los títeres visuales hacia sus posiciones objetivo
         foreach (var puppet in puppets.Values)
         {
@@ -261,5 +272,18 @@ public class CoopClientWorldSync : MonoBehaviour
             }
         }
         puppets.Clear();
+        RestoreLocalPenitentVisibility();
+    }
+
+    /// <summary>
+    /// Vuelve a mostrar el SpriteRenderer del penitente local (sin títeres que lo reemplacen).
+    /// </summary>
+    public void RestoreLocalPenitentVisibility()
+    {
+        Penitent localPenitent = Core.Logic?.Penitent;
+        if (localPenitent != null && localPenitent.SpriteRenderer != null)
+        {
+            localPenitent.SpriteRenderer.enabled = true;
+        }
     }
 }

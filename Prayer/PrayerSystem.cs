@@ -50,7 +50,7 @@ namespace Blasphemous.CoopLocal;
 [HarmonyPatch(typeof(PrayerUse), "OnUpdate")]
 internal static class PrayerUse_P2Input_Patch
 {
-    private static readonly FieldInfo CastInformationField = AccessTools.Field(typeof(Ability), "castInformation");
+    private static readonly FieldInfo CastInformationField = Reflect.Field(typeof(Ability), "castInformation");
 
     // Round 39 follow-up: __instance.CanUsePrayer compiles fine against the NuGet reference
     // assembly (which marks it public) but the REAL shipped Assembly-CSharp.dll has the getter as
@@ -58,7 +58,7 @@ internal static class PrayerUse_P2Input_Patch
     // inaccessible"), confirmed via LogOutput.log. AccessTools.Property + PropertyInfo.GetValue
     // bypasses the compile-time accessibility check, same trick already relied on throughout this
     // file for private fields.
-    private static readonly PropertyInfo CanUsePrayerProperty = AccessTools.Property(typeof(PrayerUse), "CanUsePrayer");
+    private static readonly PropertyInfo CanUsePrayerProperty = Reflect.Property(typeof(PrayerUse), "CanUsePrayer");
 
     // Round 38: static analysis of Ability.Cast()/PrayerUse.OnCastStart()/StartUsingPrayer() all
     // came back correctly per-instance (EntityOwner/_penitent-based throughout, no hardcoded
@@ -244,7 +244,7 @@ internal static class PrayerCasterTracker
 [HarmonyPatch(typeof(PrayerUse), "StartUsingPrayer")]
 internal static class PrayerUse_StartUsingPrayer_TrackCaster_Patch
 {
-    private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(PrayerUse), "_penitent");
+    private static readonly FieldInfo PenitentField = Reflect.Field(typeof(PrayerUse), "_penitent");
 
     private static void Prefix(PrayerUse __instance)
     {
@@ -351,11 +351,11 @@ internal static class PrayerShieldEffect_OnRemoveEffect_P2_Patch
 [HarmonyPatch(typeof(Tools.Items.PenitentLightBeamEffect), "OnApplyEffect")]
 internal static class PenitentLightBeamEffect_OnApplyEffect_P2_Patch
 {
-    private static readonly FieldInfo OwnerField = AccessTools.Field(typeof(Tools.Items.PenitentLightBeamEffect), "_owner");
-    private static readonly FieldInfo AreaSummonAttackField = AccessTools.Field(typeof(Tools.Items.PenitentLightBeamEffect), "_areaSummonAttack");
-    private static readonly FieldInfo DamageAmountField = AccessTools.Field(typeof(Tools.Items.PenitentLightBeamEffect), "DamageAmount");
-    private static readonly MethodInfo PushPlayerColorMethod = AccessTools.Method(typeof(Tools.Items.PenitentLightBeamEffect), "PushPlayerColor");
-    private static readonly MethodInfo PopPlayerColorMethod = AccessTools.Method(typeof(Tools.Items.PenitentLightBeamEffect), "PopPlayerColor");
+    private static readonly FieldInfo OwnerField = Reflect.Field(typeof(Tools.Items.PenitentLightBeamEffect), "_owner");
+    private static readonly FieldInfo AreaSummonAttackField = Reflect.Field(typeof(Tools.Items.PenitentLightBeamEffect), "_areaSummonAttack");
+    private static readonly FieldInfo DamageAmountField = Reflect.Field(typeof(Tools.Items.PenitentLightBeamEffect), "DamageAmount");
+    private static readonly MethodInfo PushPlayerColorMethod = Reflect.Method(typeof(Tools.Items.PenitentLightBeamEffect), "PushPlayerColor");
+    private static readonly MethodInfo PopPlayerColorMethod = Reflect.Method(typeof(Tools.Items.PenitentLightBeamEffect), "PopPlayerColor");
 
     private static bool Prefix(Tools.Items.PenitentLightBeamEffect __instance, ref bool __result)
     {
@@ -438,10 +438,10 @@ internal static class PenitentLightBeamEffect_OnApplyEffect_P2_Patch
 internal static class PrayerUse_OnUpdate_P2_AuraTransform_Patch
 {
     private static readonly MethodInfo RewiredGetButtonTimedPressDownMethod =
-        AccessTools.Method(typeof(Rewired.Player), "GetButtonTimedPressDown", new[] { typeof(int), typeof(float) });
+        Reflect.Method(typeof(Rewired.Player), "GetButtonTimedPressDown", new[] { typeof(int), typeof(float) });
 
     private static readonly MethodInfo ReplacementMethod =
-        AccessTools.Method(typeof(PrayerUse_OnUpdate_P2_AuraTransform_Patch), nameof(GetButtonTimedPressDownForPrayerUse));
+        Reflect.Method(typeof(PrayerUse_OnUpdate_P2_AuraTransform_Patch), nameof(GetButtonTimedPressDownForPrayerUse));
 
     // Set by our own Prefix immediately before the (transpiled) method body runs, in the same
     // call - safe, same rationale as every other companion-Prefix-plus-Transpiler pair in this mod

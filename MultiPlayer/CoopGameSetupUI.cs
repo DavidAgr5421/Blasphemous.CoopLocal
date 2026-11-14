@@ -358,6 +358,7 @@ internal sealed class CoopGameSetupUI : MonoBehaviour
         Image bgImg = bgObj.AddComponent<Image>();
 
         bgImg.color = new Color(0.02f, 0.02f, 0.03f, 0.96f);
+        CoopUiStyle.StyleOverlay(bgImg);
 
 
 
@@ -380,6 +381,7 @@ internal sealed class CoopGameSetupUI : MonoBehaviour
         panelOutline.effectColor = new Color(0.85f, 0.70f, 0.30f, 0.85f);
 
         panelOutline.effectDistance = new Vector2(2f, -2f);
+        CoopUiStyle.StylePanel(panelObj);
 
 
 
@@ -2087,7 +2089,7 @@ internal sealed class CoopGameSetupUI : MonoBehaviour
 
         }
 
-        catch { }
+        catch (System.Exception __swallowed) { SwallowedExceptions.Report(__swallowed, "CoopGameSetupUI.cs:2092"); }
 
 
 
@@ -2107,7 +2109,7 @@ internal sealed class CoopGameSetupUI : MonoBehaviour
 
             }
 
-            catch { }
+            catch (System.Exception __swallowed) { SwallowedExceptions.Report(__swallowed, "CoopGameSetupUI.cs:2112"); }
 
         }
 
@@ -4137,7 +4139,7 @@ internal sealed class CoopGameSetupUI : MonoBehaviour
 
             }
 
-            catch { }
+            catch (System.Exception __swallowed) { SwallowedExceptions.Report(__swallowed, "CoopGameSetupUI.cs:4142"); }
 
         }
 

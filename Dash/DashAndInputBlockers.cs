@@ -61,7 +61,7 @@ internal static class Dash_OnStart_Patch
 
 internal static class DashAndInputBlockers_ForceStopStuckDash
 {
-    private static readonly FieldInfo CastTimeField = AccessTools.Field(typeof(Ability), "castTime");
+    private static readonly FieldInfo CastTimeField = Reflect.Field(typeof(Ability), "castTime");
 
     internal static void ForceStop(Penitent penitent)
     {
@@ -79,7 +79,7 @@ internal static class DashAndInputBlockers_ForceStopStuckDash
 [HarmonyPatch(typeof(Dash), "OnCastStart")]
 internal static class Dash_OnCastStart_Guard_Patch
 {
-    private static readonly FieldInfo CastTimeField = AccessTools.Field(typeof(Ability), "castTime");
+    private static readonly FieldInfo CastTimeField = Reflect.Field(typeof(Ability), "castTime");
 
     private static void Postfix(Dash __instance)
     {
@@ -465,7 +465,7 @@ internal static class PlatformCharacterInput_Blocked_Patch
 // P2's own calls both happen within the same frame.
 internal static class BlockerOverrideHelper
 {
-    private static readonly FieldInfo InputBlockedBackingField = AccessTools.Field(typeof(InputManager), "<InputBlocked>k__BackingField");
+    private static readonly FieldInfo InputBlockedBackingField = Reflect.Field(typeof(InputManager), "<InputBlocked>k__BackingField");
 
     // InputManager.HasBlocker(name) checks this List<string> *directly* - it's a completely
     // separate data source from the InputBlocked bool above (which is just a cached
@@ -479,7 +479,7 @@ internal static class BlockerOverrideHelper
     // through AttackButtonHold(), so they were never affected by this specific gap; anything
     // that reads Blocked (a real property, backed by InputBlocked) was already fixed, but this
     // bare-list check was invisible to that fix entirely.
-    private static readonly FieldInfo InputBlockersListField = AccessTools.Field(typeof(InputManager), "inputBlockers");
+    private static readonly FieldInfo InputBlockersListField = Reflect.Field(typeof(InputManager), "inputBlockers");
 
     private static bool removedPlayerLogic;
     private static bool removedExecution;
@@ -581,7 +581,7 @@ internal static class PlatformCharacterInput_Update_BlockerOverride_Patch
 [HarmonyPatch(typeof(Gameplay.GameControllers.Penitent.Animator.AnimatorInyector), "Update")]
 internal static class AnimatorInyector_Update_BlockerOverride_Patch
 {
-    private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(Gameplay.GameControllers.Penitent.Animator.AnimatorInyector), "_penitent");
+    private static readonly FieldInfo PenitentField = Reflect.Field(typeof(Gameplay.GameControllers.Penitent.Animator.AnimatorInyector), "_penitent");
 
     private static bool overrodeThisCall;
 
@@ -608,9 +608,9 @@ internal static class AnimatorInyector_Update_BlockerOverride_Patch
 [HarmonyPatch(typeof(Gameplay.GameControllers.Penitent.Animator.AnimatorInyector), "Dashing")]
 internal static class AnimatorInyector_Dashing_DebugLogger_Patch
 {
-    private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(Gameplay.GameControllers.Penitent.Animator.AnimatorInyector), "_penitent");
-    private static readonly FieldInfo PlayerInputField = AccessTools.Field(typeof(Gameplay.GameControllers.Penitent.Animator.AnimatorInyector), "_playerInput");
-    private static readonly FieldInfo PlayerDashField = AccessTools.Field(typeof(Gameplay.GameControllers.Penitent.Animator.AnimatorInyector), "_playerDash");
+    private static readonly FieldInfo PenitentField = Reflect.Field(typeof(Gameplay.GameControllers.Penitent.Animator.AnimatorInyector), "_penitent");
+    private static readonly FieldInfo PlayerInputField = Reflect.Field(typeof(Gameplay.GameControllers.Penitent.Animator.AnimatorInyector), "_playerInput");
+    private static readonly FieldInfo PlayerDashField = Reflect.Field(typeof(Gameplay.GameControllers.Penitent.Animator.AnimatorInyector), "_playerDash");
 
     private static bool Prefix(object __instance)
     {
@@ -665,11 +665,11 @@ internal static class DashBehaviour_OnStateUpdate_Patch
     private static readonly int RunningAfterDashAnimHash = Animator.StringToHash("Start_Run_After_Dash");
     private static readonly int ParryAnimHash = Animator.StringToHash("ParryChance");
 
-    private static readonly MethodInfo AddExtraDashMethod = AccessTools.Method(typeof(DashBehaviour), "AddExtraDash");
-    private static readonly MethodInfo CastLungeAttackMethod = AccessTools.Method(typeof(DashBehaviour), "CastLungeAttack");
-    private static readonly MethodInfo CrouchMethod = AccessTools.Method(typeof(DashBehaviour), "Crouch");
-    private static readonly FieldInfo AddExtraDashField = AccessTools.Field(typeof(DashBehaviour), "_addExtraDash");
-    private static readonly FieldInfo CancelToParryField = AccessTools.Field(typeof(DashBehaviour), "_cancelToParry");
+    private static readonly MethodInfo AddExtraDashMethod = Reflect.Method(typeof(DashBehaviour), "AddExtraDash");
+    private static readonly MethodInfo CastLungeAttackMethod = Reflect.Method(typeof(DashBehaviour), "CastLungeAttack");
+    private static readonly MethodInfo CrouchMethod = Reflect.Method(typeof(DashBehaviour), "Crouch");
+    private static readonly FieldInfo AddExtraDashField = Reflect.Field(typeof(DashBehaviour), "_addExtraDash");
+    private static readonly FieldInfo CancelToParryField = Reflect.Field(typeof(DashBehaviour), "_cancelToParry");
 
     private static bool Prefix(DashBehaviour __instance, Animator animator, AnimatorStateInfo stateInfo)
     {

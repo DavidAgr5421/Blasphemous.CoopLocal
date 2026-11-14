@@ -121,6 +121,7 @@ public class CoopJoinLobbyUI : MonoBehaviour
         doRt.sizeDelta = Vector2.zero;
         Image doImg = darkOverlay.AddComponent<Image>();
         doImg.color = new Color(0.03f, 0.03f, 0.04f, 0.90f);
+        CoopUiStyle.StyleOverlay(doImg);
 
         // Panel Central
         GameObject panelObj = CreateUiElement("Panel", rootCanvasObj.transform);
@@ -136,6 +137,7 @@ public class CoopJoinLobbyUI : MonoBehaviour
         Outline pnlOut = panelObj.AddComponent<Outline>();
         pnlOut.effectColor = new Color(0.75f, 0.55f, 0.20f, 0.85f);
         pnlOut.effectDistance = new Vector2(2.5f, -2.5f);
+        CoopUiStyle.StylePanel(panelObj);
 
         // Título Principal
         GameObject hdrObj = CreateUiElement("Title", panelObj.transform);
@@ -148,7 +150,9 @@ public class CoopJoinLobbyUI : MonoBehaviour
         headerTitleText.fontSize = 24;
         headerTitleText.alignment = TextAnchor.MiddleCenter;
         headerTitleText.color = new Color(1f, 0.88f, 0.45f, 1f);
-        headerTitleText.text = "=== UNIRSE A SALA CO-OP (STEAM P2P) ===";
+        headerTitleText.text = "UNIRSE A SALA CO-OP (STEAM P2P)";
+        CoopUiStyle.StyleTitle(headerTitleText);
+        CoopUiStyle.AddDivider(panelObj.transform, new Vector2(0f, 198f), 700f);
 
         // Subtítulo
         GameObject subObj = CreateUiElement("Subtitle", panelObj.transform);
@@ -207,6 +211,7 @@ public class CoopJoinLobbyUI : MonoBehaviour
         connectButtonBg.color = new Color(0.12f, 0.28f, 0.16f, 0.95f);
         Outline cbOut = connBtnObj.AddComponent<Outline>();
         cbOut.effectColor = new Color(0.35f, 0.85f, 0.45f, 0.8f);
+        CoopUiStyle.StyleCard(connBtnObj);
 
         GameObject cbTxtObj = CreateUiElement("Text", connBtnObj.transform);
 
@@ -289,7 +294,7 @@ public class CoopJoinLobbyUI : MonoBehaviour
                 string steamName = SteamFriends.GetPersonaName();
                 if (!string.IsNullOrEmpty(steamName)) currentPlayerName = steamName;
             }
-            catch { }
+            catch (System.Exception __swallowed) { SwallowedExceptions.Report(__swallowed, "CoopJoinLobbyUI.cs:297"); }
         }
 
         UpdateDisplay();

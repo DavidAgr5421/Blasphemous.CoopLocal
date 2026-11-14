@@ -213,8 +213,8 @@ internal static class AlliedCherubPrayer_InstantiateCherubs_Patch
 [HarmonyPatch(typeof(Gameplay.GameControllers.AlliedCherub.AlliedCherub), "Deploy")]
 internal static class AlliedCherub_Deploy_Patch
 {
-    private static readonly PropertyInfo AllyProp = AccessTools.Property(typeof(Gameplay.GameControllers.AlliedCherub.AlliedCherub), "Ally");
-    private static readonly PropertyInfo FlyingPosProp = AccessTools.Property(typeof(Gameplay.GameControllers.AlliedCherub.AlliedCherub), "FlyingPosition");
+    private static readonly PropertyInfo AllyProp = Reflect.Property(typeof(Gameplay.GameControllers.AlliedCherub.AlliedCherub), "Ally");
+    private static readonly PropertyInfo FlyingPosProp = Reflect.Property(typeof(Gameplay.GameControllers.AlliedCherub.AlliedCherub), "FlyingPosition");
 
     private static void Postfix(Gameplay.GameControllers.AlliedCherub.AlliedCherub __instance,
         AlliedCherubSystem.AlliedCherubSlot cherubSlot,
@@ -251,18 +251,18 @@ internal static class AlliedCherubSystem_DistanceToEnemy_Patch
 [HarmonyPatch(typeof(PenitentAreaAttack), "OnApplyEffect")]
 internal static class PenitentAreaAttack_OnApplyEffect_P2_Patch
 {
-    private static readonly FieldInfo RadiusField = AccessTools.Field(typeof(PenitentAreaAttack), "Radius");
-    private static readonly FieldInfo DamageMaskField = AccessTools.Field(typeof(PenitentAreaAttack), "damageMask");
-    private static readonly FieldInfo PrefabIntoPlayerField = AccessTools.Field(typeof(PenitentAreaAttack), "prefabIntoPlayer");
-    private static readonly FieldInfo PrefabIntoEnemiesField = AccessTools.Field(typeof(PenitentAreaAttack), "prefabIntoEnemies");
-    private static readonly FieldInfo IntoPlayerOffsetField = AccessTools.Field(typeof(PenitentAreaAttack), "intoPlayerOffset");
-    private static readonly FieldInfo IntoEnemiesOffsetField = AccessTools.Field(typeof(PenitentAreaAttack), "intoEnemiesOffset");
-    private static readonly FieldInfo DamageDelayField = AccessTools.Field(typeof(PenitentAreaAttack), "damageDelay");
-    private static readonly FieldInfo DamageTypeField = AccessTools.Field(typeof(PenitentAreaAttack), "DamageType");
-    private static readonly FieldInfo AmountField = AccessTools.Field(typeof(PenitentAreaAttack), "Amount");
-    private static readonly FieldInfo ForceField = AccessTools.Field(typeof(PenitentAreaAttack), "Force");
-    private static readonly FieldInfo UnnavoidableField = AccessTools.Field(typeof(PenitentAreaAttack), "Unnavoidable");
-    private static readonly FieldInfo HitSoundField = AccessTools.Field(typeof(PenitentAreaAttack), "HitSound");
+    private static readonly FieldInfo RadiusField = Reflect.Field(typeof(PenitentAreaAttack), "Radius");
+    private static readonly FieldInfo DamageMaskField = Reflect.Field(typeof(PenitentAreaAttack), "damageMask");
+    private static readonly FieldInfo PrefabIntoPlayerField = Reflect.Field(typeof(PenitentAreaAttack), "prefabIntoPlayer");
+    private static readonly FieldInfo PrefabIntoEnemiesField = Reflect.Field(typeof(PenitentAreaAttack), "prefabIntoEnemies");
+    private static readonly FieldInfo IntoPlayerOffsetField = Reflect.Field(typeof(PenitentAreaAttack), "intoPlayerOffset");
+    private static readonly FieldInfo IntoEnemiesOffsetField = Reflect.Field(typeof(PenitentAreaAttack), "intoEnemiesOffset");
+    private static readonly FieldInfo DamageDelayField = Reflect.Field(typeof(PenitentAreaAttack), "damageDelay");
+    private static readonly FieldInfo DamageTypeField = Reflect.Field(typeof(PenitentAreaAttack), "DamageType");
+    private static readonly FieldInfo AmountField = Reflect.Field(typeof(PenitentAreaAttack), "Amount");
+    private static readonly FieldInfo ForceField = Reflect.Field(typeof(PenitentAreaAttack), "Force");
+    private static readonly FieldInfo UnnavoidableField = Reflect.Field(typeof(PenitentAreaAttack), "Unnavoidable");
+    private static readonly FieldInfo HitSoundField = Reflect.Field(typeof(PenitentAreaAttack), "HitSound");
 
     private static bool Prefix(PenitentAreaAttack __instance, ref bool __result)
     {
@@ -407,7 +407,7 @@ internal static class HeavyAttackPrayerEffect_OnRemoveEffect_P2_Patch
 [HarmonyPatch(typeof(PenitentGuardianEffect), "OnApplyEffect")]
 internal static class PenitentGuardianEffect_OnApplyEffect_P2_Patch
 {
-    private static readonly FieldInfo OwnerField = AccessTools.Field(typeof(PenitentGuardianEffect), "_owner");
+    private static readonly FieldInfo OwnerField = Reflect.Field(typeof(PenitentGuardianEffect), "_owner");
 
     private static void Prefix(PenitentGuardianEffect __instance)
     {
@@ -422,8 +422,8 @@ internal static class PenitentGuardianEffect_OnApplyEffect_P2_Patch
 [HarmonyPatch(typeof(PenitentGuardianEffect), "InstantiateGuardian")]
 internal static class PenitentGuardianEffect_InstantiateGuardian_P2_Patch
 {
-    private static readonly FieldInfo OwnerField = AccessTools.Field(typeof(PenitentGuardianEffect), "_owner");
-    private static readonly FieldInfo PenitentGuardianField = AccessTools.Field(typeof(PenitentGuardianEffect), "_penitentGuardian");
+    private static readonly FieldInfo OwnerField = Reflect.Field(typeof(PenitentGuardianEffect), "_owner");
+    private static readonly FieldInfo PenitentGuardianField = Reflect.Field(typeof(PenitentGuardianEffect), "_penitentGuardian");
 
     private static bool Prefix(PenitentGuardianEffect __instance)
     {
@@ -445,7 +445,7 @@ internal static class PenitentGuardianEffect_InstantiateGuardian_P2_Patch
                 PenitentGuardianField.SetValue(__instance, guardianObj);
                 Gameplay.GameControllers.Effects.Player.PenitentGuardian comp =
                     guardianObj.GetComponent<Gameplay.GameControllers.Effects.Player.PenitentGuardian>();
-                comp.SetOrientation((Hit)AccessTools.Field(typeof(Framework.Inventory.ObjectEffect), "currentHit").GetValue(__instance));
+                comp.SetOrientation((Hit)Reflect.Field(typeof(Framework.Inventory.ObjectEffect), "currentHit").GetValue(__instance));
             }
             return false;
         }
@@ -455,7 +455,7 @@ internal static class PenitentGuardianEffect_InstantiateGuardian_P2_Patch
             guardianObj.GetComponent<Gameplay.GameControllers.Effects.Player.PenitentGuardian>();
         if (!comp2.IsTriggered)
         {
-            comp2.SetOrientation((Hit)AccessTools.Field(typeof(Framework.Inventory.ObjectEffect), "currentHit").GetValue(__instance));
+            comp2.SetOrientation((Hit)Reflect.Field(typeof(Framework.Inventory.ObjectEffect), "currentHit").GetValue(__instance));
             guardianObj.transform.position = position;
         }
         return false;
@@ -465,8 +465,8 @@ internal static class PenitentGuardianEffect_InstantiateGuardian_P2_Patch
 [HarmonyPatch(typeof(PenitentGuardianEffect), "Update")]
 internal static class PenitentGuardianEffect_Update_P2_Patch
 {
-    private static readonly FieldInfo OwnerField = AccessTools.Field(typeof(PenitentGuardianEffect), "_owner");
-    private static readonly FieldInfo ShowLadyField = AccessTools.Field(typeof(PenitentGuardianEffect), "_showLady");
+    private static readonly FieldInfo OwnerField = Reflect.Field(typeof(PenitentGuardianEffect), "_owner");
+    private static readonly FieldInfo ShowLadyField = Reflect.Field(typeof(PenitentGuardianEffect), "_showLady");
 
     private static bool Prefix(PenitentGuardianEffect __instance)
     {
@@ -517,8 +517,8 @@ internal static class ZambraCasterTracker
 [HarmonyPatch(typeof(ZambraTearsHarvestEffect), "OnApplyEffect")]
 internal static class ZambraTearsHarvestEffect_OnApplyEffect_P2_Patch
 {
-    private static readonly FieldInfo IsRunningEffectField = AccessTools.Field(typeof(ZambraTearsHarvestEffect), "<IsRunningEffect>k__BackingField");
-    private static readonly MethodInfo DisableCoroutineMethod = AccessTools.Method(typeof(ZambraTearsHarvestEffect), "DisableCoroutine");
+    private static readonly FieldInfo IsRunningEffectField = Reflect.Field(typeof(ZambraTearsHarvestEffect), "<IsRunningEffect>k__BackingField");
+    private static readonly MethodInfo DisableCoroutineMethod = Reflect.Method(typeof(ZambraTearsHarvestEffect), "DisableCoroutine");
 
     private static bool Prefix(ZambraTearsHarvestEffect __instance, ref bool __result)
     {
@@ -568,7 +568,7 @@ internal static class TearHarvestEffect_LateUpdate_P2_Patch
 [HarmonyPatch(typeof(PrayerGhostGuardian), "InstantiateGuardian")]
 internal static class PrayerGhostGuardian_InstantiateGuardian_P2_Patch
 {
-    private static readonly FieldInfo InstantiationField = AccessTools.Field(typeof(PrayerGhostGuardian), "GhostGuardianInstantiation");
+    private static readonly FieldInfo InstantiationField = Reflect.Field(typeof(PrayerGhostGuardian), "GhostGuardianInstantiation");
 
     private static bool Prefix(PrayerGhostGuardian __instance)
     {
@@ -637,8 +637,8 @@ internal static class GuardianPrayerBehaviour_GetMasterOffSetPosition_Patch
 [HarmonyPatch(typeof(PrayerMiriam), "InstantiatePortal")]
 internal static class PrayerMiriam_InstantiatePortal_P2_Patch
 {
-    private static readonly FieldInfo InstantiationField = AccessTools.Field(typeof(PrayerMiriam), "PortalInstantiation");
-    private static readonly FieldInfo PortalField = AccessTools.Field(typeof(PrayerMiriam), "MiriamPortal");
+    private static readonly FieldInfo InstantiationField = Reflect.Field(typeof(PrayerMiriam), "PortalInstantiation");
+    private static readonly FieldInfo PortalField = Reflect.Field(typeof(PrayerMiriam), "MiriamPortal");
 
     private static bool Prefix(PrayerMiriam __instance)
     {
@@ -715,7 +715,7 @@ internal static class PrayerMiriam_OnUpdate_P2_Patch
 internal static class PR203ElmFireLoopEffect_OnApplyEffect_P2_Patch
 {
     private static readonly MethodInfo ElmFireLoopCoroutineMethod =
-        AccessTools.Method(typeof(PR203ElmFireLoopEffect), "ElmFireLoopCoroutine");
+        Reflect.Method(typeof(PR203ElmFireLoopEffect), "ElmFireLoopCoroutine");
 
     private static bool Prefix(PR203ElmFireLoopEffect __instance, ref bool __result)
     {
@@ -801,9 +801,9 @@ internal static class ObjectEffectCasterTracker
 [HarmonyPatch(typeof(ObjectEffect_Stat), "OnApplyEffect")]
 internal static class ObjectEffect_Stat_OnApplyEffect_P2_Patch
 {
-    private static readonly FieldInfo CurrentValueField = AccessTools.Field(typeof(ObjectEffect_Stat), "currentValue");
-    private static readonly FieldInfo BonusField = AccessTools.Field(typeof(ObjectEffect_Stat), "bonus");
-    private static readonly FieldInfo CurrentHitField = AccessTools.Field(typeof(ObjectEffect), "currentHit");
+    private static readonly FieldInfo CurrentValueField = Reflect.Field(typeof(ObjectEffect_Stat), "currentValue");
+    private static readonly FieldInfo BonusField = Reflect.Field(typeof(ObjectEffect_Stat), "bonus");
+    private static readonly FieldInfo CurrentHitField = Reflect.Field(typeof(ObjectEffect), "currentHit");
 
     private static bool Prefix(ObjectEffect_Stat __instance, ref bool __result)
     {
@@ -904,8 +904,8 @@ internal static class ObjectEffect_Stat_OnApplyEffect_P2_Patch
 [HarmonyPatch(typeof(ObjectEffect_Stat), "OnRemoveEffect")]
 internal static class ObjectEffect_Stat_OnRemoveEffect_P2_Patch
 {
-    private static readonly FieldInfo CurrentValueField = AccessTools.Field(typeof(ObjectEffect_Stat), "currentValue");
-    private static readonly FieldInfo BonusField = AccessTools.Field(typeof(ObjectEffect_Stat), "bonus");
+    private static readonly FieldInfo CurrentValueField = Reflect.Field(typeof(ObjectEffect_Stat), "currentValue");
+    private static readonly FieldInfo BonusField = Reflect.Field(typeof(ObjectEffect_Stat), "bonus");
 
     private static bool Prefix(ObjectEffect_Stat __instance)
     {
@@ -944,9 +944,9 @@ internal static class ObjectEffect_Stat_OnRemoveEffect_P2_Patch
 [HarmonyPatch(typeof(ItemGhostTrail), "OnApplyEffect")]
 internal static class ItemGhostTrail_OnApplyEffect_P2_Patch
 {
-    private static readonly FieldInfo TrailField = AccessTools.Field(typeof(ItemGhostTrail), "trail");
-    private static readonly FieldInfo PrevColorField = AccessTools.Field(typeof(ItemGhostTrail), "prevColor");
-    private static readonly FieldInfo StoppedField = AccessTools.Field(typeof(ItemGhostTrail), "stopped");
+    private static readonly FieldInfo TrailField = Reflect.Field(typeof(ItemGhostTrail), "trail");
+    private static readonly FieldInfo PrevColorField = Reflect.Field(typeof(ItemGhostTrail), "prevColor");
+    private static readonly FieldInfo StoppedField = Reflect.Field(typeof(ItemGhostTrail), "stopped");
 
     private static bool Prefix(ItemGhostTrail __instance, ref bool __result)
     {
@@ -975,9 +975,9 @@ internal static class ItemGhostTrail_OnApplyEffect_P2_Patch
 [HarmonyPatch(typeof(ItemGhostTrail), "OnUpdate")]
 internal static class ItemGhostTrail_OnUpdate_P2_Patch
 {
-    private static readonly FieldInfo TrailField = AccessTools.Field(typeof(ItemGhostTrail), "trail");
-    private static readonly FieldInfo ColorField = AccessTools.Field(typeof(ItemGhostTrail), "color");
-    private static readonly FieldInfo StoppedField = AccessTools.Field(typeof(ItemGhostTrail), "stopped");
+    private static readonly FieldInfo TrailField = Reflect.Field(typeof(ItemGhostTrail), "trail");
+    private static readonly FieldInfo ColorField = Reflect.Field(typeof(ItemGhostTrail), "color");
+    private static readonly FieldInfo StoppedField = Reflect.Field(typeof(ItemGhostTrail), "stopped");
 
     private static bool Prefix(ItemGhostTrail __instance)
     {
@@ -1005,8 +1005,8 @@ internal static class ItemGhostTrail_OnUpdate_P2_Patch
 [HarmonyPatch(typeof(ItemTemporalEffect), "OnApplyEffect")]
 internal static class ItemTemporalEffect_OnApplyEffect_P2_Patch
 {
-    private static readonly FieldInfo PrevColorField = AccessTools.Field(typeof(ItemTemporalEffect), "previousColor");
-    private static readonly FieldInfo PrevLevelField = AccessTools.Field(typeof(ItemTemporalEffect), "previousAttackLevel");
+    private static readonly FieldInfo PrevColorField = Reflect.Field(typeof(ItemTemporalEffect), "previousColor");
+    private static readonly FieldInfo PrevLevelField = Reflect.Field(typeof(ItemTemporalEffect), "previousAttackLevel");
 
     private static bool Prefix(ItemTemporalEffect __instance, ref bool __result)
     {
@@ -1052,8 +1052,8 @@ internal static class ItemTemporalEffect_OnApplyEffect_P2_Patch
 [HarmonyPatch(typeof(ItemTemporalEffect), "OnRemoveEffect")]
 internal static class ItemTemporalEffect_OnRemoveEffect_P2_Patch
 {
-    private static readonly FieldInfo PrevColorField = AccessTools.Field(typeof(ItemTemporalEffect), "previousColor");
-    private static readonly FieldInfo PrevLevelField = AccessTools.Field(typeof(ItemTemporalEffect), "previousAttackLevel");
+    private static readonly FieldInfo PrevColorField = Reflect.Field(typeof(ItemTemporalEffect), "previousColor");
+    private static readonly FieldInfo PrevLevelField = Reflect.Field(typeof(ItemTemporalEffect), "previousAttackLevel");
 
     private static bool Prefix(ItemTemporalEffect __instance)
     {
@@ -1114,7 +1114,7 @@ internal static class PrayerUseVfx_InstantiateEffect_P2_Patch
 [HarmonyPatch(typeof(ProtectionDomeEffect), "InstantiateProtectionDome")]
 internal static class ProtectionDomeEffect_InstantiateProtectionDome_P2_Patch
 {
-    private static readonly FieldInfo DomeInstanceField = AccessTools.Field(typeof(ProtectionDomeEffect), "protectionDomeInstance");
+    private static readonly FieldInfo DomeInstanceField = Reflect.Field(typeof(ProtectionDomeEffect), "protectionDomeInstance");
 
     private static bool Prefix(ProtectionDomeEffect __instance)
     {
@@ -1141,8 +1141,8 @@ internal static class ProtectionDomeEffect_InstantiateProtectionDome_P2_Patch
 [HarmonyPatch(typeof(ProtectionDomeEffect), "OnUpdate")]
 internal static class ProtectionDomeEffect_OnUpdate_P2_Patch
 {
-    private static readonly FieldInfo DomeInstanceField = AccessTools.Field(typeof(ProtectionDomeEffect), "protectionDomeInstance");
-    private static readonly FieldInfo SetInvulnerableField = AccessTools.Field(typeof(ProtectionDomeEffect), "setInvulnerable");
+    private static readonly FieldInfo DomeInstanceField = Reflect.Field(typeof(ProtectionDomeEffect), "protectionDomeInstance");
+    private static readonly FieldInfo SetInvulnerableField = Reflect.Field(typeof(ProtectionDomeEffect), "setInvulnerable");
 
     private static bool Prefix(ProtectionDomeEffect __instance)
     {
@@ -1296,7 +1296,7 @@ internal static class BossStraightProjectileAttack_Shoot_Owner_Patch
 [HarmonyPatch(typeof(ZambraTearsHarvestPrayer), "InstantiateEffect")]
 internal static class ZambraTearsHarvestPrayer_InstantiateEffect_P2_Patch
 {
-    private static readonly FieldInfo ZambraEffectField = AccessTools.Field(typeof(ZambraTearsHarvestPrayer), "zambraEffect");
+    private static readonly FieldInfo ZambraEffectField = Reflect.Field(typeof(ZambraTearsHarvestPrayer), "zambraEffect");
 
     private static bool Prefix(ZambraTearsHarvestPrayer __instance)
     {

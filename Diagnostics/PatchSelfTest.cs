@@ -205,7 +205,7 @@ internal static class PatchSelfTest
                     return null;
                 }
                 return AccessTools.DeclaredPropertyGetter(merged.declaringType, merged.methodName)
-                    ?? AccessTools.PropertyGetter(merged.declaringType, merged.methodName);
+                    ?? Reflect.PropertyGetter(merged.declaringType, merged.methodName);
 
             case MethodType.Setter:
                 if (string.IsNullOrEmpty(merged.methodName))
@@ -229,7 +229,7 @@ internal static class PatchSelfTest
                     return null;
                 }
                 return AccessTools.DeclaredMethod(merged.declaringType, merged.methodName, merged.argumentTypes)
-                    ?? AccessTools.Method(merged.declaringType, merged.methodName, merged.argumentTypes);
+                    ?? Reflect.Method(merged.declaringType, merged.methodName, merged.argumentTypes);
         }
     }
 

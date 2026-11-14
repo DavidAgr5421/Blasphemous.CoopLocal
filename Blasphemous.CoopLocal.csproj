@@ -2,6 +2,8 @@
 
   <PropertyGroup>
     <TargetFramework>net35</TargetFramework>
+    <!-- El proyecto de pruebas (net8) vive en Tests/: que el proyecto del mod no tome nada de esa carpeta. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);Tests/**</DefaultItemExcludes>
     <LangVersion>latest</LangVersion>
 
     <Title>Local Cooperative mod</Title>
@@ -34,6 +36,13 @@
       <HintPath>C:\Program Files (x86)\Steam\steamapps\common\Blasphemous\Blasphemous_Data\Managed\Newtonsoft.Json.dll</HintPath>
       <Private>false</Private>
     </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Cráneo base (pixel-art, referencia del usuario) embebido en el DLL; SkullArt lo recolorea por elemento. -->
+    <EmbeddedResource Include="resources\skull_base.png" LogicalName="skull_base.png" />
+    <!-- Hoja de 8 fotogramas de relámpago (chispas del Corazón del Relámpago en cada golpe). -->
+    <EmbeddedResource Include="resources\lightning_frames.png" LogicalName="lightning_frames.png" />
   </ItemGroup>
 
   <PropertyGroup>

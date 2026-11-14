@@ -14,11 +14,11 @@ namespace Blasphemous.CoopLocal;
 
 internal static class MenuPurgeDisplaySync
 {
-    private static readonly FieldInfo PurgeTextField = AccessTools.Field(typeof(PlayerPurgePoints), "text");
-    private static readonly FieldInfo CurrentPointsField = AccessTools.Field(typeof(PlayerPurgePoints), "currentPoints");
-    private static readonly FieldInfo TargetPointsField = AccessTools.Field(typeof(PlayerPurgePoints), "targetPoints");
-    private static readonly FieldInfo NumbersPerSecondsField = AccessTools.Field(typeof(PlayerPurgePoints), "numbersPerSeconds");
-    private static readonly FieldInfo NewInventoryMenuField = AccessTools.Field(typeof(UIController), "newInventoryMenu");
+    private static readonly FieldInfo PurgeTextField = Reflect.Field(typeof(PlayerPurgePoints), "text");
+    private static readonly FieldInfo CurrentPointsField = Reflect.Field(typeof(PlayerPurgePoints), "currentPoints");
+    private static readonly FieldInfo TargetPointsField = Reflect.Field(typeof(PlayerPurgePoints), "targetPoints");
+    private static readonly FieldInfo NumbersPerSecondsField = Reflect.Field(typeof(PlayerPurgePoints), "numbersPerSeconds");
+    private static readonly FieldInfo NewInventoryMenuField = Reflect.Field(typeof(UIController), "newInventoryMenu");
 
     internal static bool IsMenuPurgeCounter(PlayerPurgePoints instance)
     {
@@ -131,11 +131,11 @@ internal static class PlayerPurgePoints_RunRefreshPointsCoroutine_Menu_Patch
 internal static class Grid_ShowLayout_P2_Patch
 {
     private static readonly FieldInfo PurgeControlField =
-        AccessTools.Field(typeof(NewInventory_LayoutGrid), "purgeControl");
+        Reflect.Field(typeof(NewInventory_LayoutGrid), "purgeControl");
     private static readonly FieldInfo CurrentItemTypeField =
-        AccessTools.Field(typeof(NewInventory_LayoutGrid), "currentItemType");
+        Reflect.Field(typeof(NewInventory_LayoutGrid), "currentItemType");
     private static readonly MethodInfo UpdateEquippedMethod =
-        AccessTools.Method(typeof(NewInventory_LayoutGrid), "UpdateEquipped");
+        Reflect.Method(typeof(NewInventory_LayoutGrid), "UpdateEquipped");
 
     private static void Postfix(NewInventory_LayoutGrid __instance, NewInventoryWidget.TabType tabType, bool editMode)
     {
@@ -169,11 +169,11 @@ internal static class Grid_ShowLayout_P2_Patch
 internal static class Grid_UpdateEquipped_P2_Patch
 {
     private static readonly FieldInfo AvailableEquipablesField =
-        AccessTools.Field(typeof(NewInventory_LayoutGrid), "availableEquipables");
+        Reflect.Field(typeof(NewInventory_LayoutGrid), "availableEquipables");
     private static readonly FieldInfo CachedEquippedField =
-        AccessTools.Field(typeof(NewInventory_LayoutGrid), "cachedEquipped");
+        Reflect.Field(typeof(NewInventory_LayoutGrid), "cachedEquipped");
     private static readonly FieldInfo CurrentSelectedEquipedField =
-        AccessTools.Field(typeof(NewInventory_LayoutGrid), "currentSelectedEquiped");
+        Reflect.Field(typeof(NewInventory_LayoutGrid), "currentSelectedEquiped");
 
     private static bool Prefix(NewInventory_LayoutGrid __instance, InventoryManager.ItemType itemType)
     {
@@ -231,7 +231,7 @@ internal static class Grid_UpdateEquipped_P2_Patch
 internal static class Grid_IsEquipped_P2_Patch
 {
     private static readonly FieldInfo CurrentItemTypeField =
-        AccessTools.Field(typeof(NewInventory_LayoutGrid), "currentItemType");
+        Reflect.Field(typeof(NewInventory_LayoutGrid), "currentItemType");
 
     private static bool Prefix(NewInventory_LayoutGrid __instance, BaseInventoryObject obj, ref bool __result)
     {
@@ -265,13 +265,13 @@ internal static class Grid_IsEquipped_P2_Patch
 internal static class Grid_EquipObject_P2_Patch
 {
     private static readonly FieldInfo CurrentItemTypeField =
-        AccessTools.Field(typeof(NewInventory_LayoutGrid), "currentItemType");
+        Reflect.Field(typeof(NewInventory_LayoutGrid), "currentItemType");
     private static readonly FieldInfo EquipSoundsField =
-        AccessTools.Field(typeof(NewInventory_LayoutGrid), "equipSounds");
+        Reflect.Field(typeof(NewInventory_LayoutGrid), "equipSounds");
     private static readonly MethodInfo UpdateEquippedMethod =
-        AccessTools.Method(typeof(NewInventory_LayoutGrid), "UpdateEquipped");
+        Reflect.Method(typeof(NewInventory_LayoutGrid), "UpdateEquipped");
     private static readonly MethodInfo UpdateItemByIdMethod =
-        AccessTools.Method(typeof(NewInventory_LayoutGrid), "UpdateItemById");
+        Reflect.Method(typeof(NewInventory_LayoutGrid), "UpdateItemById");
 
     private static bool Prefix(NewInventory_LayoutGrid __instance, BaseInventoryObject obj)
     {
@@ -321,13 +321,13 @@ internal static class Grid_EquipObject_P2_Patch
 internal static class Grid_UnEquipObject_P2_Patch
 {
     private static readonly FieldInfo CurrentItemTypeField =
-        AccessTools.Field(typeof(NewInventory_LayoutGrid), "currentItemType");
+        Reflect.Field(typeof(NewInventory_LayoutGrid), "currentItemType");
     private static readonly FieldInfo UnequipSoundsField =
-        AccessTools.Field(typeof(NewInventory_LayoutGrid), "unequipSounds");
+        Reflect.Field(typeof(NewInventory_LayoutGrid), "unequipSounds");
     private static readonly MethodInfo UpdateEquippedMethod =
-        AccessTools.Method(typeof(NewInventory_LayoutGrid), "UpdateEquipped");
+        Reflect.Method(typeof(NewInventory_LayoutGrid), "UpdateEquipped");
     private static readonly MethodInfo UpdateItemByIdMethod =
-        AccessTools.Method(typeof(NewInventory_LayoutGrid), "UpdateItemById");
+        Reflect.Method(typeof(NewInventory_LayoutGrid), "UpdateItemById");
 
     private static bool Prefix(NewInventory_LayoutGrid __instance, BaseInventoryObject obj)
     {
@@ -366,7 +366,7 @@ internal static class Grid_UnEquipObject_P2_Patch
 internal static class Grid_GetFirstEmptySlot_P2_Patch
 {
     private static readonly FieldInfo CurrentItemTypeField =
-        AccessTools.Field(typeof(NewInventory_LayoutGrid), "currentItemType");
+        Reflect.Field(typeof(NewInventory_LayoutGrid), "currentItemType");
 
     private static bool Prefix(NewInventory_LayoutGrid __instance, ref int __result)
     {
@@ -394,7 +394,7 @@ internal static class Grid_GetFirstEmptySlot_P2_Patch
 [HarmonyPatch(typeof(NewInventoryWidget), "SelectTab")]
 internal static class NewInventoryWidget_SelectTab_P2_Patch
 {
-    private static readonly FieldInfo TabLabelField = AccessTools.Field(typeof(NewInventoryWidget), "tabLabel");
+    private static readonly FieldInfo TabLabelField = Reflect.Field(typeof(NewInventoryWidget), "tabLabel");
 
     private static void Postfix(NewInventoryWidget __instance, NewInventoryWidget.TabType tabType)
     {

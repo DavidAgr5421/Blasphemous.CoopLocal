@@ -825,7 +825,7 @@ internal static class CoopSaveManager
                 string txt = File.ReadAllText(p1Death);
                 if (txt.IndexOf("PendingRevive=true", StringComparison.OrdinalIgnoreCase) >= 0) p1.PendingRevive = true;
             }
-            catch { /* ignorado intencionalmente: migración legacy de deathstate opcional */ }
+            catch (System.Exception __swallowed) { SwallowedExceptions.Report(__swallowed, "CoopSaveManager.cs:828"); }
         }
         if (File.Exists(p2Death))
         {
@@ -834,7 +834,7 @@ internal static class CoopSaveManager
                 string txt = File.ReadAllText(p2Death);
                 if (txt.IndexOf("PendingRevive=true", StringComparison.OrdinalIgnoreCase) >= 0) p2.PendingRevive = true;
             }
-            catch { /* ignorado intencionalmente: migración legacy de deathstate opcional */ }
+            catch (System.Exception __swallowed) { SwallowedExceptions.Report(__swallowed, "CoopSaveManager.cs:837"); }
         }
 
         // Heredar configuración activa de mandos y colores

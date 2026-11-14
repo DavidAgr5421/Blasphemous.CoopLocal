@@ -232,7 +232,7 @@ public static class CoopControlsConfig
                     return Path.Combine(Path.Combine(p, "CoopLocalMod"), "coop_controls.json");
                 }
             }
-            catch { }
+            catch (System.Exception __swallowed) { SwallowedExceptions.Report(__swallowed, "CoopControlsConfig.cs:235"); }
             return null;
         }
     }
@@ -249,7 +249,7 @@ public static class CoopControlsConfig
                     return Path.Combine(Path.Combine(Path.Combine(b, "Modding"), "config"), "coop_controls.json");
                 }
             }
-            catch { }
+            catch (System.Exception __swallowed) { SwallowedExceptions.Report(__swallowed, "CoopControlsConfig.cs:252"); }
             return null;
         }
     }
@@ -291,7 +291,7 @@ public static class CoopControlsConfig
                     return;
                 }
             }
-            catch { }
+            catch (System.Exception __swallowed) { SwallowedExceptions.Report(__swallowed, "CoopControlsConfig.cs:294"); }
         }
 
         // Crear valores iniciales por defecto para los slots 0, 1, 2, 3

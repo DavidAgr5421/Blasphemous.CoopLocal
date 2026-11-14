@@ -246,10 +246,10 @@ internal static class JumpOffBehaviour_BlockerTracking_OnStateExit_Patch
 internal static class PlatformCharacterInput_Update_Patch
 {
     private static readonly FieldInfo JumpBackingField =
-        AccessTools.Field(typeof(PlatformCharacterInput), "<Jump>k__BackingField");
+        Reflect.Field(typeof(PlatformCharacterInput), "<Jump>k__BackingField");
 
     private static readonly FieldInfo FVerAxisBackingField =
-        AccessTools.Field(typeof(PlatformCharacterInput), "<FVerAxis>k__BackingField");
+        Reflect.Field(typeof(PlatformCharacterInput), "<FVerAxis>k__BackingField");
 
     // Round 52: root cause of "P2 no puede bajar de plataformas de un solo sentido (drop-through)".
     // NOT a SetActionState(Down/Jump) gap - those were already being overridden correctly below.
@@ -279,7 +279,7 @@ internal static class PlatformCharacterInput_Update_Patch
     // IsJumpOff property (backing field, same AccessTools trick as Jump/FVerAxis above) and firing
     // onJumpOff so anything hooked to that event (audio/vfx) still plays for P2 too.
     private static readonly FieldInfo IsJumpOffBackingField =
-        AccessTools.Field(typeof(PlatformCharacterInput), "<IsJumpOff>k__BackingField");
+        Reflect.Field(typeof(PlatformCharacterInput), "<IsJumpOff>k__BackingField");
 
 
     // Round 51: root cause of "P2 entra en carga de ataque cuando P1 mantiene su botón de
@@ -299,7 +299,7 @@ internal static class PlatformCharacterInput_Update_Patch
     // here using Player2Input.AttackHeld (already mode/device-aware) instead of shared Rewired, and
     // overwrite the backing field every frame after vanilla's own (wrong) computation has run.
     private static readonly FieldInfo IsAttackButtonHoldBackingField =
-        AccessTools.Field(typeof(PlatformCharacterInput), "<IsAttackButtonHold>k__BackingField");
+        Reflect.Field(typeof(PlatformCharacterInput), "<IsAttackButtonHold>k__BackingField");
 
     private static readonly float[] guestAttackHoldTimer = new float[4];
     private static readonly bool[] guestAttackButtonHold = new bool[4];
@@ -789,8 +789,8 @@ internal static class PlatformCharacterInput_IsHorizontalClamped_Patch
 [HarmonyPatch(typeof(PlatformCharacterController), "Update")]
 internal static class PlatformCharacterController_Update_DropThroughDebug_Patch
 {
-    private static readonly FieldInfo IsGroundedField = AccessTools.Field(typeof(PlatformCharacterController), "m_isGrounded");
-    private static readonly FieldInfo PlatformDropTimerField = AccessTools.Field(typeof(PlatformCharacterController), "m_platformDropTimer");
+    private static readonly FieldInfo IsGroundedField = Reflect.Field(typeof(PlatformCharacterController), "m_isGrounded");
+    private static readonly FieldInfo PlatformDropTimerField = Reflect.Field(typeof(PlatformCharacterController), "m_platformDropTimer");
 
     private static bool lastLoggedGateResult;
     private static bool hasLoggedOnce;

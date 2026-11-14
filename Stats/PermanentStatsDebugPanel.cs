@@ -64,9 +64,12 @@ internal class PermanentStatsDebugPanelDriver : MonoBehaviour
         // debug (Camera/Camera.cs). Leído directo de UnityEngine.Input, igual que esos dos - es una
         // herramienta de dev, no parte del esquema de control de ningún jugador (no pasa por
         // Player2Keys/Player2Pad/PlayerLogicBlocker).
-        if (Input.GetKeyDown(KeyCode.F8))
+        // F8 = menú debug in-game navegable con teclado/mando (CoopDebugMenu).
+        // Todo el contenido del panel IMGUI antiguo (stats, skills, baseline) vive ahora en CoopDebugMenu.
+        if (Input.GetKeyDown(KeyCode.F8) && !CoopDebugMenu.IsOpen
+            && !CoopGameSetupUI.IsOpen && !CoopPlayerPauseMenu.IsOpen)
         {
-            PermanentStatsDebugPanel.Visible = !PermanentStatsDebugPanel.Visible;
+            CoopDebugMenu.Toggle();
         }
     }
 

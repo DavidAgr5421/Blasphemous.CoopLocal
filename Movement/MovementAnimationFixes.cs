@@ -209,8 +209,8 @@ internal static class LadderClimbingSubStateBehaviour_OnStateEnter_Patch
 [HarmonyPatch(typeof(GrabLadderDownBehaviour), "OnStateEnter")]
 internal static class GrabLadderDownBehaviour_OnStateEnter_Patch
 {
-    private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(GrabLadderDownBehaviour), "_penitent");
-    private static readonly FieldInfo RootMotionDriverField = AccessTools.Field(typeof(GrabLadderDownBehaviour), "_rootMotionDriver");
+    private static readonly FieldInfo PenitentField = Reflect.Field(typeof(GrabLadderDownBehaviour), "_penitent");
+    private static readonly FieldInfo RootMotionDriverField = Reflect.Field(typeof(GrabLadderDownBehaviour), "_rootMotionDriver");
 
     private static void Prefix(GrabLadderDownBehaviour __instance, Animator animator)
     {
@@ -273,8 +273,8 @@ internal static class GrabLadderDownBehaviour_BlockerTracking_OnStateExit_Patch
 [HarmonyPatch(typeof(LadderGoingDownBehaviour), "OnStateEnter")]
 internal static class LadderGoingDownBehaviour_OnStateEnter_Patch
 {
-    private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(LadderGoingDownBehaviour), "_penitent");
-    private static readonly FieldInfo AnimatorInyectorField = AccessTools.Field(typeof(LadderGoingDownBehaviour), "_animatorInyector");
+    private static readonly FieldInfo PenitentField = Reflect.Field(typeof(LadderGoingDownBehaviour), "_penitent");
+    private static readonly FieldInfo AnimatorInyectorField = Reflect.Field(typeof(LadderGoingDownBehaviour), "_animatorInyector");
 
     private static void Prefix(LadderGoingDownBehaviour __instance, Animator animator)
     {
@@ -297,8 +297,8 @@ internal static class LadderGoingDownBehaviour_OnStateEnter_Patch
 [HarmonyPatch(typeof(LadderGoingUpBehaviour), "OnStateEnter")]
 internal static class LadderGoingUpBehaviour_OnStateEnter_Patch
 {
-    private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(LadderGoingUpBehaviour), "_penitent");
-    private static readonly FieldInfo AnimatorInyectorField = AccessTools.Field(typeof(LadderGoingUpBehaviour), "_animatorInyector");
+    private static readonly FieldInfo PenitentField = Reflect.Field(typeof(LadderGoingUpBehaviour), "_penitent");
+    private static readonly FieldInfo AnimatorInyectorField = Reflect.Field(typeof(LadderGoingUpBehaviour), "_animatorInyector");
 
     private static void Prefix(LadderGoingUpBehaviour __instance, Animator animator)
     {
@@ -389,9 +389,9 @@ internal static class LadderStepRaiser
 internal static class FallingForwardBehaviour_OnStateEnter_Patch
 {
     private static readonly FieldInfo PenitentBackingField =
-        AccessTools.Field(typeof(FallingForwardBehaviour), "<_penitent>k__BackingField");
+        Reflect.Field(typeof(FallingForwardBehaviour), "<_penitent>k__BackingField");
     private static readonly MethodInfo OnStartDashMethod =
-        AccessTools.Method(typeof(FallingForwardBehaviour), "OnStartDash");
+        Reflect.Method(typeof(FallingForwardBehaviour), "OnStartDash");
 
     private static void Prefix(FallingForwardBehaviour __instance, Animator animator)
     {
@@ -421,7 +421,7 @@ internal static class FallingForwardBehaviour_OnStateEnter_Patch
 internal static class FallingForwardBehaviour_GetRayCastOrigin_Patch
 {
     private static readonly FieldInfo PenitentBackingField =
-        AccessTools.Field(typeof(FallingForwardBehaviour), "<_penitent>k__BackingField");
+        Reflect.Field(typeof(FallingForwardBehaviour), "<_penitent>k__BackingField");
 
     private static bool Prefix(FallingForwardBehaviour __instance, float heightOffset, ref Vector2 __result)
     {
@@ -449,11 +449,11 @@ internal static class FallingForwardBehaviour_GetRayCastOrigin_Patch
 internal static class FallingForwardBehaviour_OnStateUpdate_Patch
 {
     private static readonly FieldInfo PenitentBackingField =
-        AccessTools.Field(typeof(FallingForwardBehaviour), "<_penitent>k__BackingField");
+        Reflect.Field(typeof(FallingForwardBehaviour), "<_penitent>k__BackingField");
     private static readonly MethodInfo LogicManagerGetPenitentMethod =
-        AccessTools.PropertyGetter(typeof(LogicManager), "Penitent");
+        Reflect.PropertyGetter(typeof(LogicManager), "Penitent");
     private static readonly MethodInfo ReplacementMethod =
-        AccessTools.Method(typeof(FallingForwardBehaviour_OnStateUpdate_Patch), nameof(GetOwnerForSlopeRaycast));
+        Reflect.Method(typeof(FallingForwardBehaviour_OnStateUpdate_Patch), nameof(GetOwnerForSlopeRaycast));
 
     private static FallingForwardBehaviour currentInstance;
 

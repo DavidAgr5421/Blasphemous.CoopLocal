@@ -20,11 +20,11 @@ internal static class Player2HudFadeSync
     private static bool isP2HudCurrentlyVisible = true;
 
     private static readonly System.Reflection.FieldInfo CanvasGroupField =
-        AccessTools.Field(typeof(GameplayWidget), "canvas");
+        Reflect.Field(typeof(GameplayWidget), "canvas");
     private static readonly System.Reflection.FieldInfo LeftPartRootField =
-        AccessTools.Field(typeof(GameplayWidget), "leftPartRoot");
+        Reflect.Field(typeof(GameplayWidget), "leftPartRoot");
     private static readonly System.Reflection.FieldInfo RightPartRootField =
-        AccessTools.Field(typeof(GameplayWidget), "rightPartRoot");
+        Reflect.Field(typeof(GameplayWidget), "rightPartRoot");
 
     internal static void Initialize()
     {

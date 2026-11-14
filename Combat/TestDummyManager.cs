@@ -92,13 +92,13 @@ internal static class TestDummyManager
         EnemyDamageArea dmgArea = dmgAreaObj.AddComponent<EnemyDamageArea>();
         dmgArea.SetOwner(dummy);
 
-        var colliderField = AccessTools.Field(typeof(DamageArea), "damageAreaCollider");
+        var colliderField = Reflect.Field(typeof(DamageArea), "damageAreaCollider");
         if (colliderField != null)
         {
             colliderField.SetValue(dmgArea, boxCol);
         }
 
-        AccessTools.Field(typeof(Entity), "entityDamageArea")?.SetValue(dummy, dmgArea);
+        Reflect.Field(typeof(Entity), "entityDamageArea")?.SetValue(dummy, dmgArea);
         dummy.SetDamageArea(dmgArea);
 
         // Configuración de vida masiva excesiva (10,000,000 HP) para pruebas de escalado elemental
@@ -388,7 +388,7 @@ internal sealed class TestDummyEnemy : Enemy, IDamageable
 
         if (damageArea != null)
         {
-            try { damageArea.TakeDamage(hit, false); } catch { }
+            try { damageArea.TakeDamage(hit, false); } catch (System.Exception __swallowed) { SwallowedExceptions.Report(__swallowed, "TestDummyManager.cs:391"); }
         }
 
         if (EnemyDamageArea.OnDamagedGlobal != null)

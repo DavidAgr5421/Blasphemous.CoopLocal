@@ -94,10 +94,24 @@ public class CoopNetworkManager : MonoBehaviour
                 nextWorldBroadcastTime = Time.time + (1f / 30f); // 30Hz
                 BroadcastWorldState();
             }
+
+            if (connectedClients.Count > 0) { EnemySyncHost.Tick(); EnemySyncWorld.HostTick(); }
         }
         // 3. Lógica del Cliente: enviar inputs locales hacia el anfitrión a 60Hz
         else if (IsOnlineClient)
         {
+            // Timeout de host: sin ningún Pong/WorldState/SceneChange durante 8s
+            if (lastClientReceivedTime > 0f && Time.time - lastClientReceivedTime > 8f)
+            {
+                if (Main.CoopLocal != null)
+                {
+                    Blasphemous.ModdingAPI.ModLog.Error("[CoopNetwork] Sin respuesta del anfitrión durante 8s; cerrando sesión local.", Main.CoopLocal);
+                }
+                HandleHostDisconnect();
+                return;
+            }
+
+            EnemySyncWorld.ClientSafetyTick();
             StreamLocalClientInput();
 
             if (Time.time >= nextClientPingTime)
@@ -148,52 +162,129 @@ public class CoopNetworkManager : MonoBehaviour
         if (data == null || data.Length == 0) return;
         CoopPacketType packetType = (CoopPacketType)data[0];
 
-        switch (packetType)
+        try
         {
-            case CoopPacketType.HandshakeRequest:
-                if (IsOnlineHost) HandleHandshakeRequest(sender, data);
-                break;
+            switch (packetType)
+            {
+                case CoopPacketType.HandshakeRequest:
+                    if (IsOnlineHost) HandleHandshakeRequest(sender, data);
+                    break;
 
-            case CoopPacketType.HandshakeAccept:
-                if (IsOnlineClient) HandleHandshakeAccept(sender, data);
-                break;
+                case CoopPacketType.HandshakeAccept:
+                    if (IsOnlineClient) HandleHandshakeAccept(sender, data);
+                    break;
 
-            case CoopPacketType.HandshakeReject:
-                if (IsOnlineClient) HandleHandshakeReject(sender, data);
-                break;
+                case CoopPacketType.HandshakeReject:
+                    if (IsOnlineClient) HandleHandshakeReject(sender, data);
+                    break;
 
-            case CoopPacketType.PlayerInput:
-                if (IsOnlineHost) HandlePlayerInput(sender, data);
-                break;
+                case CoopPacketType.PlayerInput:
+                    if (IsOnlineHost) HandlePlayerInput(sender, data);
+                    break;
 
-            case CoopPacketType.SceneChange:
-                if (IsOnlineClient) HandleSceneChange(sender, data);
-                break;
+                case CoopPacketType.SceneChange:
+                    if (IsOnlineClient) HandleSceneChange(sender, data);
+                    break;
 
-            case CoopPacketType.WorldState:
-                if (IsOnlineClient) HandleWorldState(sender, data);
-                break;
+                case CoopPacketType.WorldState:
+                    if (IsOnlineClient) HandleWorldState(sender, data);
+                    break;
 
-            case CoopPacketType.Ping:
-                // Responder Pong en canal confiable
-                SendPacket(sender, CoopNetworkProtocol.SerializeSimple(CoopPacketType.Pong), CHANNEL_RELIABLE, EP2PSend.k_EP2PSendReliable);
-                break;
+                case CoopPacketType.EnemyState:
+                    if (IsOnlineClient) HandleEnemyState(sender, data);
+                    break;
 
-            case CoopPacketType.Pong:
-                lastClientReceivedTime = Time.time;
-                break;
+                case CoopPacketType.EnemyEvent:
+                    if (IsOnlineClient) HandleEnemyEvent(sender, data);
+                    break;
 
-            case CoopPacketType.Disconnect:
-                if (IsOnlineHost)
-                {
-                    HandleClientDisconnect(sender);
-                }
-                else
-                {
-                    HandleHostDisconnect();
-                }
-                break;
+                case CoopPacketType.EnemyFullSync:
+                    if (IsOnlineClient) HandleEnemyFullSync(sender, data);
+                    break;
+
+                case CoopPacketType.SceneReady:
+                    if (IsOnlineHost) HandleSceneReady(sender, data);
+                    break;
+
+                case CoopPacketType.FlagChange:
+                    if (IsOnlineClient) { lastClientReceivedTime = Time.time; EnemySyncWorld.ApplyFlagChange(CoopNetworkProtocol.DeserializeFlagChange(data)); }
+                    break;
+
+                case CoopPacketType.GateState:
+                    if (IsOnlineClient) { lastClientReceivedTime = Time.time; EnemySyncWorld.ApplyGateState(CoopNetworkProtocol.DeserializeGateState(data)); }
+                    break;
+
+                case CoopPacketType.BossEvent:
+                    if (IsOnlineClient) { lastClientReceivedTime = Time.time; EnemySyncWorld.ApplyBossEvent(CoopNetworkProtocol.DeserializeBossEvent(data)); }
+                    break;
+
+                case CoopPacketType.Ping:
+                    // Responder Pong en canal confiable
+                    SendPacket(sender, CoopNetworkProtocol.SerializeSimple(CoopPacketType.Pong), CHANNEL_RELIABLE, EP2PSend.k_EP2PSendReliable);
+                    break;
+
+                case CoopPacketType.Pong:
+                    lastClientReceivedTime = Time.time;
+                    break;
+
+                case CoopPacketType.Disconnect:
+                    if (IsOnlineHost)
+                    {
+                        HandleClientDisconnect(sender);
+                    }
+                    else
+                    {
+                        HandleHostDisconnect();
+                    }
+                    break;
+            }
         }
+        catch (Exception ex)
+        {
+            if (Main.CoopLocal != null)
+            {
+                Blasphemous.ModdingAPI.ModLog.Error($"[CoopNetwork] Error procesando paquete tipo {packetType} de {sender}: {ex.Message}", Main.CoopLocal);
+            }
+        }
+    }
+
+    // =========================================================================
+    // ENEMY SYNC (stubs del paso A; el paso B los rellena)
+    // =========================================================================
+
+    private void HandleEnemyState(CSteamID sender, byte[] data)
+    {
+        lastClientReceivedTime = Time.time;
+        EnemySyncClient.ApplyState(CoopNetworkProtocol.DeserializeEnemyState(data));
+    }
+
+    private void HandleEnemyEvent(CSteamID sender, byte[] data)
+    {
+        lastClientReceivedTime = Time.time;
+        EnemySyncClient.ApplyEvent(CoopNetworkProtocol.DeserializeEnemyEvent(data));
+    }
+
+    private void HandleEnemyFullSync(CSteamID sender, byte[] data)
+    {
+        lastClientReceivedTime = Time.time;
+        EnemySyncClient.ApplyFullSync(CoopNetworkProtocol.DeserializeEnemyFullSync(data));
+    }
+
+    private void HandleSceneReady(CSteamID sender, byte[] data)
+    {
+        EnemySyncHost.HandleSceneReady(sender, data);
+    }
+
+    internal static IEnumerable<CSteamID> ConnectedClientIds()
+    {
+        foreach (var c in connectedClients.Values) yield return c.SteamId;
+    }
+
+    internal static bool TryGetClientSlot(CSteamID id, out int slot)
+    {
+        if (connectedClients.TryGetValue(id.m_SteamID, out RemoteClientSession s)) { slot = s.SlotIndex; return true; }
+        slot = -1;
+        return false;
     }
 
     // =========================================================================
@@ -306,6 +397,7 @@ public class CoopNetworkManager : MonoBehaviour
 
         byte[] acceptPacket = CoopNetworkProtocol.SerializeHandshakeAccept(acc);
         SendPacket(sender, acceptPacket, CHANNEL_RELIABLE, EP2PSend.k_EP2PSendReliable);
+        EnemySyncWorld.SendAllFlagsTo(sender);
 
         if (Main.CoopLocal != null)
         {
@@ -355,6 +447,7 @@ public class CoopNetworkManager : MonoBehaviour
             if (slot >= 0 && slot < 4) slotClients[slot] = null;
 
             CoopLocal.DespawnGuestPlayerDynamically(slot);
+            if (slot >= 0 && slot < 4) CoopGameConfig.Slots[slot].IsOnlineConnected = false;
             SteamNetworking.CloseP2PSessionWithUser(sender);
 
             if (Main.CoopLocal != null)
@@ -555,6 +648,7 @@ public class CoopNetworkManager : MonoBehaviour
 
     private void HandleSceneChange(CSteamID sender, byte[] data)
     {
+        lastClientReceivedTime = Time.time;
         string sceneName = CoopNetworkProtocol.DeserializeSceneChange(data);
         string current = Core.LevelManager?.currentLevel?.LevelName ?? "";
         if (!string.IsNullOrEmpty(sceneName) && current != sceneName)
@@ -613,6 +707,7 @@ public class CoopNetworkManager : MonoBehaviour
 
     private void HandleWorldState(CSteamID sender, byte[] data)
     {
+        lastClientReceivedTime = Time.time;
         WorldStateData state = CoopNetworkProtocol.DeserializeWorldState(data);
         CoopClientWorldSync.Instance.ApplyWorldState(state);
     }
@@ -635,16 +730,78 @@ public class CoopNetworkManager : MonoBehaviour
         return SteamNetworking.SendP2PPacket(target, data, (uint)data.Length, sendType, channel);
     }
 
+    /// <summary>
+    /// Limpia el estado de sesión (puppets, ranuras P2-P4, sesiones Steam). Debe llamarse
+    /// antes de que LobbyConnectionState pase a Disconnected, porque depende de IsOnlineHost/IsOnlineClient.
+    /// </summary>
+    public static void ResetSessionState()
+    {
+        if (IsOnlineHost)
+        {
+            // Copia previa: DespawnGuestPlayerDynamically/HandleClientDisconnect no deben mutar la colección iterada
+            List<RemoteClientSession> sessions = new List<RemoteClientSession>(connectedClients.Values);
+            foreach (RemoteClientSession session in sessions)
+            {
+                try
+                {
+                    int slot = session.SlotIndex;
+                    CoopLocal.DespawnGuestPlayerDynamically(slot);
+                    if (slot >= 0 && slot < 4) CoopGameConfig.Slots[slot].IsOnlineConnected = false;
+                    if (SteamManager.Initialized)
+                    {
+                        SteamNetworking.CloseP2PSessionWithUser(session.SteamId);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    if (Main.CoopLocal != null)
+                    {
+                        Blasphemous.ModdingAPI.ModLog.Error($"[CoopNetwork] Error limpiando sesión de cliente {session.SteamId}: {ex.Message}", Main.CoopLocal);
+                    }
+                }
+            }
+            connectedClients.Clear();
+            Array.Clear(slotClients, 0, slotClients.Length);
+        }
+        else if (IsOnlineClient)
+        {
+            try
+            {
+                CoopClientWorldSync.Instance.ClearPuppets();
+            }
+            catch (Exception ex)
+            {
+                if (Main.CoopLocal != null)
+                {
+                    Blasphemous.ModdingAPI.ModLog.Error($"[CoopNetwork] Error limpiando títeres de cliente: {ex.Message}", Main.CoopLocal);
+                }
+            }
+            LocalAssignedSlot = 1;
+            if (_instance != null)
+            {
+                _instance.localInputSequence = 0;
+            }
+        }
+
+        if (_instance != null)
+        {
+            _instance.lastClientReceivedTime = 0f;
+        }
+    }
+
     private void OnDestroy()
     {
         if (IsOnlineHost)
         {
-            foreach (var client in connectedClients.Values)
+            // Copia previa: evita reenviar Disconnect a sesiones ya cerradas por ResetSessionState
+            List<RemoteClientSession> sessions = new List<RemoteClientSession>(connectedClients.Values);
+            foreach (RemoteClientSession client in sessions)
             {
                 SendPacket(client.SteamId, CoopNetworkProtocol.SerializeSimple(CoopPacketType.Disconnect), CHANNEL_RELIABLE, EP2PSend.k_EP2PSendReliable);
                 SteamNetworking.CloseP2PSessionWithUser(client.SteamId);
             }
             connectedClients.Clear();
+            Array.Clear(slotClients, 0, slotClients.Length);
         }
         else if (IsOnlineClient && CoopLobbyManager.HostSteamId != CSteamID.Nil)
         {

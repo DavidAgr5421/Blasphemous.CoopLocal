@@ -259,6 +259,8 @@ internal static class Entity_Update_Targeting_Patch
 {
     private static void Postfix(Entity __instance)
     {
+        // Online client is a renderer only: enemies are host-authoritative, never retarget locally.
+        if (Blasphemous.CoopLocal.MultiPlayer.CoopNetworkManager.IsOnlineClient) return;
         if (__instance is Enemy enemy && !enemy.Status.Dead)
         {
             EnemyTargetingSystem.UpdateEnemyTarget(enemy);
@@ -273,7 +275,7 @@ internal static class Entity_Update_Targeting_Patch
 [HarmonyPatch(typeof(EnemyBehaviour), nameof(EnemyBehaviour.GetTarget))]
 internal static class EnemyBehaviour_GetTarget_MultiPlayer_Patch
 {
-    private static readonly FieldInfo EntityField = AccessTools.Field(typeof(EnemyBehaviour), "Entity");
+    private static readonly FieldInfo EntityField = Reflect.Field(typeof(EnemyBehaviour), "Entity");
 
     private static bool Prefix(EnemyBehaviour __instance, ref Transform __result)
     {
@@ -324,7 +326,7 @@ internal static class BellCarrierBehaviour_CheckCollision_Patch
     {
         if (__instance.TargetInLine) return;
 
-        Enemy enemy = (AccessTools.Field(typeof(EnemyBehaviour), "Entity")?.GetValue(__instance) as Enemy) ?? __instance.GetComponentInParent<Enemy>();
+        Enemy enemy = (Reflect.Field(typeof(EnemyBehaviour), "Entity")?.GetValue(__instance) as Enemy) ?? __instance.GetComponentInParent<Enemy>();
         if (enemy == null || enemy.Target == null) return;
 
         Vector2 enemyPos = enemy.transform.position;
@@ -337,7 +339,7 @@ internal static class BellCarrierBehaviour_CheckCollision_Patch
 
         if (inFront && dy < 3.5f)
         {
-            AccessTools.Field(typeof(BellCarrierBehaviour), "<TargetInLine>k__BackingField")?.SetValue(__instance, true);
+            Reflect.Field(typeof(BellCarrierBehaviour), "<TargetInLine>k__BackingField")?.SetValue(__instance, true);
         }
     }
 }
@@ -351,7 +353,7 @@ internal static class NewFlagellantBehaviour_CanGoDownToReachPlayer_Patch
 {
     private static bool Prefix(NewFlagellantBehaviour __instance, ref bool __result)
     {
-        var enemy = (AccessTools.Property(typeof(NewFlagellantBehaviour), "NewFlagellant")?.GetValue(__instance, null) as Gameplay.GameControllers.Enemies.NewFlagellant.NewFlagellant) ?? __instance.GetComponentInParent<Gameplay.GameControllers.Enemies.NewFlagellant.NewFlagellant>();
+        var enemy = (Reflect.Property(typeof(NewFlagellantBehaviour), "NewFlagellant")?.GetValue(__instance, null) as Gameplay.GameControllers.Enemies.NewFlagellant.NewFlagellant) ?? __instance.GetComponentInParent<Gameplay.GameControllers.Enemies.NewFlagellant.NewFlagellant>();
         if (enemy == null || enemy.Target == null) return true;
 
         Vector2 enemyPos = enemy.transform.position;

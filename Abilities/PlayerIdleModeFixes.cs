@@ -15,11 +15,11 @@ namespace Blasphemous.CoopLocal;
 /// </summary>
 internal static class PlayerIdleModeHelper
 {
-    internal static readonly FieldInfo PlayerInputField = AccessTools.Field(typeof(PlayerIdleMode), "_playerInput");
-    internal static readonly FieldInfo CurrentPlayerModeField = AccessTools.Field(typeof(PlayerIdleMode), "_currentPlayerMode");
-    internal static readonly FieldInfo CurrentIdleTimeField = AccessTools.Field(typeof(PlayerIdleMode), "_currentIdleTime");
-    internal static readonly MethodInfo ResetIdleTimerMethod = AccessTools.Method(typeof(PlayerIdleMode), "ResetIdleTimer");
-    internal static readonly MethodInfo SetToPlayModeMethod = AccessTools.Method(typeof(PlayerIdleMode), "SetToPlayMode");
+    internal static readonly FieldInfo PlayerInputField = Reflect.Field(typeof(PlayerIdleMode), "_playerInput");
+    internal static readonly FieldInfo CurrentPlayerModeField = Reflect.Field(typeof(PlayerIdleMode), "_currentPlayerMode");
+    internal static readonly FieldInfo CurrentIdleTimeField = Reflect.Field(typeof(PlayerIdleMode), "_currentIdleTime");
+    internal static readonly MethodInfo ResetIdleTimerMethod = Reflect.Method(typeof(PlayerIdleMode), "ResetIdleTimer");
+    internal static readonly MethodInfo SetToPlayModeMethod = Reflect.Method(typeof(PlayerIdleMode), "SetToPlayMode");
 
     internal static Penitent GetOwner(PlayerIdleMode instance)
     {

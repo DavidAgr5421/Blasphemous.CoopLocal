@@ -264,6 +264,9 @@ public class CoopLobbyManager : MonoBehaviour
     /// </summary>
     public void LeaveLobby()
     {
+        // Antes de tocar State: ResetSessionState depende de IsOnlineHost/IsOnlineClient
+        CoopNetworkManager.ResetSessionState();
+
         if (CurrentLobbyId != CSteamID.Nil && SteamManager.Initialized)
         {
             SteamMatchmaking.LeaveLobby(CurrentLobbyId);

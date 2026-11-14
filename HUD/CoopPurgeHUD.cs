@@ -30,11 +30,11 @@ internal class PurgeSlotWidget
 internal static class CoopPurgeHUD
 {
     private static readonly FieldInfo GameplayWidgetPurgePointsField =
-        AccessTools.Field(typeof(Gameplay.UI.Widgets.GameplayWidget), "purgePoints");
+        Reflect.Field(typeof(Gameplay.UI.Widgets.GameplayWidget), "purgePoints");
     private static readonly FieldInfo PurgePointsTextField =
-        AccessTools.Field(typeof(PlayerPurgePoints), "text");
+        Reflect.Field(typeof(PlayerPurgePoints), "text");
     private static readonly FieldInfo PurgePointsBackgroundField =
-        AccessTools.Field(typeof(PlayerPurgePoints), "background");
+        Reflect.Field(typeof(PlayerPurgePoints), "background");
 
     private static readonly PurgeSlotWidget[] slots = new PurgeSlotWidget[4];
     private static Sprite cachedBgSprite;

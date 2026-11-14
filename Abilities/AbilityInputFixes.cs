@@ -138,7 +138,7 @@ internal static class Healing_GetHealingInput_Patch
 [HarmonyPatch(typeof(HealingBehaviour), "OnStateEnter")]
 internal static class HealingBehaviour_OnStateEnter_Patch
 {
-    private static readonly PropertyInfo HealingAbilityProp = AccessTools.Property(typeof(HealingBehaviour), "HealingAbility");
+    private static readonly PropertyInfo HealingAbilityProp = Reflect.Property(typeof(HealingBehaviour), "HealingAbility");
 
     private static void Prefix(HealingBehaviour __instance, Animator animator, ref Penitent ____penitent)
     {
@@ -167,7 +167,7 @@ internal static class HealingBehaviour_OnStateEnter_Patch
 [HarmonyPatch(typeof(HealingBehaviour), "OnStateExit")]
 internal static class HealingBehaviour_OnStateExit_Patch
 {
-    private static readonly PropertyInfo HealingAbilityProp = AccessTools.Property(typeof(HealingBehaviour), "HealingAbility");
+    private static readonly PropertyInfo HealingAbilityProp = Reflect.Property(typeof(HealingBehaviour), "HealingAbility");
 
     private static void Prefix(HealingBehaviour __instance, Animator animator, ref Penitent ____penitent)
     {
@@ -256,7 +256,7 @@ internal static class ManyPlayerAnimationBehaviours_PenitentOwnerFix_Patch
     };
 
     // StateMachineBehaviour declares two OnStateEnter overloads (with and without a trailing
-    // AnimatorControllerPlayable parameter) - AccessTools.Method(type, "OnStateEnter") alone is
+    // AnimatorControllerPlayable parameter) - Reflect.Method(type, "OnStateEnter") alone is
     // ambiguous between them and throws at patch time (confirmed live: it took down this entire
     // patch, silently skipping all ~24 fixes below it). Parameter types must be given explicitly
     // to pick the plain 3-parameter overload every one of these classes actually overrides.
@@ -266,7 +266,7 @@ internal static class ManyPlayerAnimationBehaviours_PenitentOwnerFix_Patch
     {
         foreach (Type type in TargetTypes)
         {
-            MethodInfo method = AccessTools.Method(type, "OnStateEnter", OnStateEnterParams);
+            MethodInfo method = Reflect.Method(type, "OnStateEnter", OnStateEnterParams);
             if (method != null)
             {
                 yield return method;
@@ -302,10 +302,10 @@ internal static class ManyPlayerAnimationBehaviours_PenitentOwnerFix_Patch
 [HarmonyPatch(typeof(GroundUpwardAttackBehaviour), "OnStateEnter")]
 internal static class GroundUpwardAttackBehaviour_FixSkippedInit_P2_Patch
 {
-    private static readonly FieldInfo PenitentSwordField = AccessTools.Field(typeof(GroundUpwardAttackBehaviour), "_penitentSword");
-    private static readonly FieldInfo SwordAnimatorInyectorField = AccessTools.Field(typeof(GroundUpwardAttackBehaviour), "_swordAnimatorInyector");
-    private static readonly FieldInfo DefaultAttackAreaOffsetField = AccessTools.Field(typeof(GroundUpwardAttackBehaviour), "_defaultAttackAreaOffset");
-    private static readonly FieldInfo DefaultAttackAreaSizeField = AccessTools.Field(typeof(GroundUpwardAttackBehaviour), "_defaultAttackAreaSize");
+    private static readonly FieldInfo PenitentSwordField = Reflect.Field(typeof(GroundUpwardAttackBehaviour), "_penitentSword");
+    private static readonly FieldInfo SwordAnimatorInyectorField = Reflect.Field(typeof(GroundUpwardAttackBehaviour), "_swordAnimatorInyector");
+    private static readonly FieldInfo DefaultAttackAreaOffsetField = Reflect.Field(typeof(GroundUpwardAttackBehaviour), "_defaultAttackAreaOffset");
+    private static readonly FieldInfo DefaultAttackAreaSizeField = Reflect.Field(typeof(GroundUpwardAttackBehaviour), "_defaultAttackAreaSize");
 
     private static void Postfix(GroundUpwardAttackBehaviour __instance, Penitent ____penitent)
     {
@@ -344,8 +344,8 @@ internal static class GroundUpwardAttackBehaviour_FixSkippedInit_P2_Patch
 [HarmonyPatch(typeof(AirUpwardAttackBehaviour), "OnStateEnter")]
 internal static class AirUpwardAttackBehaviour_FixSkippedInit_P2_Patch
 {
-    private static readonly FieldInfo DefaultAttackAreaOffsetField = AccessTools.Field(typeof(AirUpwardAttackBehaviour), "_defaultAttackAreaOffset");
-    private static readonly FieldInfo DefaultAttackAreaSizeField = AccessTools.Field(typeof(AirUpwardAttackBehaviour), "_defaultAttackAreaSize");
+    private static readonly FieldInfo DefaultAttackAreaOffsetField = Reflect.Field(typeof(AirUpwardAttackBehaviour), "_defaultAttackAreaOffset");
+    private static readonly FieldInfo DefaultAttackAreaSizeField = Reflect.Field(typeof(AirUpwardAttackBehaviour), "_defaultAttackAreaSize");
 
     private static readonly HashSet<AirUpwardAttackBehaviour> initialized = new HashSet<AirUpwardAttackBehaviour>();
 
@@ -378,7 +378,7 @@ internal static class AirUpwardAttackBehaviour_FixSkippedInit_P2_Patch
 [HarmonyPatch(typeof(FallingOverBehaviour), "OnStateEnter")]
 internal static class FallingOverBehaviour_FixSkippedInit_P2_Patch
 {
-    private static readonly FieldInfo ThrowBackField = AccessTools.Field(typeof(FallingOverBehaviour), "_throwBack");
+    private static readonly FieldInfo ThrowBackField = Reflect.Field(typeof(FallingOverBehaviour), "_throwBack");
 
     private static void Postfix(FallingOverBehaviour __instance, Penitent ____penitent)
     {
@@ -397,7 +397,7 @@ internal static class FallingOverBehaviour_FixSkippedInit_P2_Patch
 [HarmonyPatch(typeof(GroundingOverBehaviour), "OnStateEnter")]
 internal static class GroundingOverBehaviour_FixSkippedInit_P2_Patch
 {
-    private static readonly FieldInfo DamageColliderField = AccessTools.Field(typeof(GroundingOverBehaviour), "_damageCollider");
+    private static readonly FieldInfo DamageColliderField = Reflect.Field(typeof(GroundingOverBehaviour), "_damageCollider");
 
     private static void Postfix(GroundingOverBehaviour __instance, Penitent ____penitent)
     {

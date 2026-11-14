@@ -47,11 +47,11 @@ internal static class Interactable_PlayerInRange_Coop_Patch
 internal static class Interactable_InteractionTriggered_Patch
 {
     private static readonly FieldInfo InteractableWhileJumpingField =
-        AccessTools.Field(typeof(Interactable), "interactableWhileJumping");
+        Reflect.Field(typeof(Interactable), "interactableWhileJumping");
     private static readonly FieldInfo ExecutionPenitentField =
-        AccessTools.Field(typeof(Execution), "<Penitent>k__BackingField");
+        Reflect.Field(typeof(Execution), "<Penitent>k__BackingField");
     private static readonly FieldInfo FakeExecutionPenitentField =
-        AccessTools.Field(typeof(FakeExecution), "<Penitent>k__BackingField");
+        Reflect.Field(typeof(FakeExecution), "<Penitent>k__BackingField");
 
     internal static void SetExecutionPenitent(Interactable interactable, Penitent penitent)
     {
@@ -178,9 +178,9 @@ internal static class Interactable_InteractionTriggered_Patch
 internal static class InteractableAccess
 {
     private static readonly FieldInfo RepositionField =
-        AccessTools.Field(typeof(Interactable), "RepositionBeforeInteract");
+        Reflect.Field(typeof(Interactable), "RepositionBeforeInteract");
     private static readonly MethodInfo RepositionMethod =
-        AccessTools.Method(typeof(Interactable), "PlayerReposition");
+        Reflect.Method(typeof(Interactable), "PlayerReposition");
 
     internal static bool GetRepositionBeforeInteract(Interactable i)
     {
@@ -189,9 +189,9 @@ internal static class InteractableAccess
     }
 
     private static readonly FieldInfo WaypointField =
-        AccessTools.Field(typeof(Interactable), "Waypoint");
+        Reflect.Field(typeof(Interactable), "Waypoint");
     private static readonly MethodInfo OnUseMethod =
-        AccessTools.Method(typeof(Interactable), "OnUse");
+        Reflect.Method(typeof(Interactable), "OnUse");
 
     internal static Transform GetWaypoint(Interactable i)
     {
@@ -221,15 +221,15 @@ internal static class InteractableAccess
 internal static class Interactable_Use_Coop_Patch
 {
     private static readonly FieldInfo OnStartUsingField =
-        AccessTools.Field(typeof(Interactable), "OnStartUsing");
+        Reflect.Field(typeof(Interactable), "OnStartUsing");
     private static readonly FieldInfo SInteractionStartedField =
-        AccessTools.Field(typeof(Interactable), "SInteractionStarted");
+        Reflect.Field(typeof(Interactable), "SInteractionStarted");
     private static readonly FieldInfo OnStopUsingField =
-        AccessTools.Field(typeof(Interactable), "OnStopUsing");
+        Reflect.Field(typeof(Interactable), "OnStopUsing");
     private static readonly FieldInfo SInteractionEndedField =
-        AccessTools.Field(typeof(Interactable), "SInteractionEnded");
+        Reflect.Field(typeof(Interactable), "SInteractionEnded");
     private static readonly MethodInfo OnStopRepositionMethod =
-        AccessTools.Method(typeof(Interactable), "OnStopReposition");
+        Reflect.Method(typeof(Interactable), "OnStopReposition");
 
     private static void SafeRaiseOnStartUsing(Interactable interactable)
     {
@@ -412,7 +412,7 @@ internal static class Interactable_PlayerReposition_Patch
             ? exec.Penitent
             : (Interactable_InteractionTriggered_Patch.LastInteractingPlayer ?? Core.Logic?.Penitent);
 
-        var anim = AccessTools.Field(typeof(Interactable), "interactorAnimator")?.GetValue(__instance) as Animator;
+        var anim = Reflect.Field(typeof(Interactable), "interactorAnimator")?.GetValue(__instance) as Animator;
         if (target != null && anim != null)
         {
             target.transform.position = anim.transform.position;
@@ -462,9 +462,9 @@ internal static class Interactable_ShowPlayer_Patch
 [HarmonyPatch(typeof(Interactable), "OnEventLaunched")]
 internal static class Interactable_OnEventLaunched_Patch
 {
-    private static readonly FieldInfo BeingUsedField = AccessTools.Field(typeof(Interactable), "<BeingUsed>k__BackingField");
-    private static readonly MethodInfo InteractionStartMethod = AccessTools.Method(typeof(Interactable), "InteractionStart");
-    private static readonly MethodInfo InteractionEndMethod = AccessTools.Method(typeof(Execution), "InteractionEnd");
+    private static readonly FieldInfo BeingUsedField = Reflect.Field(typeof(Interactable), "<BeingUsed>k__BackingField");
+    private static readonly MethodInfo InteractionStartMethod = Reflect.Method(typeof(Interactable), "InteractionStart");
+    private static readonly MethodInfo InteractionEndMethod = Reflect.Method(typeof(Execution), "InteractionEnd");
 
     private static bool Prefix(Interactable __instance, string id)
     {
@@ -539,9 +539,9 @@ internal static class Execution_PlayerIsOnSameFloor_Patch
 [HarmonyPatch(typeof(Execution), "CenterCamera")]
 internal static class Execution_CenterCamera_Patch
 {
-    private static readonly FieldInfo CameraPlayerOffsetField = AccessTools.Field(typeof(Execution), "_cameraPlayerOffset");
-    private static readonly FieldInfo CurrentCameraPositionField = AccessTools.Field(typeof(Execution), "_currentCameraPosition");
-    private static readonly FieldInfo ZoomTimeLapseField = AccessTools.Field(typeof(Execution), "_zoomTimeLapse");
+    private static readonly FieldInfo CameraPlayerOffsetField = Reflect.Field(typeof(Execution), "_cameraPlayerOffset");
+    private static readonly FieldInfo CurrentCameraPositionField = Reflect.Field(typeof(Execution), "_currentCameraPosition");
+    private static readonly FieldInfo ZoomTimeLapseField = Reflect.Field(typeof(Execution), "_zoomTimeLapse");
 
     private static bool Prefix(Execution __instance)
     {
@@ -646,9 +646,9 @@ internal static class Execution_PlayerReposition_Patch
 [HarmonyPatch(typeof(Execution), "OnUpdate")]
 internal static class Execution_OnUpdate_Patch
 {
-    private static readonly FieldInfo AttackCoolDownField = AccessTools.Field(typeof(Execution), "attackCoolDown");
-    private static readonly FieldInfo CurrentTimeThresholdField = AccessTools.Field(typeof(Execution), "_currentTimeThreshold");
-    private static readonly FieldInfo PenitentBackingField = AccessTools.Field(typeof(Execution), "<Penitent>k__BackingField");
+    private static readonly FieldInfo AttackCoolDownField = Reflect.Field(typeof(Execution), "attackCoolDown");
+    private static readonly FieldInfo CurrentTimeThresholdField = Reflect.Field(typeof(Execution), "_currentTimeThreshold");
+    private static readonly FieldInfo PenitentBackingField = Reflect.Field(typeof(Execution), "<Penitent>k__BackingField");
 
     private static bool IsPlayerOnSameFloor(Execution exec, Penitent penitent)
     {
@@ -754,22 +754,22 @@ internal static class Execution_OnUse_Patch
     }
 
     private static readonly FieldInfo InteractorStartPositionField =
-        AccessTools.Field(typeof(Execution), "_interactorStartPosition");
+        Reflect.Field(typeof(Execution), "_interactorStartPosition");
     private static readonly FieldInfo InteractableAnimatorField =
-        AccessTools.Field(typeof(Interactable), "interactableAnimator");
+        Reflect.Field(typeof(Interactable), "interactableAnimator");
     private static readonly FieldInfo InteractorAnimatorField =
-        AccessTools.Field(typeof(Interactable), "interactorAnimator");
+        Reflect.Field(typeof(Interactable), "interactorAnimator");
     private static readonly FieldInfo SoundDelayField =
-        AccessTools.Field(typeof(Execution), "soundDelay");
+        Reflect.Field(typeof(Execution), "soundDelay");
 
     private static readonly MethodInfo FlipAnimationMethod =
-        AccessTools.Method(typeof(Execution), "FlipAnimation");
+        Reflect.Method(typeof(Execution), "FlipAnimation");
     private static readonly MethodInfo ShowPlayerMethod =
-        AccessTools.Method(typeof(Execution), "ShowPlayer");
+        Reflect.Method(typeof(Execution), "ShowPlayer");
     private static readonly MethodInfo AddProgressToAC27Method =
-        AccessTools.Method(typeof(Execution), "AddProgressToAC27");
+        Reflect.Method(typeof(Execution), "AddProgressToAC27");
     private static readonly MethodInfo ReleaseOverlappedInteractablesMethod =
-        AccessTools.Method(typeof(Execution), "ReleaseOverlappedInteractables");
+        Reflect.Method(typeof(Execution), "ReleaseOverlappedInteractables");
 
     internal static void ApplySkinToInteractableHierarchy(Interactable interactable, Penitent executor)
     {
@@ -843,6 +843,38 @@ internal static class Execution_OnUse_Patch
                 sr.material.SetTexture("_PaletteTex", paletteTexture);
             }
         }
+    }
+
+    // Durante una ejecución ningún efecto de color de estado (veneno, sangrado, electricidad) ni el
+    // parpadeo de daño debe teñir el sprite del ejecutor ni el de la víctima.
+    private static void ClearStatusTint(Execution exec, Enemy victim)
+    {
+        try
+        {
+            var renderers = new List<SpriteRenderer>();
+            exec.GetComponentsInChildren(true, renderers);
+            if (victim != null)
+            {
+                foreach (var r in victim.GetComponentsInChildren<SpriteRenderer>(true))
+                {
+                    if (!renderers.Contains(r)) renderers.Add(r);
+                }
+            }
+            // Solo se apaga el parpadeo de daño del shader. NO se fuerza sr.color = blanco: algunos
+            // sprites de la ejecución (sombras, siluetas, fundidos) usan color propio y quedarían
+            // blancos (bug de color intermitente). Los tintes de estado ya no llegan a estos sprites
+            // porque EnemyElementalStatusController excluye todo lo que cuelga de un Execution.
+            foreach (var sr in renderers)
+            {
+                if (sr == null) continue;
+                Material shared = sr.sharedMaterial;
+                if (shared != null && shared.IsKeywordEnabled("DAMAGE_EFFECT_ON"))
+                {
+                    sr.material.DisableKeyword("DAMAGE_EFFECT_ON");
+                }
+            }
+        }
+        catch (System.Exception __swallowed) { SwallowedExceptions.Report(__swallowed, "Interactables.cs:877"); }
     }
 
     private static void ApplyExecutorSkin(Execution exec)
@@ -929,9 +961,14 @@ internal static class Execution_OnUse_Patch
 
             yield return lapse;
             ApplyExecutorSkin(__instance);
+            ClearStatusTint(__instance, executedEnemy);
 
             while (!__instance.Consumed)
             {
+                // El ColorPaletteSwapper vanilla aplica la paleta en Start() (puede ejecutarse después de
+                // nuestra aplicación y pisarla con la skin de P1): se reaplica la del ejecutor cada frame.
+                ApplyExecutorSkin(__instance);
+                ClearStatusTint(__instance, executedEnemy);
                 yield return lapse;
             }
 
@@ -1025,7 +1062,7 @@ internal static class Door_EnterTriggered_Coop_Patch
 [HarmonyPatch(typeof(Door), "EnterDoor")]
 internal static class Door_EnterDoor_Coop_Patch
 {
-    private static readonly FieldInfo LadderRequiredField = AccessTools.Field(typeof(Door), "ladderRequired");
+    private static readonly FieldInfo LadderRequiredField = Reflect.Field(typeof(Door), "ladderRequired");
 
     private static bool Prefix(Door __instance)
     {
@@ -1126,7 +1163,7 @@ internal static class Interactable_OnEntityExit_Coop_Patch
     private static bool IsAnyLivingPlayerInSensors(Interactable interactable)
     {
         if (interactable == null) return false;
-        var sensorsField = AccessTools.Field(typeof(Interactable), "sensors");
+        var sensorsField = Reflect.Field(typeof(Interactable), "sensors");
         var sensors = sensorsField?.GetValue(interactable) as CollisionSensor[];
         if (sensors == null || sensors.Length == 0) return false;
 

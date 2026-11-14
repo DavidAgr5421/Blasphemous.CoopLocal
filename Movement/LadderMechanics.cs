@@ -52,7 +52,7 @@ internal static class FloorDistanceChecker_OnTriggerEnter2D_LadderRaiser_Patch
 [HarmonyPatch(typeof(GrabLadder), "OnStepLadder")]
 internal static class GrabLadder_OnStepLadder_Patch
 {
-    private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(GrabLadder), "_penitent");
+    private static readonly FieldInfo PenitentField = Reflect.Field(typeof(GrabLadder), "_penitent");
 
     private static bool Prefix(GrabLadder __instance)
     {
@@ -74,7 +74,7 @@ internal static class GrabLadder_OnStepLadder_Patch
 [HarmonyPatch(typeof(GrabLadder), "OnUpdate")]
 internal static class GrabLadder_OnUpdate_DebugLogger_Patch
 {
-    private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(GrabLadder), "_penitent");
+    private static readonly FieldInfo PenitentField = Reflect.Field(typeof(GrabLadder), "_penitent");
     private static string lastLoggedState;
 
     private static void Postfix(GrabLadder __instance)
@@ -120,7 +120,7 @@ internal static class GrabLadder_OnUpdate_DebugLogger_Patch
 [HarmonyPatch(typeof(GrabLadder), "OnUpdate")]
 internal static class GrabLadder_OnUpdate_StopDriftWhileAttempting_Patch
 {
-    private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(GrabLadder), "_penitent");
+    private static readonly FieldInfo PenitentField = Reflect.Field(typeof(GrabLadder), "_penitent");
 
     private static void Postfix(GrabLadder __instance)
     {
@@ -165,8 +165,8 @@ internal static class GrabLadder_OnUpdate_StopDriftWhileAttempting_Patch
 [HarmonyPatch(typeof(Gameplay.GameControllers.Penitent.Animator.AnimatorInyector), "Crouch")]
 internal static class AnimatorInyector_Crouch_LadderGuard_Patch
 {
-    private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(Gameplay.GameControllers.Penitent.Animator.AnimatorInyector), "_penitent");
-    private static readonly FieldInfo PlayerInputField = AccessTools.Field(typeof(Gameplay.GameControllers.Penitent.Animator.AnimatorInyector), "_playerInput");
+    private static readonly FieldInfo PenitentField = Reflect.Field(typeof(Gameplay.GameControllers.Penitent.Animator.AnimatorInyector), "_penitent");
+    private static readonly FieldInfo PlayerInputField = Reflect.Field(typeof(Gameplay.GameControllers.Penitent.Animator.AnimatorInyector), "_playerInput");
 
     private static bool overrodeThisCall;
 
@@ -253,10 +253,10 @@ internal static class GrabLadder_OnUpdate_P2_Patch
     // IsBottomLadderRepositioning/IsTopLadderReposition/StartGoingDown/CurrentLadderCollider are
     // all public properties on GrabLadder - called directly below, no reflection needed. Only the
     // private serialized field and the two private static readonly hash ints need it.
-    private static readonly FieldInfo LadderWidthFactorField = AccessTools.Field(typeof(GrabLadder), "ladderWidthFactor");
-    private static readonly FieldInfo StepOnLadderHashField = AccessTools.Field(typeof(GrabLadder), "StepOnLadderHash");
-    private static readonly FieldInfo IsCollidingLadderHashField = AccessTools.Field(typeof(GrabLadder), "IsCollidingLadderHash");
-    private static readonly MethodInfo TakeOffLadderMethod = AccessTools.Method(typeof(GrabLadder), "TakeOffLadder");
+    private static readonly FieldInfo LadderWidthFactorField = Reflect.Field(typeof(GrabLadder), "ladderWidthFactor");
+    private static readonly FieldInfo StepOnLadderHashField = Reflect.Field(typeof(GrabLadder), "StepOnLadderHash");
+    private static readonly FieldInfo IsCollidingLadderHashField = Reflect.Field(typeof(GrabLadder), "IsCollidingLadderHash");
+    private static readonly MethodInfo TakeOffLadderMethod = Reflect.Method(typeof(GrabLadder), "TakeOffLadder");
 
     private static bool Prefix(GrabLadder __instance, ref Penitent ____penitent)
     {
@@ -349,10 +349,10 @@ internal static class GrabLadder_OnUpdate_P2_Patch
 internal static class PlatformCharacterController_DoClimbing_P2_AirGrab_Patch
 {
     private static readonly MethodInfo RewiredGetAxisRawMethod =
-        AccessTools.Method(typeof(Rewired.Player), "GetAxisRaw", new[] { typeof(string) });
+        Reflect.Method(typeof(Rewired.Player), "GetAxisRaw", new[] { typeof(string) });
 
     private static readonly MethodInfo ReplacementMethod =
-        AccessTools.Method(typeof(PlatformCharacterController_DoClimbing_P2_AirGrab_Patch), nameof(GetAxisRawForClimbing));
+        Reflect.Method(typeof(PlatformCharacterController_DoClimbing_P2_AirGrab_Patch), nameof(GetAxisRawForClimbing));
 
     // Set by our own Prefix immediately before the original (transpiled) method body runs, in the
     // same call - see class comment above for why this is safe to read from the injected call.

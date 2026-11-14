@@ -252,10 +252,10 @@ internal static class BossDebugTeleportManager
         isReturningFromBoss = true;
 
         // Asegurar que SpawnManager use los datos de spawn del origen guardado
-        var customLevelField = AccessTools.Field(typeof(SpawnManager), "customLevel");
-        var customPosField = AccessTools.Field(typeof(SpawnManager), "customPosition");
-        var customOrientField = AccessTools.Field(typeof(SpawnManager), "customOrientation");
-        var customMiriamField = AccessTools.Field(typeof(SpawnManager), "customIsMiriam");
+        var customLevelField = Reflect.Field(typeof(SpawnManager), "customLevel");
+        var customPosField = Reflect.Field(typeof(SpawnManager), "customPosition");
+        var customOrientField = Reflect.Field(typeof(SpawnManager), "customOrientation");
+        var customMiriamField = Reflect.Field(typeof(SpawnManager), "customIsMiriam");
 
         if (customLevelField != null && customPosField != null && customOrientField != null)
         {

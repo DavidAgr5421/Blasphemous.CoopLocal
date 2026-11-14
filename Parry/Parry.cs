@@ -23,10 +23,10 @@ namespace Blasphemous.CoopLocal;
 [HarmonyPatch(typeof(Parry), "OnUpdate")]
 internal static class Parry_OnUpdate_Patch
 {
-    private static readonly MethodInfo IsGroundedMethod = AccessTools.Method(typeof(Parry), "IsGrounded");
-    private static readonly MethodInfo ReadyToCastMethod = AccessTools.Method(typeof(Parry), "ReadyToCast");
-    private static readonly MethodInfo RaiseParryEventMethod = AccessTools.Method(typeof(Parry), "RaiseParryEvent");
-    private static readonly MethodInfo CheckParryWindowMethod = AccessTools.Method(typeof(Parry), "CheckParryWindow");
+    private static readonly MethodInfo IsGroundedMethod = Reflect.Method(typeof(Parry), "IsGrounded");
+    private static readonly MethodInfo ReadyToCastMethod = Reflect.Method(typeof(Parry), "ReadyToCast");
+    private static readonly MethodInfo RaiseParryEventMethod = Reflect.Method(typeof(Parry), "RaiseParryEvent");
+    private static readonly MethodInfo CheckParryWindowMethod = Reflect.Method(typeof(Parry), "CheckParryWindow");
 
     private static readonly System.Collections.Generic.Dictionary<Parry, int> CastStartFrame = new System.Collections.Generic.Dictionary<Parry, int>();
     private static readonly System.Collections.Generic.HashSet<Parry> EnteredParryAnim = new System.Collections.Generic.HashSet<Parry>();
@@ -188,7 +188,7 @@ internal static class Parry_StopParry_Patch
 [HarmonyPatch(typeof(ParryRepostBehaviour), "OnStateEnter")]
 internal static class ParryRepostBehaviour_OnStateEnter_Patch
 {
-    private static readonly FieldInfo PenitentBackingField = AccessTools.Field(typeof(ParryRepostBehaviour), "<Penitent>k__BackingField");
+    private static readonly FieldInfo PenitentBackingField = Reflect.Field(typeof(ParryRepostBehaviour), "<Penitent>k__BackingField");
 
     private static void Prefix(Animator animator, ParryRepostBehaviour __instance)
     {
@@ -203,7 +203,7 @@ internal static class ParryRepostBehaviour_OnStateEnter_Patch
 [HarmonyPatch(typeof(ParryRepostBehaviour), "OnStateExit")]
 internal static class ParryRepostBehaviour_OnStateExit_Patch
 {
-    private static readonly FieldInfo PenitentBackingField = AccessTools.Field(typeof(ParryRepostBehaviour), "<Penitent>k__BackingField");
+    private static readonly FieldInfo PenitentBackingField = Reflect.Field(typeof(ParryRepostBehaviour), "<Penitent>k__BackingField");
 
     private static void Prefix(Animator animator, ParryRepostBehaviour __instance)
     {
@@ -218,7 +218,7 @@ internal static class ParryRepostBehaviour_OnStateExit_Patch
 [HarmonyPatch(typeof(ParrySuccessBehaviour), "OnStateEnter")]
 internal static class ParrySuccessBehaviour_OnStateEnter_Patch
 {
-    private static readonly FieldInfo PenitentBackingField = AccessTools.Field(typeof(ParrySuccessBehaviour), "<Penitent>k__BackingField");
+    private static readonly FieldInfo PenitentBackingField = Reflect.Field(typeof(ParrySuccessBehaviour), "<Penitent>k__BackingField");
 
     private static void Prefix(Animator animator, ParrySuccessBehaviour __instance)
     {
@@ -233,7 +233,7 @@ internal static class ParrySuccessBehaviour_OnStateEnter_Patch
 [HarmonyPatch(typeof(ParrySuccessBehaviour), "OnStateUpdate")]
 internal static class ParrySuccessBehaviour_OnStateUpdate_Patch
 {
-    private static readonly FieldInfo PenitentBackingField = AccessTools.Field(typeof(ParrySuccessBehaviour), "<Penitent>k__BackingField");
+    private static readonly FieldInfo PenitentBackingField = Reflect.Field(typeof(ParrySuccessBehaviour), "<Penitent>k__BackingField");
 
     private static void Prefix(Animator animator, ParrySuccessBehaviour __instance)
     {
@@ -248,7 +248,7 @@ internal static class ParrySuccessBehaviour_OnStateUpdate_Patch
 [HarmonyPatch(typeof(ParrySuccessBehaviour), "OnStateExit")]
 internal static class ParrySuccessBehaviour_OnStateExit_Patch
 {
-    private static readonly FieldInfo PenitentBackingField = AccessTools.Field(typeof(ParrySuccessBehaviour), "<Penitent>k__BackingField");
+    private static readonly FieldInfo PenitentBackingField = Reflect.Field(typeof(ParrySuccessBehaviour), "<Penitent>k__BackingField");
 
     private static void Prefix(Animator animator, ParrySuccessBehaviour __instance)
     {
@@ -263,9 +263,9 @@ internal static class ParrySuccessBehaviour_OnStateExit_Patch
 internal static class GuardSlideMultiplayerSync
 {
     internal static Penitent GuardSlideLastOwner;
-    private static readonly FieldInfo EntityOwnerBackingField = AccessTools.Field(typeof(Ability), "<EntityOwner>k__BackingField");
-    private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(GuardSlide), "_penitent");
-    private static readonly MethodInfo OnPenitentReadyMethod = AccessTools.Method(typeof(GuardSlide), "OnPenitentReady");
+    private static readonly FieldInfo EntityOwnerBackingField = Reflect.Field(typeof(Ability), "<EntityOwner>k__BackingField");
+    private static readonly FieldInfo PenitentField = Reflect.Field(typeof(GuardSlide), "_penitent");
+    private static readonly MethodInfo OnPenitentReadyMethod = Reflect.Method(typeof(GuardSlide), "OnPenitentReady");
 
     internal static Penitent GetPenitent(GuardSlide instance)
     {
@@ -350,19 +350,12 @@ internal static class GuardSlide_OnCastStart_Patch
     {
         GuardSlideMultiplayerSync.EnsureGuardSlideOwner(__instance, out Penitent owner);
         GuardSlideMultiplayerSync.GuardSlideLastOwner = owner;
-        __state = Core.Logic?.Penitent;
-        if (owner != null && Core.Logic != null)
-        {
-            Core.Logic.Penitent = owner;
-        }
+        __state = PenitentSwap.Begin(owner);
     }
 
-    private static void Postfix(Penitent __state)
+    private static void Finalizer(Penitent __state)
     {
-        if (Core.Logic != null && __state != null)
-        {
-            Core.Logic.Penitent = __state;
-        }
+        PenitentSwap.End(__state);
     }
 }
 
@@ -376,29 +369,22 @@ internal static class GuardSlide_OnCastEnd_Patch
         {
             PlayerLogicBlocker.SetBlocked(owner, false);
         }
-        __state = Core.Logic?.Penitent;
-        if (owner != null && Core.Logic != null)
-        {
-            Core.Logic.Penitent = owner;
-        }
+        __state = PenitentSwap.Begin(owner);
     }
 
-    private static void Postfix(Penitent __state)
+    private static void Finalizer(Penitent __state)
     {
-        if (Core.Logic != null && __state != null)
-        {
-            Core.Logic.Penitent = __state;
-        }
+        PenitentSwap.End(__state);
     }
 }
 
 [HarmonyPatch(typeof(GuardSlide), "OnUpdate")]
 internal static class GuardSlide_OnUpdate_Patch
 {
-    private static readonly FieldInfo CurrentLapseBeforeDashField = AccessTools.Field(typeof(GuardSlide), "_currentLapseBeforeDash");
-    private static readonly FieldInfo TimeLerpingRemainingField = AccessTools.Field(typeof(GuardSlide), "_timeLerpingRemaining");
-    private static readonly MethodInfo SetOwnerOrientationMethod = AccessTools.Method(typeof(GuardSlide), "SetOwnerOrientation");
-    private static readonly MethodInfo CastDashMethod = AccessTools.Method(typeof(GuardSlide), "CastDash");
+    private static readonly FieldInfo CurrentLapseBeforeDashField = Reflect.Field(typeof(GuardSlide), "_currentLapseBeforeDash");
+    private static readonly FieldInfo TimeLerpingRemainingField = Reflect.Field(typeof(GuardSlide), "_timeLerpingRemaining");
+    private static readonly MethodInfo SetOwnerOrientationMethod = Reflect.Method(typeof(GuardSlide), "SetOwnerOrientation");
+    private static readonly MethodInfo CastDashMethod = Reflect.Method(typeof(GuardSlide), "CastDash");
 
     private static bool Prefix(GuardSlide __instance)
     {
@@ -564,7 +550,7 @@ internal static class EnemyParryRegistry
 [HarmonyPatch(typeof(PenitentSword), nameof(PenitentSword.SuccessParryChance))]
 internal static class PenitentSword_SuccessParryChance_Patch
 {
-    private static readonly FieldInfo OnParryField = AccessTools.Field(typeof(PenitentSword), "OnParry");
+    private static readonly FieldInfo OnParryField = Reflect.Field(typeof(PenitentSword), "OnParry");
 
     private static void RaiseOnParry(PenitentSword sword, Enemy enemy)
     {
@@ -597,21 +583,14 @@ internal static class PenitentSword_SuccessParryChance_Patch
                     Combat.EnemyTargetingSystem.RecordDamageAggro(component, ownerPenitent, 6f);
                 }
 
-                Penitent oldPenitent = Core.Logic != null ? Core.Logic.Penitent : null;
+                Penitent swapped = PenitentSwap.Begin(ownerPenitent);
                 try
                 {
-                    if (ownerPenitent != null && Core.Logic != null)
-                    {
-                        Core.Logic.Penitent = ownerPenitent;
-                    }
                     component.Parry();
                 }
                 finally
                 {
-                    if (Core.Logic != null && oldPenitent != null)
-                    {
-                        Core.Logic.Penitent = oldPenitent;
-                    }
+                    PenitentSwap.End(swapped);
                 }
 
                 if (component is Gameplay.GameControllers.Enemies.ViciousDasher.ViciousDasher vd)
@@ -666,19 +645,12 @@ internal static class Enemies_Stunt_ParryBehaviour_OnStateUpdate_Patch
             }
         }
 
-        if (executingPlayer != null && Core.Logic != null && Core.Logic.Penitent != executingPlayer)
-        {
-            __state = Core.Logic.Penitent;
-            Core.Logic.Penitent = executingPlayer;
-        }
+        __state = PenitentSwap.Begin(executingPlayer);
     }
 
     private static void Finalizer(Penitent __state)
     {
-        if (__state != null && Core.Logic != null)
-        {
-            Core.Logic.Penitent = __state;
-        }
+        PenitentSwap.End(__state);
     }
 }
 
@@ -720,11 +692,7 @@ internal static class Enemy_Execution_Patch
     {
         __state = null;
         Penitent attacker = hit.AttackingEntity != null ? hit.AttackingEntity.GetComponentInParent<Penitent>() : null;
-        if (attacker != null && Core.Logic != null && attacker != Core.Logic.Penitent)
-        {
-            __state = Core.Logic.Penitent;
-            Core.Logic.Penitent = attacker;
-        }
+        __state = PenitentSwap.Begin(attacker);
     }
 
     private static void Postfix(Gameplay.GameControllers.Entities.Enemy __instance, bool __result)
@@ -741,10 +709,7 @@ internal static class Enemy_Execution_Patch
 
     private static void Finalizer(Penitent __state)
     {
-        if (__state != null && Core.Logic != null)
-        {
-            Core.Logic.Penitent = __state;
-        }
+        PenitentSwap.End(__state);
     }
 }
 
@@ -824,18 +789,11 @@ internal static class Enemy_GetStun_Patch
     {
         __state = null;
         Penitent attacker = hit.AttackingEntity != null ? hit.AttackingEntity.GetComponentInParent<Penitent>() : null;
-        if (attacker != null && Core.Logic != null && attacker != Core.Logic.Penitent)
-        {
-            __state = Core.Logic.Penitent;
-            Core.Logic.Penitent = attacker;
-        }
+        __state = PenitentSwap.Begin(attacker);
     }
 
     private static void Finalizer(Penitent __state)
     {
-        if (__state != null && Core.Logic != null)
-        {
-            Core.Logic.Penitent = __state;
-        }
+        PenitentSwap.End(__state);
     }
 }

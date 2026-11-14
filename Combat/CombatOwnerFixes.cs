@@ -46,8 +46,8 @@ namespace Blasphemous.CoopLocal;
 [HarmonyPatch(typeof(AttackBehaviour), "OnStateEnter")]
 internal static class AttackBehaviour_OnStateEnter_Patch
 {
-    private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(AttackBehaviour), "_penitent");
-    private static readonly FieldInfo AttackAreaField = AccessTools.Field(typeof(AttackBehaviour), "_penitentAttackArea");
+    private static readonly FieldInfo PenitentField = Reflect.Field(typeof(AttackBehaviour), "_penitent");
+    private static readonly FieldInfo AttackAreaField = Reflect.Field(typeof(AttackBehaviour), "_penitentAttackArea");
 
     private static void Prefix(AttackBehaviour __instance, Animator animator)
     {
@@ -74,8 +74,8 @@ internal static class AttackBehaviour_OnStateEnter_Patch
 [HarmonyPatch(typeof(HurtSubStateBehaviour), "OnStateEnter")]
 internal static class HurtSubStateBehaviour_OnStateEnter_Patch
 {
-    private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(HurtSubStateBehaviour), "_penitent");
-    private static readonly FieldInfo ThrowBackField = AccessTools.Field(typeof(HurtSubStateBehaviour), "_throwBack");
+    private static readonly FieldInfo PenitentField = Reflect.Field(typeof(HurtSubStateBehaviour), "_penitent");
+    private static readonly FieldInfo ThrowBackField = Reflect.Field(typeof(HurtSubStateBehaviour), "_throwBack");
 
     private static void Prefix(HurtSubStateBehaviour __instance, Animator animator)
     {
@@ -153,7 +153,7 @@ internal static class AirHurtBehaviour_OnStateEnter_Patch
 [HarmonyPatch(typeof(PenitentSword), "OnEnemyDamaged")]
 internal static class PenitentSword_OnEnemyDamaged_OwnerFilter_Patch
 {
-    private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(PenitentSword), "_penitent");
+    private static readonly FieldInfo PenitentField = Reflect.Field(typeof(PenitentSword), "_penitent");
 
     private static bool Prefix(PenitentSword __instance, Gameplay.GameControllers.Entities.Hit hit)
     {
@@ -216,8 +216,8 @@ internal static class Penitent_OnEntityDead_OwnerFilter_Patch
 [HarmonyPatch(typeof(ChargedAttackBehaviour), "OnStateExit")]
 internal static class ChargedAttackBehaviour_OnStateExit_ResetSize_Patch
 {
-    private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(ChargedAttackBehaviour), "_penitent");
-    private static readonly FieldInfo DefaultSizeField = AccessTools.Field(typeof(PenitentAttack), "_defaultWeaponColliderSize");
+    private static readonly FieldInfo PenitentField = Reflect.Field(typeof(ChargedAttackBehaviour), "_penitent");
+    private static readonly FieldInfo DefaultSizeField = Reflect.Field(typeof(PenitentAttack), "_defaultWeaponColliderSize");
 
     private static void Postfix(ChargedAttackBehaviour __instance)
     {
@@ -290,8 +290,8 @@ internal static class AttackArea_SetOffset_DebugLog_Patch
 [HarmonyPatch(typeof(AttackBehaviour), "OnStateUpdate")]
 internal static class AttackBehaviour_OnStateUpdate_OwnerAxis_Patch
 {
-    private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(AttackBehaviour), "_penitent");
-    private static readonly MethodInfo SetOrientationMethod = AccessTools.Method(typeof(AttackBehaviour), "SetOrientation");
+    private static readonly FieldInfo PenitentField = Reflect.Field(typeof(AttackBehaviour), "_penitent");
+    private static readonly MethodInfo SetOrientationMethod = Reflect.Method(typeof(AttackBehaviour), "SetOrientation");
 
     private static bool Prefix(AttackBehaviour __instance, Animator animator, AnimatorStateInfo stateInfo)
     {
@@ -322,7 +322,7 @@ internal static class AttackBehaviour_OnStateUpdate_OwnerAxis_Patch
 [HarmonyPatch(typeof(CancelComboBehaviour), "OnStateEnter")]
 internal static class CancelComboBehaviour_OnStateEnter_Patch
 {
-    private static readonly PropertyInfo PenitentProp = AccessTools.Property(typeof(CancelComboBehaviour), "Penitent");
+    private static readonly PropertyInfo PenitentProp = Reflect.Property(typeof(CancelComboBehaviour), "Penitent");
 
     private static void Prefix(CancelComboBehaviour __instance, Animator animator)
     {
@@ -337,7 +337,7 @@ internal static class CancelComboBehaviour_OnStateEnter_Patch
 [HarmonyPatch(typeof(CancelComboBehaviour), "OnStateUpdate")]
 internal static class CancelComboBehaviour_OnStateUpdate_Patch
 {
-    private static readonly PropertyInfo PenitentProp = AccessTools.Property(typeof(CancelComboBehaviour), "Penitent");
+    private static readonly PropertyInfo PenitentProp = Reflect.Property(typeof(CancelComboBehaviour), "Penitent");
 
     private static void Prefix(CancelComboBehaviour __instance, Animator animator)
     {
@@ -373,7 +373,7 @@ internal static class CancelComboBehaviour_OnStateUpdate_Patch
 [HarmonyPatch(typeof(GroundAttackSubStateBehaviour), "OnStateEnter")]
 internal static class GroundAttackSubStateBehaviour_OnStateEnter_Patch
 {
-    private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(GroundAttackSubStateBehaviour), "_penitent");
+    private static readonly FieldInfo PenitentField = Reflect.Field(typeof(GroundAttackSubStateBehaviour), "_penitent");
 
     private static void Prefix(GroundAttackSubStateBehaviour __instance, Animator animator)
     {

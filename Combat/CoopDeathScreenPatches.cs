@@ -25,7 +25,7 @@ internal static class CoopDeathScreenInputHelper
                 return true;
             }
         }
-        catch { }
+        catch (System.Exception __swallowed) { SwallowedExceptions.Report(__swallowed, "CoopDeathScreenPatches.cs:28"); }
 
         // 2. Rewired players (todos los jugadores activos en Rewired: Player 0, Player 1, etc.)
         try
@@ -47,7 +47,7 @@ internal static class CoopDeathScreenInputHelper
                 }
             }
         }
-        catch { }
+        catch (System.Exception __swallowed) { SwallowedExceptions.Report(__swallowed, "CoopDeathScreenPatches.cs:50"); }
 
         // 3. Controladores Rewired directamente (todos los Joysticks / Mandos conectados)
         try
@@ -69,7 +69,7 @@ internal static class CoopDeathScreenInputHelper
                 }
             }
         }
-        catch { }
+        catch (System.Exception __swallowed) { SwallowedExceptions.Report(__swallowed, "CoopDeathScreenPatches.cs:72"); }
 
         // 4. Mapeo específico de Player2Pad (botones y gatillos de P2)
         try
@@ -90,7 +90,7 @@ internal static class CoopDeathScreenInputHelper
                 }
             }
         }
-        catch { }
+        catch (System.Exception __swallowed) { SwallowedExceptions.Report(__swallowed, "CoopDeathScreenPatches.cs:93"); }
 
         // 5. Mapeo de Unity KeyCodes para mandos secundarios (Joystick 1 a 8, botones 0 a 19)
         try
@@ -103,7 +103,7 @@ internal static class CoopDeathScreenInputHelper
                 }
             }
         }
-        catch { }
+        catch (System.Exception __swallowed) { SwallowedExceptions.Report(__swallowed, "CoopDeathScreenPatches.cs:106"); }
 
         return false;
     }
@@ -115,11 +115,11 @@ internal static class DeadScreenWidget_OnDeadAction_Transpiler_Patch
     private static MethodBase TargetMethod()
     {
         Type iterType = AccessTools.TypeByName("Gameplay.UI.Others.Buttons.DeadScreenWidget+<OnDeadAction>c__Iterator0");
-        return AccessTools.Method(iterType, "MoveNext");
+        return Reflect.Method(iterType, "MoveNext");
     }
 
-    private static readonly MethodInfo InputAnyKeyGetter = AccessTools.PropertyGetter(typeof(Input), "anyKey");
-    private static readonly MethodInfo Replacement = AccessTools.Method(typeof(CoopDeathScreenInputHelper), nameof(CoopDeathScreenInputHelper.IsAnyPlayerPressingAnyButton));
+    private static readonly MethodInfo InputAnyKeyGetter = Reflect.PropertyGetter(typeof(Input), "anyKey");
+    private static readonly MethodInfo Replacement = Reflect.Method(typeof(CoopDeathScreenInputHelper), nameof(CoopDeathScreenInputHelper.IsAnyPlayerPressingAnyButton));
 
     private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
     {
@@ -146,11 +146,11 @@ internal static class DeadScreenWidget_OnDeadDemake_Transpiler_Patch
     private static MethodBase TargetMethod()
     {
         Type iterType = AccessTools.TypeByName("Gameplay.UI.Others.Buttons.DeadScreenWidget+<OnDeadDemake>c__Iterator3");
-        return AccessTools.Method(iterType, "MoveNext");
+        return Reflect.Method(iterType, "MoveNext");
     }
 
-    private static readonly MethodInfo InputAnyKeyGetter = AccessTools.PropertyGetter(typeof(Input), "anyKey");
-    private static readonly MethodInfo Replacement = AccessTools.Method(typeof(CoopDeathScreenInputHelper), nameof(CoopDeathScreenInputHelper.IsAnyPlayerPressingAnyButton));
+    private static readonly MethodInfo InputAnyKeyGetter = Reflect.PropertyGetter(typeof(Input), "anyKey");
+    private static readonly MethodInfo Replacement = Reflect.Method(typeof(CoopDeathScreenInputHelper), nameof(CoopDeathScreenInputHelper.IsAnyPlayerPressingAnyButton));
 
     private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
     {

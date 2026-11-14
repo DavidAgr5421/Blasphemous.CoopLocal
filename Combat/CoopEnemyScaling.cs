@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using Framework.FrameworkCore;
 using Framework.Managers;
 using Gameplay.GameControllers.Entities;
@@ -22,6 +23,12 @@ internal sealed class CoopClonedEnemyTag : MonoBehaviour
 /// </summary>
 internal sealed class CoopScaledEnemyTag : MonoBehaviour
 {
+    /// <summary>Vida base original (antes de cualquier escalado); nunca se re-infla a partir de la vida ya escalada.</summary>
+    public float BaseLife;
+    /// <summary>Multiplicador final aplicado a la vida (coop x sala, con topes).</summary>
+    public float AppliedHpMult = 1f;
+    /// <summary>Clasificacion jefe/normal calculada UNA vez antes de tocar la vida (la heuristica life>=350 es fragil tras escalar).</summary>
+    public bool IsBossCached;
 }
 
 internal sealed class CoopEnemyScalingRunner : MonoBehaviour
@@ -78,6 +85,77 @@ public static class CoopEnemyScaling
 
     public static readonly float[] BossResistanceLevels = { 2.0f, 2.75f, 3.5f };
     public static readonly string[] BossResistanceLabels = { "Estándar (x2.0)", "Alta (x2.75)", "Extrema (x3.5)" };
+
+    // ---------------------------------------------------------------------------------
+    // Escalado por sala / zona (EDITAR AQUI). Mapeo D## -> tier SIN verificar contra el juego:
+    // cada carga de nivel loguea "[CoopEnemyScaling] Nivel 'X' -> D## tier N" para corregirlo via playtest.
+    // ---------------------------------------------------------------------------------
+    public static float[] TierHp = { 0.90f, 1.00f, 1.10f, 1.20f };
+    public static float[] TierDmg = { 0.90f, 1.00f, 1.10f, 1.20f };
+    public const int UnparseableTier = -1; // factor 1.0
+    public const int DefaultParseableTier = 3;
+    private static readonly Dictionary<int, int> ZoneTiers = BuildZoneTiers();
+    private static Dictionary<int, int> BuildZoneTiers()
+    {
+        var d = new Dictionary<int, int>();
+        foreach (int z in new[] { 1, 2, 3, 4 }) d[z] = 0;
+        foreach (int z in new[] { 5, 6, 8, 9, 17 }) d[z] = 1;
+        foreach (int z in new[] { 7, 10, 11, 12, 13, 14, 15, 16, 20 }) d[z] = 2;
+        foreach (int z in new[] { 21, 22, 23, 24 }) d[z] = 3;
+        return d;
+    }
+    private static readonly Regex LevelNameRegex = new Regex(@"^D(\d\d)(B?)Z(\d\d)S(\d\d)", RegexOptions.IgnoreCase);
+
+    public const float ElemHpNormal = 1.10f;
+    public static readonly float[] ElemHpBossByPlayers = { 1.20f, 1.15f, 1.10f }; // 2P, 3P, 4P
+    public const float MaxNormalHp = 3.0f;
+    public const float MaxBossHp = 4.5f;
+    public const float MaxEnemyDmg = 1.35f;
+    public static readonly float[] PlayerDmgFactor = { 1.00f, 1.05f, 1.10f }; // 2P, 3P, 4P
+
+    private static string GetCurrentLevelName()
+    {
+        try { return Core.LevelManager?.currentLevel?.LevelName; } catch { return null; }
+    }
+
+    /// <summary>Tier de la sala actual (0-3) o -1 si el nombre de escena no se puede parsear.</summary>
+    public static int GetCurrentRoomTier()
+    {
+        return GetTierForLevelName(GetCurrentLevelName(), out _);
+    }
+
+    private static int GetTierForLevelName(string levelName, out int zoneNum)
+    {
+        zoneNum = -1;
+        if (string.IsNullOrEmpty(levelName)) return UnparseableTier;
+        Match m = LevelNameRegex.Match(levelName);
+        if (!m.Success) return UnparseableTier;
+        zoneNum = int.Parse(m.Groups[1].Value);
+        return ZoneTiers.TryGetValue(zoneNum, out int tier) ? tier : DefaultParseableTier;
+    }
+
+    private static int PlayersIdx => Mathf.Clamp(CoopGameConfig.PlayerCount, 2, 4) - 2;
+
+    private static float ZoneHp(int tier) => tier < 0 ? 1f : TierHp[Mathf.Clamp(tier, 0, TierHp.Length - 1)];
+    private static float ZoneDmg(int tier) => tier < 0 ? 1f : TierDmg[Mathf.Clamp(tier, 0, TierDmg.Length - 1)];
+
+    private static float ElemHp(bool isBoss)
+    {
+        if (!CoopGameConfig.EnableElementalUpgrades) return 1f;
+        return isBoss ? ElemHpBossByPlayers[PlayersIdx] : ElemHpNormal;
+    }
+
+    public static float GetRoomHpFactor(bool isBoss)
+    {
+        if (!CoopGameConfig.IsCoopEnabled || !CoopGameConfig.EnableRoomScaling) return 1f;
+        return ZoneHp(GetCurrentRoomTier()) * ElemHp(isBoss);
+    }
+
+    public static float GetRoomDmgFactor()
+    {
+        if (!CoopGameConfig.IsCoopEnabled || !CoopGameConfig.EnableRoomScaling) return 1f;
+        return Mathf.Min(ZoneDmg(GetCurrentRoomTier()) * PlayerDmgFactor[PlayersIdx], MaxEnemyDmg);
+    }
 
     // Configuración activa
     public static float ActiveEnemyMultiplier = 1.0f;
@@ -177,6 +255,9 @@ public static class CoopEnemyScaling
     {
         if (enemy == null) return false;
         if (enemy is TestDummyEnemy || (!string.IsNullOrEmpty(enemy.Id) && enemy.Id.StartsWith("DUMMY", StringComparison.OrdinalIgnoreCase))) return false;
+        // Resultado cacheado antes del escalado: evita que un normal escalado (life>=350) se reclasifique como jefe
+        var scaledTag = enemy.GetComponent<CoopScaledEnemyTag>();
+        if (scaledTag != null) return scaledTag.IsBossCached;
         if (!string.IsNullOrEmpty(enemy.Id) && enemy.Id.StartsWith("BS", StringComparison.OrdinalIgnoreCase))
         {
             return true;
@@ -254,6 +335,18 @@ public static class CoopEnemyScaling
     /// </summary>
     public static void OnLevelLoaded()
     {
+        try
+        {
+            string ln = GetCurrentLevelName();
+            int tier = GetTierForLevelName(ln, out int zone);
+            if (Main.CoopLocal != null)
+            {
+                Blasphemous.ModdingAPI.ModLog.Info(
+                    $"[CoopEnemyScaling] Nivel '{ln}' -> D{zone:00} tier {tier} (zoneHp x{ZoneHp(tier):F2}, zoneDmg x{ZoneDmg(tier):F2}) elemental={CoopGameConfig.EnableElementalUpgrades} roomScaling={CoopGameConfig.EnableRoomScaling}",
+                    Main.CoopLocal);
+            }
+        }
+        catch (System.Exception __swallowed) { SwallowedExceptions.Report(__swallowed, "CoopEnemyScaling.cs:349"); }
         CoopEnemyScalingRunner.Instance.StartCoroutine(ProcessSceneEnemiesCoroutine());
     }
 
@@ -269,6 +362,9 @@ public static class CoopEnemyScaling
     /// </summary>
     public static void ProcessSceneEnemies()
     {
+        // Online client: enemies are host-authoritative puppets; no scaling, no cloning.
+        if (Blasphemous.CoopLocal.MultiPlayer.CoopNetworkManager.IsOnlineClient) return;
+
         // Si el cooperativo no está activo y la dificultad está en 1x, no modificar nada
         if (!CoopGameConfig.IsCoopEnabled && Mathf.Approximately(ActiveEnemyMultiplier, 1.0f) && Mathf.Approximately(ActiveHealthMultiplier, 1.0f))
         {
@@ -291,11 +387,14 @@ public static class CoopEnemyScaling
                 continue;
             }
 
+            // Clasificar UNA vez antes de tocar la vida (la heuristica life>=350 cambia tras escalar)
+            bool isBoss = IsBoss(enemy);
+
             // 1. Aplicar multiplicador de vida a la entidad (sea jefe o regular)
             ScaleEnemyHp(enemy, ActiveHealthMultiplier);
 
             // 2. Determinar si califica para duplicación de sala (no duplicar jefes, excluidos ni partes hijas)
-            if (!IsBoss(enemy) && !IsExcludedFromDuplication(enemy) && !enemy.Status.Dead && enemy.gameObject.activeInHierarchy)
+            if (!isBoss && !IsExcludedFromDuplication(enemy) && !enemy.Status.Dead && enemy.gameObject.activeInHierarchy)
             {
                 // Asegurar que no sea una sub-parte de otro enemigo
                 if (enemy.transform.parent == null || enemy.transform.parent.GetComponentInParent<Enemy>() == null)
@@ -343,13 +442,35 @@ public static class CoopEnemyScaling
         }
     }
 
+    private static bool IsDummy(Enemy enemy)
+    {
+        return enemy is TestDummyEnemy || (!string.IsNullOrEmpty(enemy.Id) && enemy.Id.StartsWith("DUMMY", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static void ApplyLife(Enemy enemy, float baseHp, float totalMult)
+    {
+        float newMaxHp = baseHp * totalMult;
+        // CRITICO: MaxValue = newMaxHp ya setea Base; el bono permanente se pone a 0 para que Final == Base == newMaxHp
+        // (si no, Final = Base + bono y la barra de jefe se leeria incompleta).
+        enemy.Stats.Life.MaxValue = newMaxHp;
+        enemy.Stats.Life.SetPermanentBonus(0f);
+        enemy.Stats.Life.SetToCurrentMax();
+        enemy.Stats.Life.Current = newMaxHp;
+        enemy.Stats.LifeBase = newMaxHp;
+        enemy.Stats.LifeMaximun = newMaxHp;
+    }
+
     public static void ScaleEnemyHp(Enemy enemy, float mult)
     {
         if (enemy == null) return;
         if (enemy.GetComponent<CoopScaledEnemyTag>() != null) return;
+        if (IsDummy(enemy)) return;
+
+        // Clasificar UNA vez, antes de tocar la vida
+        bool isBoss = IsBoss(enemy);
 
         float effectiveMult = mult;
-        if (IsBoss(enemy) && CoopGameConfig.IsCoopEnabled)
+        if (isBoss && CoopGameConfig.IsCoopEnabled)
         {
             // Para jefes: escala de x2.0 (2 jugadores) hasta x3.5 (4 jugadores) máximo
             int players = Mathf.Clamp(CoopGameConfig.PlayerCount, 2, 4);
@@ -367,7 +488,7 @@ public static class CoopEnemyScaling
                 effectiveMult = Mathf.Clamp(playerBaseline, 2.0f, 3.5f);
             }
         }
-        else if (!IsBoss(enemy) && CoopGameConfig.IsCoopEnabled && mult > 1.01f)
+        else if (!isBoss && CoopGameConfig.IsCoopEnabled && mult > 1.01f)
         {
             // Para enemigos normales: inicia en x1.5 hasta x2.5 máximo
             effectiveMult = Mathf.Clamp(mult, 1.5f, 2.5f);
@@ -375,47 +496,33 @@ public static class CoopEnemyScaling
 
         if (effectiveMult <= 1.01f) return;
 
-        enemy.gameObject.AddComponent<CoopScaledEnemyTag>();
+        if (enemy.Stats == null || enemy.Stats.Life == null) return;
 
-        if (enemy.Stats != null && enemy.Stats.Life != null)
+        float baseHp = enemy.Stats.Life.Base;
+        if (baseHp <= 0f)
         {
-            float baseHp = enemy.Stats.Life.Base;
-            if (baseHp <= 0f)
-            {
-                baseHp = enemy.Stats.Life.CurrentMax > 0f ? enemy.Stats.Life.CurrentMax : enemy.Stats.Life.Current;
-            }
+            baseHp = enemy.Stats.Life.CurrentMax > 0f ? enemy.Stats.Life.CurrentMax : enemy.Stats.Life.Current;
+        }
+        if (baseHp <= 0f) return;
 
-            if (baseHp > 0f)
-            {
-                float newMaxHp = baseHp * effectiveMult;
+        float roomFactor = GetRoomHpFactor(isBoss);
+        float finalMult = Mathf.Min(effectiveMult * roomFactor, isBoss ? MaxBossHp : MaxNormalHp);
 
-                // CRÍTICO: En VariableAttribute (Life), set_MaxValue(newMaxHp) ya actualiza internamente
-                // _maxValue = newMaxHp y llama a base.set_Base(newMaxHp), recalculando la vida.
-                // Si adicionalmente se llamara a SetPermanentBonus(bonus), ese bono se sumaría dos veces
-                // a Final (Final = Base + PermanetBonus = newMaxHp + bonus), mientras Current se clampea
-                // a MaxValue (newMaxHp). Como resultado, la barra de vida del jefe leía:
-                // BarTarget = Current / Final = newMaxHp / (newMaxHp + bonus) (~60%), apareciendo incompleta.
-                //
-                // Por ello:
-                // 1) Asignamos MaxValue = newMaxHp (lo que setea Base = newMaxHp).
-                // 2) Seteamos PermanetBonus a 0 para que Final == Base == newMaxHp.
-                // 3) SetToCurrentMax() setea Current a newMaxHp.
-                // 4) Actualizamos LifeBase y LifeMaximun en EntityStats.
-                enemy.Stats.Life.MaxValue = newMaxHp;
-                enemy.Stats.Life.SetPermanentBonus(0f);
-                enemy.Stats.Life.SetToCurrentMax();
-                enemy.Stats.Life.Current = newMaxHp;
+        var tag = enemy.gameObject.AddComponent<CoopScaledEnemyTag>();
+        tag.IsBossCached = isBoss;
+        tag.BaseLife = baseHp;
+        tag.AppliedHpMult = finalMult;
 
-                enemy.Stats.LifeBase = newMaxHp;
-                enemy.Stats.LifeMaximun = newMaxHp;
+        ApplyLife(enemy, baseHp, finalMult);
 
-                if (IsBoss(enemy) && Main.CoopLocal != null)
-                {
-                    Blasphemous.ModdingAPI.ModLog.Info(
-                        $"[CoopEnemyScaling] Boss '{enemy.name}' escalado: Base={enemy.Stats.Life.Base:F0}, Final={enemy.Stats.Life.Final:F0}, Current={enemy.Stats.Life.Current:F0}, CurrentMax={enemy.Stats.Life.CurrentMax:F0} (x{effectiveMult:F2})",
-                        Main.CoopLocal);
-                }
-            }
+        int tier = GetCurrentRoomTier();
+        DashParryDebugLog.LogVerbose($"[CoopEnemyScaling] {enemy.name} sala='{GetCurrentLevelName()}' tier={tier} zoneHp={ZoneHp(tier):F2} elemHp={ElemHp(isBoss):F2} coopMult={effectiveMult:F2} final=x{finalMult:F2} vida {baseHp:F0}->{enemy.Stats.Life.Final:F0}");
+
+        if (isBoss && Main.CoopLocal != null)
+        {
+            Blasphemous.ModdingAPI.ModLog.Info(
+                $"[CoopEnemyScaling] Boss '{enemy.name}' sala='{GetCurrentLevelName()}' tier={tier} escalado: Base={baseHp:F0}, Final={enemy.Stats.Life.Final:F0}, Current={enemy.Stats.Life.Current:F0}, CurrentMax={enemy.Stats.Life.CurrentMax:F0} (coop x{effectiveMult:F2} * sala x{roomFactor:F2} = x{finalMult:F2})",
+                Main.CoopLocal);
         }
     }
 
@@ -438,7 +545,9 @@ public static class CoopEnemyScaling
 
             // Marcar con tags para no re-clonar ni re-escalar
             cloneObj.AddComponent<CoopClonedEnemyTag>();
-            cloneObj.AddComponent<CoopScaledEnemyTag>();
+            // Instantiate ya copia el tag del original; se reutiliza para no duplicarlo
+            CoopScaledEnemyTag cloneTag = cloneObj.GetComponent<CoopScaledEnemyTag>() ?? cloneObj.AddComponent<CoopScaledEnemyTag>();
+            CoopScaledEnemyTag origTag = original.GetComponent<CoopScaledEnemyTag>();
 
             // Desplazar ligeramente en horizontal para no solaparse en el mismo píxel
             float offsetDir = (cloneIndex % 2 == 1) ? 1.0f : -1.0f;
@@ -451,20 +560,14 @@ public static class CoopEnemyScaling
                 cloneEnemy.Status.Dead = false;
                 if (cloneEnemy.Stats?.Life != null)
                 {
-                    float baseHp = cloneEnemy.Stats.Life.Base;
-                    if (baseHp <= 0f)
+                    // Mismo factor y misma vida base que el original (Life.Base del clon puede venir ya escalado por Instantiate)
+                    if (origTag != null && origTag.BaseLife > 0f && origTag.AppliedHpMult > 1.01f)
                     {
-                        baseHp = cloneEnemy.Stats.Life.CurrentMax > 0f ? cloneEnemy.Stats.Life.CurrentMax : cloneEnemy.Stats.Life.Current;
-                    }
-                    if (baseHp > 0f && ActiveHealthMultiplier > 1.01f)
-                    {
-                        float newMaxHp = baseHp * ActiveHealthMultiplier;
-                        cloneEnemy.Stats.Life.MaxValue = newMaxHp;
-                        cloneEnemy.Stats.Life.SetPermanentBonus(0f);
-                        cloneEnemy.Stats.Life.SetToCurrentMax();
-                        cloneEnemy.Stats.Life.Current = newMaxHp;
-                        cloneEnemy.Stats.LifeBase = newMaxHp;
-                        cloneEnemy.Stats.LifeMaximun = newMaxHp;
+                        cloneTag.IsBossCached = false;
+                        cloneTag.BaseLife = origTag.BaseLife;
+                        cloneTag.AppliedHpMult = origTag.AppliedHpMult;
+                        ApplyLife(cloneEnemy, origTag.BaseLife, origTag.AppliedHpMult);
+                        DashParryDebugLog.LogVerbose($"[CoopEnemyScaling] clon {cloneObj.name} final=x{origTag.AppliedHpMult:F2} vida {origTag.BaseLife:F0}->{cloneEnemy.Stats.Life.Final:F0}");
                     }
                     else
                     {
@@ -511,12 +614,12 @@ internal static class UIController_ShowBossHealth_CoopScaling_Patch
         // Asegurar que las barras de relleno del widget BossHealth comiencen al 100%
         try
         {
-            var bhField = AccessTools.Field(typeof(Gameplay.UI.UIController), "bossHealth");
+            var bhField = Reflect.Field(typeof(Gameplay.UI.UIController), "bossHealth");
             var bh = bhField?.GetValue(__instance) as Gameplay.UI.Others.UIGameLogic.BossHealth;
             if (bh != null)
             {
-                var healthImg = AccessTools.Field(typeof(Gameplay.UI.Others.UIGameLogic.BossHealth), "health")?.GetValue(bh) as UnityEngine.UI.Image;
-                var lossImg = AccessTools.Field(typeof(Gameplay.UI.Others.UIGameLogic.BossHealth), "loss")?.GetValue(bh) as UnityEngine.UI.Image;
+                var healthImg = Reflect.Field(typeof(Gameplay.UI.Others.UIGameLogic.BossHealth), "health")?.GetValue(bh) as UnityEngine.UI.Image;
+                var lossImg = Reflect.Field(typeof(Gameplay.UI.Others.UIGameLogic.BossHealth), "loss")?.GetValue(bh) as UnityEngine.UI.Image;
                 if (healthImg != null) healthImg.fillAmount = 1f;
                 if (lossImg != null) lossImg.fillAmount = 1f;
             }

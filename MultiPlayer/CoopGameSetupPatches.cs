@@ -22,23 +22,23 @@ internal static class CoopGameSetupPatches
         SelectSaveSlots_OnAcceptSlots_CoopSetup_Patch.SuppressVanillaSaveSlotsFrames = 5;
         try
         {
-            var isShowingProp = AccessTools.Property(typeof(SelectSaveSlots), "IsShowing");
+            var isShowingProp = Reflect.Property(typeof(SelectSaveSlots), "IsShowing");
             isShowingProp?.SetValue(instance, true, null);
         }
-        catch { }
+        catch (System.Exception __swallowed) { SwallowedExceptions.Report(__swallowed, "CoopGameSetupPatches.cs:28"); }
 
         try
         {
-            var parentField = AccessTools.Field(typeof(SelectSaveSlots), "parentMainMenu");
+            var parentField = Reflect.Field(typeof(SelectSaveSlots), "parentMainMenu");
             var parentMenu = parentField?.GetValue(instance) as NewMainMenu;
-            var modeField = AccessTools.Field(typeof(SelectSaveSlots), "CurrentSlotsMode");
+            var modeField = Reflect.Field(typeof(SelectSaveSlots), "CurrentSlotsMode");
             var mode = modeField != null ? (SelectSaveSlots.SlotsModes)modeField.GetValue(instance) : 0;
             if (parentMenu != null)
             {
                 instance.SetAllData(parentMenu, mode);
             }
         }
-        catch { }
+        catch (System.Exception __swallowed) { SwallowedExceptions.Report(__swallowed, "CoopGameSetupPatches.cs:41"); }
 
         instance.OnSelectedSlots(capturedSlot);
     }
@@ -60,7 +60,7 @@ internal static class SelectSaveSlots_OnAcceptSlots_CoopSetup_Patch
         if (CoopGameSetupPatches.IsAnyCoopModalOpen || SuppressVanillaSaveSlotsFrames > 0) return false;
         if (!__instance.IsShowing) return true;
 
-        var slotsField = AccessTools.Field(typeof(SelectSaveSlots), "slots");
+        var slotsField = Reflect.Field(typeof(SelectSaveSlots), "slots");
         var slots = slotsField?.GetValue(__instance) as List<SaveSlot>;
         if (slots != null && idxSlot >= 0 && idxSlot < slots.Count)
         {

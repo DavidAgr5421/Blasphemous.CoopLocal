@@ -416,7 +416,7 @@ internal static class BossDamageCoopPatch
 
         foreach (var type in bossEnemyTypes)
         {
-            MethodInfo m = AccessTools.Method(type, "Damage", new Type[] { typeof(Hit) });
+            MethodInfo m = Reflect.Method(type, "Damage", new Type[] { typeof(Hit) });
             if (m != null)
             {
                 yield return m;
@@ -815,7 +815,7 @@ internal static class WickerWurmBehaviour_UpdateLookAtPlayer_Patch
         if (target != null && __instance.ChainMaster != null)
         {
             Vector2 vector = (Vector2)target.transform.position + Vector2.up * 3.5f;
-            var currentSideField = AccessTools.Field(typeof(WickerWurmBehaviour), "currentSide");
+            var currentSideField = Reflect.Field(typeof(WickerWurmBehaviour), "currentSide");
             object sideVal = currentSideField?.GetValue(__instance);
             bool isRight = sideVal != null && sideVal.ToString() == "RIGHT";
             if ((isRight && vector.x < __instance.transform.position.x - 2f) || (!isRight && vector.x < __instance.transform.position.x + 2f))

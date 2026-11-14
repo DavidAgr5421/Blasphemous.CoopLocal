@@ -98,7 +98,7 @@ internal static class Player2InventoryManager
 
     {
 
-        try { foreach (var b in Core.InventoryManager.GetRosaryBeadOwned()) if (b.id == id) return true; } catch { }
+        try { foreach (var b in Core.InventoryManager.GetRosaryBeadOwned()) if (b.id == id) return true; } catch (System.Exception __swallowed) { SwallowedExceptions.Report(__swallowed, "Player2InventoryManager.cs:101"); }
 
         return false;
 
@@ -162,7 +162,7 @@ internal static class Player2InventoryManager
 
             }
 
-            catch { }
+            catch (System.Exception __swallowed) { SwallowedExceptions.Report(__swallowed, "Player2InventoryManager.cs:165"); }
 
         }
 
@@ -228,7 +228,7 @@ internal static class Player2InventoryManager
 
             }
 
-            catch { }
+            catch (System.Exception __swallowed) { SwallowedExceptions.Report(__swallowed, "Player2InventoryManager.cs:231"); }
 
         }
 
@@ -342,7 +342,7 @@ internal static class Player2InventoryManager
 
         {
 
-            try { foreach (var s in Core.InventoryManager.GetSwordsOwned()) if (s.id == clean) return true; } catch { }
+            try { foreach (var s in Core.InventoryManager.GetSwordsOwned()) if (s.id == clean) return true; } catch (System.Exception __swallowed) { SwallowedExceptions.Report(__swallowed, "Player2InventoryManager.cs:345"); }
 
         }
 
@@ -576,7 +576,7 @@ internal static class Player2InventoryManager
 
     {
 
-        for (int p = 0; p < CoopPlayerRegistry.MaxPlayers; p++)
+        for (int p = 1; p < CoopPlayerRegistry.MaxPlayers; p++)
 
         {
 
@@ -594,7 +594,7 @@ internal static class Player2InventoryManager
 
     {
 
-        for (int p = 0; p < CoopPlayerRegistry.MaxPlayers; p++)
+        for (int p = 1; p < CoopPlayerRegistry.MaxPlayers; p++)
 
         {
 
@@ -612,7 +612,7 @@ internal static class Player2InventoryManager
 
     {
 
-        for (int p = 0; p < CoopPlayerRegistry.MaxPlayers; p++)
+        for (int p = 1; p < CoopPlayerRegistry.MaxPlayers; p++)
 
         {
 
@@ -684,13 +684,13 @@ internal static class Player2InventoryManager
     }
 
     private static readonly System.Reflection.FieldInfo VanillaOwnPrayersField =
-        HarmonyLib.AccessTools.Field(typeof(InventoryManager), "ownPrayers");
+        Reflect.Field(typeof(InventoryManager), "ownPrayers");
     private static readonly System.Reflection.FieldInfo VanillaOwnBeadsField =
-        HarmonyLib.AccessTools.Field(typeof(InventoryManager), "ownBeads");
+        Reflect.Field(typeof(InventoryManager), "ownBeads");
     private static readonly System.Reflection.FieldInfo VanillaOwnRelicsField =
-        HarmonyLib.AccessTools.Field(typeof(InventoryManager), "ownRellics");
+        Reflect.Field(typeof(InventoryManager), "ownRellics");
     private static readonly System.Reflection.FieldInfo VanillaOwnSwordsField =
-        HarmonyLib.AccessTools.Field(typeof(InventoryManager), "ownSwords");
+        Reflect.Field(typeof(InventoryManager), "ownSwords");
 
     internal static void SyncAllVanillaInventoryToCoopPlayers()
     {

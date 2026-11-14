@@ -135,6 +135,8 @@ public class CoopPlayerPauseMenu : MonoBehaviour
         Outline pnlOutline = panelObj.AddComponent<Outline>();
         pnlOutline.effectColor = new Color(0.70f, 0.58f, 0.32f, 0.90f);
         pnlOutline.effectDistance = new Vector2(3f, -3f);
+        CoopUiStyle.StylePanel(panelObj);
+        CoopUiStyle.StyleOverlay(doImg);
 
         // Título del Jugador (Cabecera)
         GameObject hdrObj = new GameObject("HeaderTitle");
@@ -664,7 +666,7 @@ internal static class UIController_Update_CoopPause_Patch
 {
     private static bool Prefix()
     {
-        if (CoopPlayerPauseMenu.IsOpen)
+        if (CoopPlayerPauseMenu.IsOpen || CoopDebugMenu.IsOpen)
         {
             return false;
         }

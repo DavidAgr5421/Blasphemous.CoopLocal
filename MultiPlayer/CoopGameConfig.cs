@@ -58,22 +58,23 @@ internal static class CoopGameConfig
     public static int PlayerCount = 2; // 1 a 4
     public static bool EnableElementalUpgrades = true;
     public static bool VerboseDebugLog = false;
+    public static bool EnableRoomScaling = true; // debug, no persistido: desactiva el escalado por sala/zona (HP y daño enemigo)
 
     // Configuración visual del árbol elemental (posición y escala calibradas para 3 columnas: Veneno | Vanilla | Sangrado | Electricidad)
-    public const float DefaultTreeOffsetX = 1.0f;
-    public const float DefaultTreeOffsetY = -1.5f;
-    public const float DefaultTreeScale = 0.73f;
+    public const float DefaultTreeOffsetX = -0.02349901f;
+    public const float DefaultTreeOffsetY = -1.0f;
+    public const float DefaultTreeScale = 1.01f;
     public const float DefaultSkillTextScale = 1.0f; // Escala del texto de descripciones ({ aumenta, } disminuye)
-    public const float DefaultElementalBranchSpacing = 237.0f; // Distancia horizontal entre rama Veneno y Sangrado (calibrado)
-    public const float DefaultElementalNodeVerticalSpacing = 86.0f; // Distancia vertical entre niveles I, II y III
-    public const float DefaultElectricoColumnOffset = 37.0f; // Desplazamiento horizontal de la columna Electricidad a la derecha de Sangrado
-    public const float DefaultMaldicionColumnOffset = 38.0f; // Desplazamiento horizontal de la columna Maldición a la izquierda de Veneno
+    public const float DefaultElementalBranchSpacing = 170.0f; // Distancia horizontal entre rama Veneno y Sangrado (calibrado)
+    public const float DefaultElementalNodeVerticalSpacing = 60.0f; // Distancia vertical entre niveles I, II y III
+    public const float DefaultElectricoColumnOffset = 35.0f; // Desplazamiento horizontal de la columna Electricidad a la derecha de Sangrado
+    public const float DefaultMaldicionColumnOffset = 32.0f; // Desplazamiento horizontal de la columna Maldición a la izquierda de Veneno
     public const float DefaultDescPanelOffsetX = 6.0f; // Desplazamiento del panel de descripción del menú de habilidades (relativo a su posición base)
     public const float DefaultDescPanelOffsetY = 4.0f;
-    public const float DefaultDescPanelScale = 0.99f;
+    public const float DefaultDescPanelScale = 0.96f;
 
     // Versión del layout del árbol. Si el cfg guardado tiene una versión menor, se restablecen los parámetros de árbol/descripción a los defaults actuales.
-    public const int CurrentTreeLayoutVersion = 2;
+    public const int CurrentTreeLayoutVersion = 3;
 
     public static float TreeOffsetX = DefaultTreeOffsetX;
     public static float TreeOffsetY = DefaultTreeOffsetY;
@@ -206,7 +207,7 @@ internal static class CoopGameConfig
                     return Path.Combine(dir, "coop_game_settings.cfg");
                 }
             }
-            catch { /* ignorado intencionalmente: Application.persistentDataPath puede no estar disponible antes de inicializar Unity */ }
+            catch (System.Exception __swallowed) { SwallowedExceptions.Report(__swallowed, "CoopGameConfig.cs:210"); }
             return null;
         }
     }
@@ -227,7 +228,7 @@ internal static class CoopGameConfig
                     }
                 }
             }
-            catch { /* ignorado intencionalmente: Application.persistentDataPath puede no estar disponible antes de inicializar Unity */ }
+            catch (System.Exception __swallowed) { SwallowedExceptions.Report(__swallowed, "CoopGameConfig.cs:231"); }
             return null;
         }
     }
@@ -244,7 +245,7 @@ internal static class CoopGameConfig
                     return Path.Combine(Path.Combine(Path.Combine(baseDir, "Modding"), "config"), "coop_game_settings.cfg");
                 }
             }
-            catch { /* ignorado intencionalmente: Application.persistentDataPath puede no estar disponible antes de inicializar Unity */ }
+            catch (System.Exception __swallowed) { SwallowedExceptions.Report(__swallowed, "CoopGameConfig.cs:248"); }
             return null;
         }
     }
@@ -373,13 +374,13 @@ internal static class CoopGameConfig
             string primary = PrimaryConfigPath;
             if (!string.IsNullOrEmpty(primary))
             {
-                try { File.WriteAllText(primary, content); } catch { }
+                try { File.WriteAllText(primary, content); } catch (System.Exception __swallowed) { SwallowedExceptions.Report(__swallowed, "CoopGameConfig.cs:377"); }
             }
 
             string secondary = SecondaryConfigPath;
             if (!string.IsNullOrEmpty(secondary) && !string.Equals(secondary, primary, StringComparison.OrdinalIgnoreCase))
             {
-                try { File.WriteAllText(secondary, content); } catch { }
+                try { File.WriteAllText(secondary, content); } catch (System.Exception __swallowed) { SwallowedExceptions.Report(__swallowed, "CoopGameConfig.cs:383"); }
             }
 
             string tertiary = TertiaryConfigPath;
@@ -393,7 +394,7 @@ internal static class CoopGameConfig
                         File.WriteAllText(tertiary, content);
                     }
                 }
-                catch { /* ignorado intencionalmente: Application.persistentDataPath puede no estar disponible antes de inicializar Unity */ }
+                catch (System.Exception __swallowed) { SwallowedExceptions.Report(__swallowed, "CoopGameConfig.cs:397"); }
             }
 
             int currentSlot = CoopSaveManager.CurrentSlot;

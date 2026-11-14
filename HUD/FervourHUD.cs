@@ -65,10 +65,10 @@ internal static class CoopFervourBars
 {
     private static readonly FervourBarSlotInfo[] slots = new FervourBarSlotInfo[4];
     private static PlayerFervour originalCache;
-    private static readonly FieldInfo GlobalInstanceField = AccessTools.Field(typeof(PlayerFervour), "<Instance>k__BackingField");
-    private static readonly FieldInfo LastBarWidthField = AccessTools.Field(typeof(PlayerFervour), "lastBarWidth");
-    private static readonly MethodInfo CalculateBarSizeMethod = AccessTools.Method(typeof(PlayerFervour), "CalculateBarSize");
-    private static readonly MethodInfo CalculateFillsBarsMethod = AccessTools.Method(typeof(PlayerFervour), "CalculateFillsBars");
+    private static readonly FieldInfo GlobalInstanceField = Reflect.Field(typeof(PlayerFervour), "<Instance>k__BackingField");
+    private static readonly FieldInfo LastBarWidthField = Reflect.Field(typeof(PlayerFervour), "lastBarWidth");
+    private static readonly MethodInfo CalculateBarSizeMethod = Reflect.Method(typeof(PlayerFervour), "CalculateBarSize");
+    private static readonly MethodInfo CalculateFillsBarsMethod = Reflect.Method(typeof(PlayerFervour), "CalculateFillsBars");
 
     static CoopFervourBars()
     {
@@ -160,6 +160,13 @@ internal static class CoopFervourBars
         }
     }
 
+    // Hijos de "LeftPart" que necesita la barra de fervor/matraces (PlayerFervour referencia PrayerDetail*, Spark y PrayerTimer;
+    // PlayerFlask busca Flask0..N dentro de "Flask"; "Image Fore" es el marco del retrato, como hasta ahora).
+    private static readonly string[] FervourCloneParts =
+    {
+        "Fervour Bar", "Flask", "PrayerDetail", "PrayerDetail PE02", "Spark", "PrayerTimer", "Image Fore"
+    };
+
     internal static void EnsureCreated(int slotIndex, Penitent penitent)
     {
         if (slotIndex <= 0 || slotIndex >= slots.Length) return;
@@ -204,6 +211,20 @@ internal static class CoopFervourBars
 
         GameObject cloneObject = UnityEngine.Object.Instantiate(sourceToClone, cloneParent);
         cloneObject.name = $"PlayerFervour_P{slotIndex + 1}";
+        HudCloneCleaner.DumpOnce("Fervour ORIGINAL parent", sourceToClone.transform);
+        // PlayerFervour cuelga de "Fervour Bar", cuyo padre es "LeftPart" = TODO el HUD izquierdo de P1 (verificado en los datos del
+        // juego): al clonarlo venía también la barra de vida roja de P1, los matraces, la penitencia, las llaves de jefe, etc.
+        // Se conservan solo las piezas del fervor (lista explícita); si el juego renombrara "Fervour Bar", se usa el método antiguo.
+        int stripped = HudCloneCleaner.KeepOnlyChildren(cloneObject, FervourCloneParts, "Fervour Bar");
+        if (stripped < 0)
+        {
+            stripped = HudCloneCleaner.StripForeign(cloneObject,
+                new[] { typeof(PlayerHealth), typeof(PlayerHealthDemake), typeof(PlayerHealthPE02) },
+                new[] { typeof(PlayerFervour), typeof(PlayerFlask) });
+            DashParryDebugLog.Log($"[HudClone] Fervour P{slotIndex + 1}: no se encontró 'Fervour Bar'; usado limpiado por tipos ({stripped}).");
+        }
+        else if (stripped > 0) DashParryDebugLog.Log($"[HudClone] Fervour P{slotIndex + 1}: conservadas las piezas de fervor, eliminados {stripped} objetos ajenos del HUD de P1.");
+        HudCloneCleaner.DumpOnce("Fervour CLONE (tras limpiar)", cloneObject.transform);
         slot.InstanceRoot = cloneObject;
         slot.Instance = cloneObject.GetComponentInChildren<PlayerFervour>();
         slot.FlaskInstance = cloneObject.GetComponentInChildren<PlayerFlask>();
@@ -225,71 +246,13 @@ internal static class CoopFervourBars
         if (rect != null)
         {
             bool is3Plus = CoopGameConfig.IsHudLayout3Plus;
-            var cfg = HudLayoutConfig.Current;
-
-            if (slotIndex == 1) // P2
-            {
-                if (!is3Plus)
-                {
-                    // Modo 2 Jugadores: esquina inferior derecha (idéntico al original)
-                    rect.anchorMin = new Vector2(1f, 0f);
-                    rect.anchorMax = new Vector2(1f, 0f);
-                    rect.pivot = new Vector2(1f, 0f);
-                    slot.Scale = cfg.p2_fervour_2p.scale;
-                    slot.AnchoredPosition = cfg.p2_fervour_2p.Position;
-                }
-                else
-                {
-                    // Modo 3-4 Jugadores: esquina superior derecha, configurable independientemente
-                    rect.anchorMin = new Vector2(1f, 1f);
-                    rect.anchorMax = new Vector2(1f, 1f);
-                    rect.pivot = new Vector2(1f, 1f);
-                    if (cfg.isCustomSaved && cfg.p2_fervour != null)
-                    {
-                        slot.Scale = cfg.p2_fervour.scale;
-                        slot.AnchoredPosition = cfg.p2_fervour.Position;
-                    }
-                    else
-                    {
-                        slot.Scale = cfg.p2_health.scale;
-                        slot.AnchoredPosition = cfg.p2_health.Position + new Vector2(44f * slot.Scale, 27f * slot.Scale);
-                    }
-                }
-            }
-            else if (slotIndex == 2) // P3
-            {
-                // Modo 3-4 Jugadores: esquina superior izquierda, configurable independientemente
-                rect.anchorMin = new Vector2(0f, 1f);
-                rect.anchorMax = new Vector2(0f, 1f);
-                rect.pivot = new Vector2(0f, 1f);
-                if (cfg.isCustomSaved && cfg.p3_fervour != null)
-                {
-                    slot.Scale = cfg.p3_fervour.scale;
-                    slot.AnchoredPosition = cfg.p3_fervour.Position;
-                }
-                else
-                {
-                    slot.Scale = cfg.p3_health.scale;
-                    slot.AnchoredPosition = cfg.p3_health.Position + new Vector2(44f * slot.Scale, 27f * slot.Scale);
-                }
-            }
-            else if (slotIndex == 3) // P4
-            {
-                // Modo 3-4 Jugadores: esquina superior derecha, configurable independientemente
-                rect.anchorMin = new Vector2(1f, 1f);
-                rect.anchorMax = new Vector2(1f, 1f);
-                rect.pivot = new Vector2(1f, 1f);
-                if (cfg.isCustomSaved && cfg.p4_fervour != null)
-                {
-                    slot.Scale = cfg.p4_fervour.scale;
-                    slot.AnchoredPosition = cfg.p4_fervour.Position;
-                }
-                else
-                {
-                    slot.Scale = cfg.p4_health.scale;
-                    slot.AnchoredPosition = cfg.p4_health.Position + new Vector2(44f * slot.Scale, 27f * slot.Scale);
-                }
-            }
+            // Ancla, posición y escala salen del contexto del jugador (layout guardado + modo 2P / 3-4P).
+            CoopPlayerContext.HudPlacement placement = CoopPlayers.Get(slotIndex).GetHudPlacement(CoopPlayerContext.HudElement.Fervour, is3Plus);
+            rect.anchorMin = placement.Anchor;
+            rect.anchorMax = placement.Anchor;
+            rect.pivot = placement.Anchor;
+            slot.Scale = placement.Scale;
+            slot.AnchoredPosition = placement.Position;
 
             rect.anchoredPosition = slot.AnchoredPosition;
             rect.localScale = Vector3.one * slot.Scale;
@@ -307,6 +270,9 @@ internal static class CoopFervourBars
 
         if (slot.Instance != null)
         {
+            // PlayerFervour vanilla solo se habilita en LevelManager.OnLevelLoaded; un clon creado
+            // después de cargar la sala quedaba congelado (sin Update) hasta el siguiente cambio de sala.
+            slot.Instance.enabled = true;
             if (CalculateBarSizeMethod != null) CalculateBarSizeMethod.Invoke(slot.Instance, null);
             if (CalculateFillsBarsMethod != null) CalculateFillsBarsMethod.Invoke(slot.Instance, null);
         }
@@ -381,20 +347,20 @@ internal static class PlayerFervour_BarTarget_P2_Patch
 [HarmonyPatch(typeof(PlayerFervour), "Update")]
 internal static class PlayerFervour_Update_P2_Patch
 {
-    private static readonly FieldInfo NormalPrayerInUseField = AccessTools.Field(typeof(PlayerFervour), "normalPrayerInUse");
-    private static readonly FieldInfo Pe02PrayerInUseField = AccessTools.Field(typeof(PlayerFervour), "pe02PrayerInUse");
-    private static readonly FieldInfo PrayerTimerField = AccessTools.Field(typeof(PlayerFervour), "prayerTimer");
-    private static readonly FieldInfo LastValueField = AccessTools.Field(typeof(PlayerFervour), "lastValue");
-    private static readonly FieldInfo FillsIncreaseField = AccessTools.Field(typeof(PlayerFervour), "fillsIncrease");
-    private static readonly FieldInfo TimeElapsedField = AccessTools.Field(typeof(PlayerFervour), "_timeElapsed");
-    private static readonly FieldInfo LastMaxFervourField = AccessTools.Field(typeof(PlayerFervour), "lastMaxFervour");
-    private static readonly MethodInfo CalculateBarSizeMethod = AccessTools.Method(typeof(PlayerFervour), "CalculateBarSize");
-    private static readonly MethodInfo CalculateFillsBarsMethod = AccessTools.Method(typeof(PlayerFervour), "CalculateFillsBars");
-    private static readonly MethodInfo CalculateMarksMethod = AccessTools.Method(typeof(PlayerFervour), "CalculateMarks");
-    private static readonly MethodInfo CalculateNotEnoughMethod = AccessTools.Method(typeof(PlayerFervour), "CalculateNotEnough");
-    private static readonly MethodInfo CalculateBarPentaltyMethod = AccessTools.Method(typeof(PlayerFervour), "CalculateBarPentalty");
-    private static readonly FieldInfo DiagFillExactField = AccessTools.Field(typeof(PlayerFervour), "fillExact");
-    private static readonly FieldInfo DiagFillAnimableField = AccessTools.Field(typeof(PlayerFervour), "fillAnimable");
+    private static readonly FieldInfo NormalPrayerInUseField = Reflect.Field(typeof(PlayerFervour), "normalPrayerInUse");
+    private static readonly FieldInfo Pe02PrayerInUseField = Reflect.Field(typeof(PlayerFervour), "pe02PrayerInUse");
+    private static readonly FieldInfo PrayerTimerField = Reflect.Field(typeof(PlayerFervour), "prayerTimer");
+    private static readonly FieldInfo LastValueField = Reflect.Field(typeof(PlayerFervour), "lastValue");
+    private static readonly FieldInfo FillsIncreaseField = Reflect.Field(typeof(PlayerFervour), "fillsIncrease");
+    private static readonly FieldInfo TimeElapsedField = Reflect.Field(typeof(PlayerFervour), "_timeElapsed");
+    private static readonly FieldInfo LastMaxFervourField = Reflect.Field(typeof(PlayerFervour), "lastMaxFervour");
+    private static readonly MethodInfo CalculateBarSizeMethod = Reflect.Method(typeof(PlayerFervour), "CalculateBarSize");
+    private static readonly MethodInfo CalculateFillsBarsMethod = Reflect.Method(typeof(PlayerFervour), "CalculateFillsBars");
+    private static readonly MethodInfo CalculateMarksMethod = Reflect.Method(typeof(PlayerFervour), "CalculateMarks");
+    private static readonly MethodInfo CalculateNotEnoughMethod = Reflect.Method(typeof(PlayerFervour), "CalculateNotEnough");
+    private static readonly MethodInfo CalculateBarPentaltyMethod = Reflect.Method(typeof(PlayerFervour), "CalculateBarPentalty");
+    private static readonly FieldInfo DiagFillExactField = Reflect.Field(typeof(PlayerFervour), "fillExact");
+    private static readonly FieldInfo DiagFillAnimableField = Reflect.Field(typeof(PlayerFervour), "fillAnimable");
 
     private static bool Prefix(PlayerFervour __instance)
     {
@@ -447,15 +413,15 @@ internal static class PlayerFervour_Update_P2_Patch
 [HarmonyPatch(typeof(PlayerFervour), "CalculateBarSize")]
 internal static class PlayerFervour_CalculateBarSize_P2_Patch
 {
-    private static readonly FieldInfo LastBarWidthField = AccessTools.Field(typeof(PlayerFervour), "lastBarWidth");
-    private static readonly FieldInfo BackgroundStartSizeField = AccessTools.Field(typeof(PlayerFervour), "backgroundStartSize");
-    private static readonly FieldInfo EndFillSizeField = AccessTools.Field(typeof(PlayerFervour), "endFillSize");
-    private static readonly FieldInfo BackgroundMidField = AccessTools.Field(typeof(PlayerFervour), "backgroundMid");
-    private static readonly FieldInfo FillExactTransformField = AccessTools.Field(typeof(PlayerFervour), "fillExactTransform");
-    private static readonly FieldInfo FillExactFullTransformField = AccessTools.Field(typeof(PlayerFervour), "fillExactFullTransform");
-    private static readonly FieldInfo FillAnimableTransformField = AccessTools.Field(typeof(PlayerFervour), "fillAnimableTransform");
-    private static readonly FieldInfo BackgroundField = AccessTools.Field(typeof(PlayerFervour), "background");
-    private static readonly FieldInfo FillNotEnoughTransformField = AccessTools.Field(typeof(PlayerFervour), "fillNotEnoughTransform");
+    private static readonly FieldInfo LastBarWidthField = Reflect.Field(typeof(PlayerFervour), "lastBarWidth");
+    private static readonly FieldInfo BackgroundStartSizeField = Reflect.Field(typeof(PlayerFervour), "backgroundStartSize");
+    private static readonly FieldInfo EndFillSizeField = Reflect.Field(typeof(PlayerFervour), "endFillSize");
+    private static readonly FieldInfo BackgroundMidField = Reflect.Field(typeof(PlayerFervour), "backgroundMid");
+    private static readonly FieldInfo FillExactTransformField = Reflect.Field(typeof(PlayerFervour), "fillExactTransform");
+    private static readonly FieldInfo FillExactFullTransformField = Reflect.Field(typeof(PlayerFervour), "fillExactFullTransform");
+    private static readonly FieldInfo FillAnimableTransformField = Reflect.Field(typeof(PlayerFervour), "fillAnimableTransform");
+    private static readonly FieldInfo BackgroundField = Reflect.Field(typeof(PlayerFervour), "background");
+    private static readonly FieldInfo FillNotEnoughTransformField = Reflect.Field(typeof(PlayerFervour), "fillNotEnoughTransform");
 
     private static bool Prefix(PlayerFervour __instance)
     {
@@ -501,14 +467,14 @@ internal static class PlayerFervour_CalculateBarSize_P2_Patch
 [HarmonyPatch(typeof(PlayerFervour), "CalculateFillsBars")]
 internal static class PlayerFervour_CalculateFillsBars_P2_Patch
 {
-    private static readonly FieldInfo TimeElapsedField = AccessTools.Field(typeof(PlayerFervour), "_timeElapsed");
-    private static readonly FieldInfo FillsIncreaseField = AccessTools.Field(typeof(PlayerFervour), "fillsIncrease");
-    private static readonly FieldInfo FillExactField = AccessTools.Field(typeof(PlayerFervour), "fillExact");
-    private static readonly FieldInfo FillAnimableField = AccessTools.Field(typeof(PlayerFervour), "fillAnimable");
-    private static readonly FieldInfo FillNotEnoughField = AccessTools.Field(typeof(PlayerFervour), "fillNotEnough");
-    private static readonly FieldInfo AddAnimationCurveField = AccessTools.Field(typeof(PlayerFervour), "AddAnimationCurve");
-    private static readonly FieldInfo LossAnimationCurveField = AccessTools.Field(typeof(PlayerFervour), "LossAnimationCurve");
-    private static readonly FieldInfo FervourSparkField = AccessTools.Field(typeof(PlayerFervour), "fervourSpark");
+    private static readonly FieldInfo TimeElapsedField = Reflect.Field(typeof(PlayerFervour), "_timeElapsed");
+    private static readonly FieldInfo FillsIncreaseField = Reflect.Field(typeof(PlayerFervour), "fillsIncrease");
+    private static readonly FieldInfo FillExactField = Reflect.Field(typeof(PlayerFervour), "fillExact");
+    private static readonly FieldInfo FillAnimableField = Reflect.Field(typeof(PlayerFervour), "fillAnimable");
+    private static readonly FieldInfo FillNotEnoughField = Reflect.Field(typeof(PlayerFervour), "fillNotEnough");
+    private static readonly FieldInfo AddAnimationCurveField = Reflect.Field(typeof(PlayerFervour), "AddAnimationCurve");
+    private static readonly FieldInfo LossAnimationCurveField = Reflect.Field(typeof(PlayerFervour), "LossAnimationCurve");
+    private static readonly FieldInfo FervourSparkField = Reflect.Field(typeof(PlayerFervour), "fervourSpark");
 
     private static bool Prefix(PlayerFervour __instance)
     {
@@ -574,22 +540,22 @@ internal static class PlayerFervour_CalculateFillsBars_P2_Patch
 [HarmonyPatch(typeof(PlayerFervour), "CalculateMarks")]
 internal static class PlayerFervour_CalculateMarks_P2_Patch
 {
-    private static readonly FieldInfo FillExactFullField = AccessTools.Field(typeof(PlayerFervour), "fillExactFull");
-    private static readonly FieldInfo EpsilonToShowLastBarField = AccessTools.Field(typeof(PlayerFervour), "epsilonToShowLastBar");
-    private static readonly FieldInfo CurrentMarksField = AccessTools.Field(typeof(PlayerFervour), "currentMarks");
-    private static readonly FieldInfo CurrentMarksSeparationField = AccessTools.Field(typeof(PlayerFervour), "currentMarksSeparation");
-    private static readonly FieldInfo CurrentSegmentsFilledField = AccessTools.Field(typeof(PlayerFervour), "currentSegmentsFilled");
-    private static readonly FieldInfo MarksParentField = AccessTools.Field(typeof(PlayerFervour), "marksParent");
-    private static readonly FieldInfo BarMaskChildNameField = AccessTools.Field(typeof(PlayerFervour), "barMaskChildName");
-    private static readonly FieldInfo BarBarChildNameField = AccessTools.Field(typeof(PlayerFervour), "barBarChildName");
-    private static readonly FieldInfo BarAnimChildNameField = AccessTools.Field(typeof(PlayerFervour), "barAnimChildName");
-    private static readonly FieldInfo BarAnimEndPositionField = AccessTools.Field(typeof(PlayerFervour), "barAnimEndPosition");
-    private static readonly FieldInfo BarAnimMovementPerElapsedField = AccessTools.Field(typeof(PlayerFervour), "barAnimMovementPerElapsed");
-    private static readonly FieldInfo BarAnimUpdatedElapsedField = AccessTools.Field(typeof(PlayerFervour), "barAnimUpdatedElapsed");
-    private static readonly FieldInfo CurrentAnimPositionField = AccessTools.Field(typeof(PlayerFervour), "currentAnimPosition");
-    private static readonly FieldInfo CurrentAnimElapsedField = AccessTools.Field(typeof(PlayerFervour), "currentAnimElapsed");
-    private static readonly FieldInfo AnimsField = AccessTools.Field(typeof(PlayerFervour), "anims");
-    private static readonly MethodInfo SetBarPositionMethod = AccessTools.Method(typeof(PlayerFervour), "SetBarPosition");
+    private static readonly FieldInfo FillExactFullField = Reflect.Field(typeof(PlayerFervour), "fillExactFull");
+    private static readonly FieldInfo EpsilonToShowLastBarField = Reflect.Field(typeof(PlayerFervour), "epsilonToShowLastBar");
+    private static readonly FieldInfo CurrentMarksField = Reflect.Field(typeof(PlayerFervour), "currentMarks");
+    private static readonly FieldInfo CurrentMarksSeparationField = Reflect.Field(typeof(PlayerFervour), "currentMarksSeparation");
+    private static readonly FieldInfo CurrentSegmentsFilledField = Reflect.Field(typeof(PlayerFervour), "currentSegmentsFilled");
+    private static readonly FieldInfo MarksParentField = Reflect.Field(typeof(PlayerFervour), "marksParent");
+    private static readonly FieldInfo BarMaskChildNameField = Reflect.Field(typeof(PlayerFervour), "barMaskChildName");
+    private static readonly FieldInfo BarBarChildNameField = Reflect.Field(typeof(PlayerFervour), "barBarChildName");
+    private static readonly FieldInfo BarAnimChildNameField = Reflect.Field(typeof(PlayerFervour), "barAnimChildName");
+    private static readonly FieldInfo BarAnimEndPositionField = Reflect.Field(typeof(PlayerFervour), "barAnimEndPosition");
+    private static readonly FieldInfo BarAnimMovementPerElapsedField = Reflect.Field(typeof(PlayerFervour), "barAnimMovementPerElapsed");
+    private static readonly FieldInfo BarAnimUpdatedElapsedField = Reflect.Field(typeof(PlayerFervour), "barAnimUpdatedElapsed");
+    private static readonly FieldInfo CurrentAnimPositionField = Reflect.Field(typeof(PlayerFervour), "currentAnimPosition");
+    private static readonly FieldInfo CurrentAnimElapsedField = Reflect.Field(typeof(PlayerFervour), "currentAnimElapsed");
+    private static readonly FieldInfo AnimsField = Reflect.Field(typeof(PlayerFervour), "anims");
+    private static readonly MethodInfo SetBarPositionMethod = Reflect.Method(typeof(PlayerFervour), "SetBarPosition");
 
     private static bool Prefix(PlayerFervour __instance)
     {

@@ -14,9 +14,9 @@ namespace Blasphemous.CoopLocal;
 
 internal static class PlayerDeathFixShared
 {
-    internal static readonly MethodInfo GetPurgeMethod = AccessTools.Method(typeof(Penitent), "GetPurge");
-    internal static readonly MethodInfo EnableAbilitiesMethod = AccessTools.Method(typeof(Penitent), "EnableAbilities");
-    internal static readonly MethodInfo EnableTraitsMethod = AccessTools.Method(typeof(Penitent), "EnableTraits");
+    internal static readonly MethodInfo GetPurgeMethod = Reflect.Method(typeof(Penitent), "GetPurge");
+    internal static readonly MethodInfo EnableAbilitiesMethod = Reflect.Method(typeof(Penitent), "EnableAbilities");
+    internal static readonly MethodInfo EnableTraitsMethod = Reflect.Method(typeof(Penitent), "EnableTraits");
 
     internal static bool IsRespawningAllPlayers = false;
 
@@ -249,7 +249,7 @@ internal static class Penitent_OnEntityDead_P2Fix_Patch
 [HarmonyPatch(typeof(Penitent), "OnUpdate")]
 internal static class Penitent_OnUpdate_P2Death_Patch
 {
-    private static readonly FieldInfo OnDeadField = AccessTools.Field(typeof(Penitent), "OnDead");
+    private static readonly FieldInfo OnDeadField = Reflect.Field(typeof(Penitent), "OnDead");
     internal static bool IsAllDeadEventLaunched = false;
 
     private static bool Prefix(Penitent __instance)
@@ -382,7 +382,7 @@ internal static class PersistentManager_LoadGame_CoopDeath_Patch
 [HarmonyPatch(typeof(PlayerDeathAnimationBehaviour), "OnStateEnter")]
 internal static class PlayerDeathAnimationBehaviour_OnStateEnter_P2Fix_Patch
 {
-    private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(PlayerDeathAnimationBehaviour), "_penitent");
+    private static readonly FieldInfo PenitentField = Reflect.Field(typeof(PlayerDeathAnimationBehaviour), "_penitent");
     private static void Prefix(Animator animator, PlayerDeathAnimationBehaviour __instance)
     {
         Penitent owner = animator.GetComponentInParent<Penitent>();
@@ -396,7 +396,7 @@ internal static class PlayerDeathAnimationBehaviour_OnStateEnter_P2Fix_Patch
 [HarmonyPatch(typeof(PlayerDeathAnimationBehaviour), "OnStateUpdate")]
 internal static class PlayerDeathAnimationBehaviour_OnStateUpdate_P1Fix_Patch
 {
-    private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(PlayerDeathAnimationBehaviour), "_penitent");
+    private static readonly FieldInfo PenitentField = Reflect.Field(typeof(PlayerDeathAnimationBehaviour), "_penitent");
 
     private static void Postfix(Animator animator, AnimatorStateInfo stateInfo, PlayerDeathAnimationBehaviour __instance)
     {
@@ -418,7 +418,7 @@ internal static class PlayerDeathAnimationBehaviour_OnStateUpdate_P1Fix_Patch
 [HarmonyPatch(typeof(PlayerDeathFallBehaviour), "OnStateEnter")]
 internal static class PlayerDeathFallBehaviour_OnStateEnter_P2Fix_Patch
 {
-    private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(PlayerDeathFallBehaviour), "_penitent");
+    private static readonly FieldInfo PenitentField = Reflect.Field(typeof(PlayerDeathFallBehaviour), "_penitent");
     private static void Prefix(Animator animator, PlayerDeathFallBehaviour __instance)
     {
         Penitent owner = animator.GetComponentInParent<Penitent>();
@@ -432,7 +432,7 @@ internal static class PlayerDeathFallBehaviour_OnStateEnter_P2Fix_Patch
 [HarmonyPatch(typeof(PlayerDeathSpikeBehaviour), "OnStateEnter")]
 internal static class PlayerDeathSpikeBehaviour_OnStateEnter_P2Fix_Patch
 {
-    private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(PlayerDeathSpikeBehaviour), "_penitent");
+    private static readonly FieldInfo PenitentField = Reflect.Field(typeof(PlayerDeathSpikeBehaviour), "_penitent");
     private static void Prefix(Animator animator, PlayerDeathSpikeBehaviour __instance)
     {
         Penitent owner = animator.GetComponentInParent<Penitent>();
@@ -538,8 +538,8 @@ internal static class CheckTrap_DeathByHWTrap_Patch
 [HarmonyPatch(typeof(DrivePlayer), "MoveToPosition")]
 internal static class DrivePlayer_MoveToPosition_DeadP1_Patch
 {
-    private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(DrivePlayer), "_penitent");
-    private static readonly FieldInfo CastingField = AccessTools.Field(typeof(DrivePlayer), "<Casting>k__BackingField");
+    private static readonly FieldInfo PenitentField = Reflect.Field(typeof(DrivePlayer), "_penitent");
+    private static readonly FieldInfo CastingField = Reflect.Field(typeof(DrivePlayer), "<Casting>k__BackingField");
 
     private static bool Prefix(DrivePlayer __instance, Vector2 position, EntityOrientation finalOrientation)
     {

@@ -190,6 +190,7 @@ public class CoopMatchConfigUI : MonoBehaviour
         doRt.sizeDelta = Vector2.zero;
         Image doImg = darkOverlay.AddComponent<Image>();
         doImg.color = new Color(0.03f, 0.03f, 0.04f, 0.94f);
+        CoopUiStyle.StyleOverlay(doImg);
 
         // Panel Principal
         GameObject mainPanel = CreateUiElement("MainPanel", rootCanvasObj.transform);
@@ -205,6 +206,7 @@ public class CoopMatchConfigUI : MonoBehaviour
         Outline mpOut = mainPanel.AddComponent<Outline>();
         mpOut.effectColor = new Color(0.75f, 0.55f, 0.20f, 0.85f);
         mpOut.effectDistance = new Vector2(3f, -3f);
+        CoopUiStyle.StylePanel(mainPanel);
 
         // Título
         GameObject titleObj = CreateUiElement("Title", mainPanel.transform);
@@ -217,7 +219,9 @@ public class CoopMatchConfigUI : MonoBehaviour
         headerTitleText.fontSize = 26;
         headerTitleText.alignment = TextAnchor.MiddleCenter;
         headerTitleText.color = new Color(1f, 0.88f, 0.45f, 1f);
-        headerTitleText.text = "=== CONFIGURACIÓN DE PARTIDA GUARDADA ===";
+        headerTitleText.text = "CONFIGURACIÓN DE PARTIDA GUARDADA";
+        CoopUiStyle.StyleTitle(headerTitleText);
+        CoopUiStyle.AddDivider(mainPanel.transform, new Vector2(0f, 312f), 1100f);
 
         // Subtítulo con información de la ranura
         GameObject subObj = CreateUiElement("Subtitle", mainPanel.transform);
@@ -260,6 +264,7 @@ public class CoopMatchConfigUI : MonoBehaviour
         Outline bnOut = bannerObj.AddComponent<Outline>();
         bnOut.effectColor = new Color(0.20f, 0.70f, 0.85f, 0.75f);
         bnOut.effectDistance = new Vector2(2f, -2f);
+        CoopUiStyle.StyleCard(bannerObj);
 
         // Etiqueta del código
         GameObject lblObj = CreateUiElement("Label", bannerObj.transform);
@@ -340,6 +345,7 @@ public class CoopMatchConfigUI : MonoBehaviour
             playerCards[i].cardOutline = cObj.AddComponent<Outline>();
             playerCards[i].cardOutline.effectDistance = new Vector2(2f, -2f);
             playerCards[i].cardOutline.effectColor = new Color(0.35f, 0.35f, 0.38f, 0.7f);
+            CoopUiStyle.StyleCard(cObj);
 
             // Cabecera Jugador
             GameObject hdrObj = CreateUiElement("Header", cObj.transform);
@@ -727,8 +733,8 @@ public class CoopMatchConfigUI : MonoBehaviour
         }
     }
 
-    private static readonly System.Reflection.FieldInfo ZoneTextField = HarmonyLib.AccessTools.Field(typeof(SaveSlot), "ZoneText");
-    private static readonly System.Reflection.FieldInfo PurgeTextField = HarmonyLib.AccessTools.Field(typeof(SaveSlot), "PurgeText");
+    private static readonly System.Reflection.FieldInfo ZoneTextField = Reflect.Field(typeof(SaveSlot), "ZoneText");
+    private static readonly System.Reflection.FieldInfo PurgeTextField = Reflect.Field(typeof(SaveSlot), "PurgeText");
 
     private void UpdateHeaderInfo()
     {

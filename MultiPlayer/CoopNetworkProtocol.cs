@@ -15,6 +15,13 @@ public enum CoopPacketType : byte
     PlayerInput = 20,
     SceneChange = 30,
     WorldState = 31,
+    EnemyState = 32,
+    EnemyEvent = 33,
+    EnemyFullSync = 34,
+    SceneReady = 35,
+    FlagChange = 36,
+    GateState = 37,
+    BossEvent = 38,
     Disconnect = 99
 }
 
@@ -39,7 +46,7 @@ public enum CoopButtonFlags : ushort
 
 public class HandshakeRequestData
 {
-    public byte ProtocolVersion = 1;
+    public byte ProtocolVersion = 2;
     public string PlayerName = "";
     public int ColorIndex = 1;
     public string SkinId = "";
@@ -85,12 +92,98 @@ public class WorldStateData
     public PlayerStateSync[] Players;
 }
 
+[Flags]
+public enum EnemyStateFlags : byte
+{
+    None       = 0,
+    Alive      = 1 << 0,
+    FacingLeft = 1 << 1,
+    Visible    = 1 << 2
+}
+
+public struct EnemyStateEntry
+{
+    public uint NetId;
+    public float X;
+    public float Y;
+    public EnemyStateFlags Flags;
+    public int AnimShortHash;
+    public byte AnimNormTime; // 0-255
+    public ushort Hp;         // clamped
+}
+
+public class EnemyStateData
+{
+    public ushort Sequence;
+    public ushort SceneHash;
+    public EnemyStateEntry[] Enemies;
+}
+
+public class EnemyEventData
+{
+    public const byte KIND_DEATH = 1;
+    public const byte KIND_RESPAWN_ALL = 2; // netId=0; KillerSlot field reused: 1 = RespawnDeadEnemies, 0 = Reset only
+    public byte Kind;
+    public uint NetId;
+    public ushort SceneHash;
+    public sbyte KillerSlot;
+}
+
+public class SceneReadyData
+{
+    public ushort SceneHash;
+    public uint[] NetIds;
+}
+
+public struct EnemyFullSyncEntry
+{
+    public uint NetId;
+    public bool Alive;
+    public ushort Hp;
+    public float X;
+    public float Y;
+}
+
+public class EnemyFullSyncData
+{
+    public ushort SceneHash;
+    public EnemyFullSyncEntry[] Enemies;
+}
+
+public struct FlagEntry
+{
+    public string Flag;
+    public bool Value;
+}
+
+/// <summary>One or more flag changes (single change = 1 entry; bulk = up to MAX_FLAGS_PER_PACKET).</summary>
+public class FlagChangeData
+{
+    public FlagEntry[] Flags;
+}
+
+public class GateStateData
+{
+    public uint GateId;
+    public bool Open;
+    public ushort SceneHash;
+}
+
+public class BossEventData
+{
+    public const byte KIND_FIGHT_START = 1;
+    public const byte KIND_FIGHT_END = 2;
+    public byte Kind;
+    public uint BossNetId; // 0 = unknown
+    public ushort SceneHash;
+}
+
 /// <summary>
 /// Protocolo y serializador binario de alto rendimiento para el cooperativo en línea P2P.
 /// </summary>
 public static class CoopNetworkProtocol
 {
-    public const byte CURRENT_PROTOCOL_VERSION = 1;
+    public const byte CURRENT_PROTOCOL_VERSION = 2;
 
     // --- Serializadores ---
 
@@ -284,6 +377,274 @@ public static class CoopNetworkProtocol
                 state.Players[i] = p;
             }
             return state;
+        }
+    }
+
+    // --- Enemy sync (v2) ---
+
+    public const int MAX_ENEMIES_PER_STATE_PACKET = 60;
+
+    /// <summary>Splits a list of entries into chunks of at most MAX_ENEMIES_PER_STATE_PACKET.</summary>
+    public static System.Collections.Generic.List<EnemyStateEntry[]> ChunkEnemyStates(System.Collections.Generic.IList<EnemyStateEntry> all)
+    {
+        var result = new System.Collections.Generic.List<EnemyStateEntry[]>();
+        if (all == null) return result;
+        for (int i = 0; i < all.Count; i += MAX_ENEMIES_PER_STATE_PACKET)
+        {
+            int n = Math.Min(MAX_ENEMIES_PER_STATE_PACKET, all.Count - i);
+            var chunk = new EnemyStateEntry[n];
+            for (int j = 0; j < n; j++) chunk[j] = all[i + j];
+            result.Add(chunk);
+        }
+        return result;
+    }
+
+    public static byte[] SerializeEnemyState(EnemyStateData d)
+    {
+        using (MemoryStream ms = new MemoryStream())
+        using (BinaryWriter writer = new BinaryWriter(ms))
+        {
+            writer.Write((byte)CoopPacketType.EnemyState);
+            writer.Write(d.Sequence);
+            writer.Write(d.SceneHash);
+            int count = d.Enemies != null ? Math.Min(d.Enemies.Length, MAX_ENEMIES_PER_STATE_PACKET) : 0;
+            writer.Write((byte)count);
+            for (int i = 0; i < count; i++)
+            {
+                var e = d.Enemies[i];
+                writer.Write(e.NetId);
+                writer.Write(e.X);
+                writer.Write(e.Y);
+                writer.Write((byte)e.Flags);
+                writer.Write(e.AnimShortHash);
+                writer.Write(e.AnimNormTime);
+                writer.Write(e.Hp);
+            }
+            return ms.ToArray();
+        }
+    }
+
+    public static EnemyStateData DeserializeEnemyState(byte[] data)
+    {
+        using (MemoryStream ms = new MemoryStream(data))
+        using (BinaryReader reader = new BinaryReader(ms))
+        {
+            reader.ReadByte(); // packet type
+            EnemyStateData d = new EnemyStateData();
+            d.Sequence = reader.ReadUInt16();
+            d.SceneHash = reader.ReadUInt16();
+            byte count = reader.ReadByte();
+            d.Enemies = new EnemyStateEntry[count];
+            for (int i = 0; i < count; i++)
+            {
+                EnemyStateEntry e = new EnemyStateEntry();
+                e.NetId = reader.ReadUInt32();
+                e.X = reader.ReadSingle();
+                e.Y = reader.ReadSingle();
+                e.Flags = (EnemyStateFlags)reader.ReadByte();
+                e.AnimShortHash = reader.ReadInt32();
+                e.AnimNormTime = reader.ReadByte();
+                e.Hp = reader.ReadUInt16();
+                d.Enemies[i] = e;
+            }
+            return d;
+        }
+    }
+
+    public static byte[] SerializeEnemyEvent(EnemyEventData d)
+    {
+        using (MemoryStream ms = new MemoryStream())
+        using (BinaryWriter writer = new BinaryWriter(ms))
+        {
+            writer.Write((byte)CoopPacketType.EnemyEvent);
+            writer.Write(d.Kind);
+            writer.Write(d.NetId);
+            writer.Write(d.SceneHash);
+            writer.Write(d.KillerSlot);
+            return ms.ToArray();
+        }
+    }
+
+    public static EnemyEventData DeserializeEnemyEvent(byte[] data)
+    {
+        using (MemoryStream ms = new MemoryStream(data))
+        using (BinaryReader reader = new BinaryReader(ms))
+        {
+            reader.ReadByte(); // packet type
+            EnemyEventData d = new EnemyEventData();
+            d.Kind = reader.ReadByte();
+            d.NetId = reader.ReadUInt32();
+            d.SceneHash = reader.ReadUInt16();
+            d.KillerSlot = reader.ReadSByte();
+            return d;
+        }
+    }
+
+    public static byte[] SerializeSceneReady(SceneReadyData d)
+    {
+        using (MemoryStream ms = new MemoryStream())
+        using (BinaryWriter writer = new BinaryWriter(ms))
+        {
+            writer.Write((byte)CoopPacketType.SceneReady);
+            writer.Write(d.SceneHash);
+            int count = d.NetIds != null ? Math.Min(d.NetIds.Length, ushort.MaxValue) : 0;
+            writer.Write((ushort)count);
+            for (int i = 0; i < count; i++) writer.Write(d.NetIds[i]);
+            return ms.ToArray();
+        }
+    }
+
+    public static SceneReadyData DeserializeSceneReady(byte[] data)
+    {
+        using (MemoryStream ms = new MemoryStream(data))
+        using (BinaryReader reader = new BinaryReader(ms))
+        {
+            reader.ReadByte(); // packet type
+            SceneReadyData d = new SceneReadyData();
+            d.SceneHash = reader.ReadUInt16();
+            ushort count = reader.ReadUInt16();
+            d.NetIds = new uint[count];
+            for (int i = 0; i < count; i++) d.NetIds[i] = reader.ReadUInt32();
+            return d;
+        }
+    }
+
+    public static byte[] SerializeEnemyFullSync(EnemyFullSyncData d)
+    {
+        using (MemoryStream ms = new MemoryStream())
+        using (BinaryWriter writer = new BinaryWriter(ms))
+        {
+            writer.Write((byte)CoopPacketType.EnemyFullSync);
+            writer.Write(d.SceneHash);
+            int count = d.Enemies != null ? Math.Min(d.Enemies.Length, ushort.MaxValue) : 0;
+            writer.Write((ushort)count);
+            for (int i = 0; i < count; i++)
+            {
+                var e = d.Enemies[i];
+                writer.Write(e.NetId);
+                writer.Write(e.Alive);
+                writer.Write(e.Hp);
+                writer.Write(e.X);
+                writer.Write(e.Y);
+            }
+            return ms.ToArray();
+        }
+    }
+
+    public static EnemyFullSyncData DeserializeEnemyFullSync(byte[] data)
+    {
+        using (MemoryStream ms = new MemoryStream(data))
+        using (BinaryReader reader = new BinaryReader(ms))
+        {
+            reader.ReadByte(); // packet type
+            EnemyFullSyncData d = new EnemyFullSyncData();
+            d.SceneHash = reader.ReadUInt16();
+            ushort count = reader.ReadUInt16();
+            d.Enemies = new EnemyFullSyncEntry[count];
+            for (int i = 0; i < count; i++)
+            {
+                EnemyFullSyncEntry e = new EnemyFullSyncEntry();
+                e.NetId = reader.ReadUInt32();
+                e.Alive = reader.ReadBoolean();
+                e.Hp = reader.ReadUInt16();
+                e.X = reader.ReadSingle();
+                e.Y = reader.ReadSingle();
+                d.Enemies[i] = e;
+            }
+            return d;
+        }
+    }
+
+    // --- World sync (D1): flags / gates / boss events ---
+
+    public const int MAX_FLAGS_PER_PACKET = 150;
+
+    public static byte[] SerializeFlagChange(FlagChangeData d)
+    {
+        using (MemoryStream ms = new MemoryStream())
+        using (BinaryWriter writer = new BinaryWriter(ms, Encoding.UTF8))
+        {
+            writer.Write((byte)CoopPacketType.FlagChange);
+            int count = d.Flags != null ? Math.Min(d.Flags.Length, ushort.MaxValue) : 0;
+            writer.Write((ushort)count);
+            for (int i = 0; i < count; i++)
+            {
+                writer.Write(d.Flags[i].Flag ?? "");
+                writer.Write(d.Flags[i].Value);
+            }
+            return ms.ToArray();
+        }
+    }
+
+    public static FlagChangeData DeserializeFlagChange(byte[] data)
+    {
+        using (MemoryStream ms = new MemoryStream(data))
+        using (BinaryReader reader = new BinaryReader(ms, Encoding.UTF8))
+        {
+            reader.ReadByte(); // packet type
+            FlagChangeData d = new FlagChangeData();
+            ushort count = reader.ReadUInt16();
+            d.Flags = new FlagEntry[count];
+            for (int i = 0; i < count; i++)
+            {
+                d.Flags[i].Flag = reader.ReadString();
+                d.Flags[i].Value = reader.ReadBoolean();
+            }
+            return d;
+        }
+    }
+
+    public static byte[] SerializeGateState(GateStateData d)
+    {
+        using (MemoryStream ms = new MemoryStream())
+        using (BinaryWriter writer = new BinaryWriter(ms))
+        {
+            writer.Write((byte)CoopPacketType.GateState);
+            writer.Write(d.GateId);
+            writer.Write(d.Open);
+            writer.Write(d.SceneHash);
+            return ms.ToArray();
+        }
+    }
+
+    public static GateStateData DeserializeGateState(byte[] data)
+    {
+        using (MemoryStream ms = new MemoryStream(data))
+        using (BinaryReader reader = new BinaryReader(ms))
+        {
+            reader.ReadByte(); // packet type
+            GateStateData d = new GateStateData();
+            d.GateId = reader.ReadUInt32();
+            d.Open = reader.ReadBoolean();
+            d.SceneHash = reader.ReadUInt16();
+            return d;
+        }
+    }
+
+    public static byte[] SerializeBossEvent(BossEventData d)
+    {
+        using (MemoryStream ms = new MemoryStream())
+        using (BinaryWriter writer = new BinaryWriter(ms))
+        {
+            writer.Write((byte)CoopPacketType.BossEvent);
+            writer.Write(d.Kind);
+            writer.Write(d.BossNetId);
+            writer.Write(d.SceneHash);
+            return ms.ToArray();
+        }
+    }
+
+    public static BossEventData DeserializeBossEvent(byte[] data)
+    {
+        using (MemoryStream ms = new MemoryStream(data))
+        using (BinaryReader reader = new BinaryReader(ms))
+        {
+            reader.ReadByte(); // packet type
+            BossEventData d = new BossEventData();
+            d.Kind = reader.ReadByte();
+            d.BossNetId = reader.ReadUInt32();
+            d.SceneHash = reader.ReadUInt16();
+            return d;
         }
     }
 

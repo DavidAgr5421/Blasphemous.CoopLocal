@@ -85,7 +85,7 @@ namespace Blasphemous.CoopLocal;
 [HarmonyPatch(typeof(PenitentDamageArea), "TakeDamage")]
 internal static class PenitentDamageArea_TakeDamage_DebugLog_Patch
 {
-    private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(PenitentDamageArea), "_penitent");
+    private static readonly FieldInfo PenitentField = Reflect.Field(typeof(PenitentDamageArea), "_penitent");
 
     private static float lifeBefore;
     private static bool unattacableBefore;
@@ -220,8 +220,8 @@ internal static class PenitentDamageArea_TakeDamage_DebugLog_Patch
 [HarmonyPatch(typeof(PenitentDamageArea), "RaiseDamageEvent")]
 internal static class PenitentDamageArea_RaiseDamageEvent_HudFix_Patch
 {
-    private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(PenitentDamageArea), "_penitent");
-    private static readonly FieldInfo LogicManagerField = AccessTools.Field(typeof(PenitentDamageArea), "_logicManager");
+    private static readonly FieldInfo PenitentField = Reflect.Field(typeof(PenitentDamageArea), "_penitent");
+    private static readonly FieldInfo LogicManagerField = Reflect.Field(typeof(PenitentDamageArea), "_logicManager");
 
     private static void Postfix(object __instance)
     {
@@ -255,8 +255,8 @@ internal static class PenitentDamageArea_RaiseDamageEvent_HudFix_Patch
 [HarmonyPatch(typeof(PenitentDamageArea), "ResizeDamageArea")]
 internal static class PenitentDamageArea_ResizeDamageArea_DebugLog_Patch
 {
-    private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(PenitentDamageArea), "_penitent");
-    private static readonly FieldInfo DamageAreaResizedField = AccessTools.Field(typeof(PenitentDamageArea), "_damageAreaResized");
+    private static readonly FieldInfo PenitentField = Reflect.Field(typeof(PenitentDamageArea), "_penitent");
+    private static readonly FieldInfo DamageAreaResizedField = Reflect.Field(typeof(PenitentDamageArea), "_damageAreaResized");
 
     private static readonly Dictionary<PenitentDamageArea, string> lastLogged = new Dictionary<PenitentDamageArea, string>();
 

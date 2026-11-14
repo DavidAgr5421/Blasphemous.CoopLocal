@@ -110,7 +110,7 @@ public static class CinematicMovementSync
     [HarmonyPatch(typeof(DrivePlayer), "MoveToPosition")]
     internal static class DrivePlayer_MoveToPosition_CoopSync_Patch
     {
-        private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(DrivePlayer), "_penitent");
+        private static readonly FieldInfo PenitentField = Reflect.Field(typeof(DrivePlayer), "_penitent");
 
         private static void Postfix(DrivePlayer __instance, Vector2 position, EntityOrientation finalOrientation)
         {
@@ -161,7 +161,7 @@ public static class CinematicMovementSync
     [HarmonyPatch(typeof(DrivePlayer), "OnCastEnd")]
     internal static class DrivePlayer_OnCastEnd_CoopSync_Patch
     {
-        private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(DrivePlayer), "_penitent");
+        private static readonly FieldInfo PenitentField = Reflect.Field(typeof(DrivePlayer), "_penitent");
 
         private static void Postfix(DrivePlayer __instance)
         {

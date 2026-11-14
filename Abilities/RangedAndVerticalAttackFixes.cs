@@ -61,10 +61,10 @@ namespace Blasphemous.CoopLocal;
 internal static class VerticalAttack_OnUpdate_P2_TimedPress_Patch
 {
     private static readonly MethodInfo RewiredGetButtonTimedPressMethod =
-        AccessTools.Method(typeof(Rewired.Player), "GetButtonTimedPress", new[] { typeof(string), typeof(float) });
+        Reflect.Method(typeof(Rewired.Player), "GetButtonTimedPress", new[] { typeof(string), typeof(float) });
 
     private static readonly MethodInfo ReplacementMethod =
-        AccessTools.Method(typeof(VerticalAttack_OnUpdate_P2_TimedPress_Patch), nameof(GetButtonTimedPressForVerticalAttack));
+        Reflect.Method(typeof(VerticalAttack_OnUpdate_P2_TimedPress_Patch), nameof(GetButtonTimedPressForVerticalAttack));
 
     // Set by our own Prefix immediately before the original (transpiled) method body runs, in the
     // same call - safe, same rationale as PlatformCharacterController_DoClimbing_P2_AirGrab_Patch
@@ -169,22 +169,22 @@ internal static class VerticalAttack_OnUpdate_P2_TimedPress_Patch
 // codebase's existing convention of one top-level [HarmonyPatch] class per patched method.
 internal static class RangeAttackP2Shared
 {
-    internal static readonly FieldInfo RootMotionField = AccessTools.Field(typeof(RangeAttack), "_rootMotion");
-    internal static readonly FieldInfo RewiredField = AccessTools.Field(typeof(RangeAttack), "_rewired");
-    internal static readonly FieldInfo PressedKeyDownField = AccessTools.Field(typeof(RangeAttack), "_pressedKeyDown");
-    internal static readonly FieldInfo CurrentTimeThresholdField = AccessTools.Field(typeof(RangeAttack), "currentTimeThreshold");
-    internal static readonly FieldInfo AbilityTimeThresholdField = AccessTools.Field(typeof(RangeAttack), "abilityTimeThreshold");
+    internal static readonly FieldInfo RootMotionField = Reflect.Field(typeof(RangeAttack), "_rootMotion");
+    internal static readonly FieldInfo RewiredField = Reflect.Field(typeof(RangeAttack), "_rewired");
+    internal static readonly FieldInfo PressedKeyDownField = Reflect.Field(typeof(RangeAttack), "_pressedKeyDown");
+    internal static readonly FieldInfo CurrentTimeThresholdField = Reflect.Field(typeof(RangeAttack), "currentTimeThreshold");
+    internal static readonly FieldInfo AbilityTimeThresholdField = Reflect.Field(typeof(RangeAttack), "abilityTimeThreshold");
 
     internal static readonly MethodInfo RangeAttackCancelledByAbilityMethod =
-        AccessTools.Method(typeof(RangeAttack), "RangeAttackCancelledByAbility");
+        Reflect.Method(typeof(RangeAttack), "RangeAttackCancelledByAbility");
     internal static readonly MethodInfo CastRangeAttackMethod =
-        AccessTools.Method(typeof(RangeAttack), "CastRangeAttack");
+        Reflect.Method(typeof(RangeAttack), "CastRangeAttack");
     internal static readonly MethodInfo GetLastUnlockedSkillMethod =
-        AccessTools.Method(typeof(Ability), "GetLastUnlockedSkill");
+        Reflect.Method(typeof(Ability), "GetLastUnlockedSkill");
     internal static readonly PropertyInfo HasEnoughFervourProperty =
-        AccessTools.Property(typeof(Ability), "HasEnoughFervour");
+        Reflect.Property(typeof(Ability), "HasEnoughFervour");
     internal static readonly FieldInfo LastUnlockedSkillIdBackingField =
-        AccessTools.Field(typeof(Ability), "<LastUnlockedSkillId>k__BackingField");
+        Reflect.Field(typeof(Ability), "<LastUnlockedSkillId>k__BackingField");
 
     internal static bool loggedButton57Name;
 
@@ -389,7 +389,7 @@ internal static class RangeAttack_InstanceProjectile_P2_Patch
 internal static class VerticalAttack_OnUpdate_SkillLog_Patch
 {
     private static readonly Dictionary<VerticalAttack, string> lastVerticalSkill = new Dictionary<VerticalAttack, string>();
-    private static readonly MethodInfo GetLastSkillMethod = AccessTools.Method(typeof(Ability), "GetLastUnlockedSkill");
+    private static readonly MethodInfo GetLastSkillMethod = Reflect.Method(typeof(Ability), "GetLastUnlockedSkill");
 
     private static void Postfix(VerticalAttack __instance)
     {
@@ -413,7 +413,7 @@ internal static class VerticalAttack_OnUpdate_SkillLog_Patch
 [HarmonyPatch(typeof(Gameplay.GameControllers.Penitent.Animator.AnimatorInyector), "ChargeAttackTriggered")]
 internal static class AnimatorInyector_ChargeAttackTriggered_SkillLog_Patch
 {
-    private static readonly FieldInfo PenitentField = AccessTools.Field(typeof(Gameplay.GameControllers.Penitent.Animator.AnimatorInyector), "_penitent");
+    private static readonly FieldInfo PenitentField = Reflect.Field(typeof(Gameplay.GameControllers.Penitent.Animator.AnimatorInyector), "_penitent");
     private static readonly Dictionary<Gameplay.GameControllers.Penitent.Animator.AnimatorInyector, string> lastChargeSkill = new Dictionary<Gameplay.GameControllers.Penitent.Animator.AnimatorInyector, string>();
 
     // Round 76 audit: ChargeAttackTriggered() runs every single frame while grounded (called from
@@ -422,8 +422,8 @@ internal static class AnimatorInyector_ChargeAttackTriggered_SkillLog_Patch
     // original version of this patch did) repeats a reflection member lookup every frame P2 is
     // grounded, whether or not anything ends up being logged. Cached once, same pattern already
     // used by RangeAttackP2Shared/VerticalAttack_OnUpdate_SkillLog_Patch in this same file.
-    private static readonly PropertyInfo HasEnoughFervourProperty = AccessTools.Property(typeof(Ability), "HasEnoughFervour");
-    private static readonly MethodInfo GetLastUnlockedSkillMethod = AccessTools.Method(typeof(Ability), "GetLastUnlockedSkill");
+    private static readonly PropertyInfo HasEnoughFervourProperty = Reflect.Property(typeof(Ability), "HasEnoughFervour");
+    private static readonly MethodInfo GetLastUnlockedSkillMethod = Reflect.Method(typeof(Ability), "GetLastUnlockedSkill");
 
     private static void Prefix(Gameplay.GameControllers.Penitent.Animator.AnimatorInyector __instance)
     {

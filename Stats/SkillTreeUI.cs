@@ -16,24 +16,24 @@ namespace Blasphemous.CoopLocal;
 // botón de compra (buttonUnlock) y desbloqueo de habilidades propio de P2.
 internal static class SkillTreeUIHelper
 {
-    internal static readonly FieldInfo UnlockMaskField = AccessTools.Field(typeof(NewInventory_LayoutSkill), "unlockMask");
-    internal static readonly FieldInfo TimePressingField = AccessTools.Field(typeof(NewInventory_LayoutSkill), "timePressingUnlock");
-    internal static readonly FieldInfo TimeToUnlockField = AccessTools.Field(typeof(NewInventory_LayoutSkill), "timeToUnlockSKill");
-    internal static readonly FieldInfo CachedSkillsField = AccessTools.Field(typeof(NewInventory_LayoutSkill), "cachedSkills");
-    internal static readonly FieldInfo CurrentSelectedField = AccessTools.Field(typeof(NewInventory_LayoutSkill), "currentSelected");
-    internal static readonly FieldInfo InEditModeField = AccessTools.Field(typeof(NewInventory_LayoutSkill), "inEditMode");
-    internal static readonly FieldInfo PurgeControlField = AccessTools.Field(typeof(NewInventory_LayoutSkill), "purgeControl");
-    internal static readonly FieldInfo PurgeTextField = AccessTools.Field(typeof(PlayerPurgePoints), "text");
-    internal static readonly FieldInfo MaxTierField = AccessTools.Field(typeof(NewInventory_LayoutSkill), "maxTier");
-    internal static readonly FieldInfo RewiredField = AccessTools.Field(typeof(NewInventory_LayoutSkill), "rewired");
-    internal static readonly FieldInfo LoadingFxField = AccessTools.Field(typeof(NewInventory_LayoutSkill), "_loadingPurchaseFxEvent");
-    internal static readonly MethodInfo PlayLoadingFxMethod = AccessTools.Method(typeof(NewInventory_LayoutSkill), "PlayLoadingPurchaseFx");
-    internal static readonly MethodInfo StopLoadingFxMethod = AccessTools.Method(typeof(NewInventory_LayoutSkill), "StopLoadingPurchaseFx");
-    internal static readonly FieldInfo SoundUnlockField = AccessTools.Field(typeof(NewInventory_LayoutSkill), "soundUnlockSkill");
-    internal static readonly MethodInfo UpdateAllSkillsMethod = AccessTools.Method(typeof(NewInventory_LayoutSkill), "UpdateAllSKills");
-    internal static readonly MethodInfo SelectSkillMethod = AccessTools.Method(typeof(NewInventory_LayoutSkill), "SelectSkill");
-    internal static readonly FieldInfo DescriptionButtonUnlockField = AccessTools.Field(typeof(NewInventory_Description), "buttonUnlock");
-    internal static readonly FieldInfo LayoutDescriptionField = AccessTools.Field(typeof(NewInventory_LayoutSkill), "description");
+    internal static readonly FieldInfo UnlockMaskField = Reflect.Field(typeof(NewInventory_LayoutSkill), "unlockMask");
+    internal static readonly FieldInfo TimePressingField = Reflect.Field(typeof(NewInventory_LayoutSkill), "timePressingUnlock");
+    internal static readonly FieldInfo TimeToUnlockField = Reflect.Field(typeof(NewInventory_LayoutSkill), "timeToUnlockSKill");
+    internal static readonly FieldInfo CachedSkillsField = Reflect.Field(typeof(NewInventory_LayoutSkill), "cachedSkills");
+    internal static readonly FieldInfo CurrentSelectedField = Reflect.Field(typeof(NewInventory_LayoutSkill), "currentSelected");
+    internal static readonly FieldInfo InEditModeField = Reflect.Field(typeof(NewInventory_LayoutSkill), "inEditMode");
+    internal static readonly FieldInfo PurgeControlField = Reflect.Field(typeof(NewInventory_LayoutSkill), "purgeControl");
+    internal static readonly FieldInfo PurgeTextField = Reflect.Field(typeof(PlayerPurgePoints), "text");
+    internal static readonly FieldInfo MaxTierField = Reflect.Field(typeof(NewInventory_LayoutSkill), "maxTier");
+    internal static readonly FieldInfo RewiredField = Reflect.Field(typeof(NewInventory_LayoutSkill), "rewired");
+    internal static readonly FieldInfo LoadingFxField = Reflect.Field(typeof(NewInventory_LayoutSkill), "_loadingPurchaseFxEvent");
+    internal static readonly MethodInfo PlayLoadingFxMethod = Reflect.Method(typeof(NewInventory_LayoutSkill), "PlayLoadingPurchaseFx");
+    internal static readonly MethodInfo StopLoadingFxMethod = Reflect.Method(typeof(NewInventory_LayoutSkill), "StopLoadingPurchaseFx");
+    internal static readonly FieldInfo SoundUnlockField = Reflect.Field(typeof(NewInventory_LayoutSkill), "soundUnlockSkill");
+    internal static readonly MethodInfo UpdateAllSkillsMethod = Reflect.Method(typeof(NewInventory_LayoutSkill), "UpdateAllSKills");
+    internal static readonly MethodInfo SelectSkillMethod = Reflect.Method(typeof(NewInventory_LayoutSkill), "SelectSkill");
+    internal static readonly FieldInfo DescriptionButtonUnlockField = Reflect.Field(typeof(NewInventory_Description), "buttonUnlock");
+    internal static readonly FieldInfo LayoutDescriptionField = Reflect.Field(typeof(NewInventory_LayoutSkill), "description");
 
     // Diagnóstico de calibración del árbol: rects de pantalla (píxeles, origen abajo-izquierda) del panel de descripción y de nodos clave
     internal static void LogTreeRects(NewInventory_LayoutSkill layout)
@@ -286,13 +286,13 @@ internal static class SkillLayout_Update_P2_Patch
 [HarmonyPatch(typeof(NewInventory_Skill), "UpdateStatus")]
 internal static class SkillItem_UpdateStatus_P2_Patch
 {
-    private static readonly FieldInfo SkillIdField = AccessTools.Field(typeof(NewInventory_Skill), "skill");
-    private static readonly FieldInfo BackLockedField = AccessTools.Field(typeof(NewInventory_Skill), "backgorundLocked");
-    private static readonly FieldInfo BackUnlockedField = AccessTools.Field(typeof(NewInventory_Skill), "backgorundUnLocked");
-    private static readonly FieldInfo BackEnabledField = AccessTools.Field(typeof(NewInventory_Skill), "backgorundEnabled");
-    private static readonly FieldInfo SkillImageField = AccessTools.Field(typeof(NewInventory_Skill), "skillImage");
-    private static readonly FieldInfo TierTextField = AccessTools.Field(typeof(NewInventory_Skill), "tierText");
-    private static readonly FieldInfo DisabledColorField = AccessTools.Field(typeof(NewInventory_Skill), "disabledColor");
+    private static readonly FieldInfo SkillIdField = Reflect.Field(typeof(NewInventory_Skill), "skill");
+    private static readonly FieldInfo BackLockedField = Reflect.Field(typeof(NewInventory_Skill), "backgorundLocked");
+    private static readonly FieldInfo BackUnlockedField = Reflect.Field(typeof(NewInventory_Skill), "backgorundUnLocked");
+    private static readonly FieldInfo BackEnabledField = Reflect.Field(typeof(NewInventory_Skill), "backgorundEnabled");
+    private static readonly FieldInfo SkillImageField = Reflect.Field(typeof(NewInventory_Skill), "skillImage");
+    private static readonly FieldInfo TierTextField = Reflect.Field(typeof(NewInventory_Skill), "tierText");
+    private static readonly FieldInfo DisabledColorField = Reflect.Field(typeof(NewInventory_Skill), "disabledColor");
 
     private static bool Prefix(NewInventory_Skill __instance)
     {
@@ -376,12 +376,12 @@ internal static class SkillItem_UpdateStatus_P2_Patch
 [HarmonyPatch(typeof(NewInventory_Skill), "SetFocus")]
 internal static class SkillItem_SetFocus_P2_Patch
 {
-    private static readonly FieldInfo SkillIdField = AccessTools.Field(typeof(NewInventory_Skill), "skill");
-    private static readonly FieldInfo FocusField = AccessTools.Field(typeof(NewInventory_Skill), "focus");
-    private static readonly FieldInfo CostField = AccessTools.Field(typeof(NewInventory_Skill), "cost");
-    private static readonly FieldInfo CostTextField = AccessTools.Field(typeof(NewInventory_Skill), "costText");
-    private static readonly FieldInfo NormalColorField = AccessTools.Field(typeof(NewInventory_Skill), "nomalColor");
-    private static readonly FieldInfo DisabledColorField = AccessTools.Field(typeof(NewInventory_Skill), "disabledColor");
+    private static readonly FieldInfo SkillIdField = Reflect.Field(typeof(NewInventory_Skill), "skill");
+    private static readonly FieldInfo FocusField = Reflect.Field(typeof(NewInventory_Skill), "focus");
+    private static readonly FieldInfo CostField = Reflect.Field(typeof(NewInventory_Skill), "cost");
+    private static readonly FieldInfo CostTextField = Reflect.Field(typeof(NewInventory_Skill), "costText");
+    private static readonly FieldInfo NormalColorField = Reflect.Field(typeof(NewInventory_Skill), "nomalColor");
+    private static readonly FieldInfo DisabledColorField = Reflect.Field(typeof(NewInventory_Skill), "disabledColor");
 
     private static bool Prefix(NewInventory_Skill __instance, bool bFocus, bool editMode)
     {

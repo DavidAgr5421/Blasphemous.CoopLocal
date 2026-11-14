@@ -49,15 +49,15 @@ namespace Blasphemous.CoopLocal;
 [HarmonyPatch(typeof(PlayerFlask), "RefreshFlask")]
 internal static class PlayerFlask_RefreshFlask_P2_Patch
 {
-    private static readonly FieldInfo FlasksField = AccessTools.Field(typeof(PlayerFlask), "flasks");
-    private static readonly FieldInfo FlasksFullField = AccessTools.Field(typeof(PlayerFlask), "flasksFull");
-    private static readonly FieldInfo FlasksEmptyField = AccessTools.Field(typeof(PlayerFlask), "flasksEmpty");
-    private static readonly FieldInfo FlasksFullFervourField = AccessTools.Field(typeof(PlayerFlask), "flasksFullFervour");
-    private static readonly FieldInfo CurrentFlaskNumberField = AccessTools.Field(typeof(PlayerFlask), "currentFlaskNumber");
-    private static readonly FieldInfo CurrentFlaskFullField = AccessTools.Field(typeof(PlayerFlask), "currentFlaskFull");
-    private static readonly FieldInfo CurrentFlaskLevelField = AccessTools.Field(typeof(PlayerFlask), "currentFlaskLevel");
-    private static readonly FieldInfo CurrentFlaskIsFervourField = AccessTools.Field(typeof(PlayerFlask), "currentFlaskIsFervour");
-    private static readonly FieldInfo SwordHeart06Field = AccessTools.Field(typeof(PlayerFlask), "swordHeart06");
+    private static readonly FieldInfo FlasksField = Reflect.Field(typeof(PlayerFlask), "flasks");
+    private static readonly FieldInfo FlasksFullField = Reflect.Field(typeof(PlayerFlask), "flasksFull");
+    private static readonly FieldInfo FlasksEmptyField = Reflect.Field(typeof(PlayerFlask), "flasksEmpty");
+    private static readonly FieldInfo FlasksFullFervourField = Reflect.Field(typeof(PlayerFlask), "flasksFullFervour");
+    private static readonly FieldInfo CurrentFlaskNumberField = Reflect.Field(typeof(PlayerFlask), "currentFlaskNumber");
+    private static readonly FieldInfo CurrentFlaskFullField = Reflect.Field(typeof(PlayerFlask), "currentFlaskFull");
+    private static readonly FieldInfo CurrentFlaskLevelField = Reflect.Field(typeof(PlayerFlask), "currentFlaskLevel");
+    private static readonly FieldInfo CurrentFlaskIsFervourField = Reflect.Field(typeof(PlayerFlask), "currentFlaskIsFervour");
+    private static readonly FieldInfo SwordHeart06Field = Reflect.Field(typeof(PlayerFlask), "swordHeart06");
 
     private static bool Prefix(PlayerFlask __instance)
     {
@@ -94,7 +94,8 @@ internal static class PlayerFlask_RefreshFlask_P2_Patch
             SwordHeart06Field.SetValue(__instance, swordHeart06);
         }
 
-        if (swordHeart06 != null && swordHeart06.IsEquiped)
+        // El corazón HE06 solo anula las pociones de QUIEN lo tiene equipado (Sword.IsEquiped es el estado de P1, no de este jugador).
+        if (SwordHeartOwner.HasByIndex(slot, SwordHeartOwner.HeartNoFlasks))
         {
             for (int i = 0; i < flasks.Count; i++)
             {
@@ -310,8 +311,8 @@ internal static class VariableAttribute_CalculateValue_PurgeClamp_Patch
 internal static class Player2PurgePoints
 {
     private static readonly FieldInfo GameplayWidgetPurgePointsField =
-        AccessTools.Field(typeof(Gameplay.UI.Widgets.GameplayWidget), "purgePoints");
-    private static readonly FieldInfo PurgePointsTextField = AccessTools.Field(typeof(PlayerPurgePoints), "text");
+        Reflect.Field(typeof(Gameplay.UI.Widgets.GameplayWidget), "purgePoints");
+    private static readonly FieldInfo PurgePointsTextField = Reflect.Field(typeof(PlayerPurgePoints), "text");
 
     // Round 45: final position, re-confirmed by the user via live Player2HudPositionTuner testing
     // (moved from the original bottom-left placement to sit with the rest of P2's HUD block).
