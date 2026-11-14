@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Blasphemous.CoopLocal.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.9.0" />
+    <PackageReference Include="xunit" Version="2.7.0" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.7" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Lógica pura del mod compilada sin el juego/Unity: se enlazan los archivos, con stubs mínimos (Stubs.cs) para sus dependencias. -->
+    <Compile Include="..\Diagnostics\SwallowedExceptions.cs" Link="Linked\SwallowedExceptions.cs" />
+  </ItemGroup>
+</Project>
