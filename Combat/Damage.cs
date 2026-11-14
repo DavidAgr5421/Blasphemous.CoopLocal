@@ -283,7 +283,7 @@ internal static class PenitentDamageArea_ResizeDamageArea_DebugLog_Patch
             return;
         }
         lastLogged[__instance] = state;
-        DashParryDebugLog.Log($"{DashParryDebugLog.Label(owner)} PenitentDamageArea.ResizeDamageArea -> {state} (frame {Time.frameCount})");
+        DashParryDebugLog.LogVerbose($"{DashParryDebugLog.Label(owner)} PenitentDamageArea.ResizeDamageArea -> {state} (frame {Time.frameCount})");
     }
 }
 

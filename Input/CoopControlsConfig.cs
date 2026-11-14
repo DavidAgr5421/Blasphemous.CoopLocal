@@ -19,7 +19,8 @@ public enum CoopAction
     Heal,
     Interact,
     Prayer,
-    Pause
+    Pause,
+    Menu
 }
 
 [Serializable]
@@ -38,6 +39,7 @@ public class PlayerControlBindings
     public KeyCode KeyInteract = KeyCode.E;
     public KeyCode KeyPrayer = KeyCode.Q;
     public KeyCode KeyPause = KeyCode.Escape;
+    public KeyCode KeyMenu = KeyCode.I;
 
     // Mapeo para mando (nombres de botones/ejes de Rewired)
     public string PadAttack = "X Button";
@@ -48,6 +50,7 @@ public class PlayerControlBindings
     public string PadInteract = "Y Button";
     public string PadPrayer = "Left Trigger";
     public string PadPause = "Start";
+    public string PadMenu = "Back";
 
     public KeyCode GetKey(CoopAction action)
     {
@@ -65,6 +68,7 @@ public class PlayerControlBindings
             case CoopAction.Interact: return KeyInteract;
             case CoopAction.Prayer: return KeyPrayer;
             case CoopAction.Pause: return KeyPause;
+            case CoopAction.Menu: return KeyMenu;
             default: return KeyCode.None;
         }
     }
@@ -85,6 +89,7 @@ public class PlayerControlBindings
             case CoopAction.Interact: KeyInteract = key; break;
             case CoopAction.Prayer: KeyPrayer = key; break;
             case CoopAction.Pause: KeyPause = key; break;
+            case CoopAction.Menu: KeyMenu = key; break;
         }
     }
 
@@ -100,6 +105,7 @@ public class PlayerControlBindings
             case CoopAction.Interact: return PadInteract;
             case CoopAction.Prayer: return PadPrayer;
             case CoopAction.Pause: return PadPause;
+            case CoopAction.Menu: return PadMenu;
             default: return "";
         }
     }
@@ -116,6 +122,7 @@ public class PlayerControlBindings
             case CoopAction.Interact: PadInteract = buttonName; break;
             case CoopAction.Prayer: PadPrayer = buttonName; break;
             case CoopAction.Pause: PadPause = buttonName; break;
+            case CoopAction.Menu: PadMenu = buttonName; break;
         }
     }
 }
@@ -145,7 +152,8 @@ public static class CoopControlsConfig
             case CoopAction.Heal: return "Matraz de Bilis";
             case CoopAction.Interact: return "Interactuar / Hablar";
             case CoopAction.Prayer: return "Activar Rezo";
-            case CoopAction.Pause: return "Pausa / Menú";
+            case CoopAction.Pause: return "Pausa / Opciones";
+            case CoopAction.Menu: return "Menú de Inventario / Habilidades";
             default: return action.ToString();
         }
     }
@@ -185,8 +193,9 @@ public static class CoopControlsConfig
         if (lower.Contains("right bumper") || lower.Contains("right shoulder") || lower == "rb" || lower == "r1") return "RB / R1";
         if (lower.Contains("left trigger") || lower == "lt" || lower == "l2") return "LT / L2 (Gatillo)";
         if (lower.Contains("right trigger") || lower == "rt" || lower == "r2") return "RT / R2 (Gatillo)";
-        if (lower.Contains("start") || lower.Contains("options") || lower.Contains("menu")) return "START / OPCIONES";
-        if (lower.Contains("back") || lower.Contains("select") || lower.Contains("view") || lower.Contains("share")) return "BACK / SELECT";
+        if (lower.Contains("start") || lower.Contains("options")) return "START / OPCIONES";
+        if (lower.Contains("back") || lower.Contains("select") || lower.Contains("view") || lower.Contains("share") || lower.Contains("touchpad")) return "BACK / SELECT";
+        if (lower.Contains("menu")) return "MENÚ / START";
         if (lower.Contains("left stick") || lower.Contains("l3")) return "STICK IZQUIERDO";
         if (lower.Contains("right stick") || lower.Contains("r3")) return "STICK DERECHO";
         if (lower.Contains("dpad") || lower.Contains("d-pad")) return padName.ToUpperInvariant();

@@ -54,40 +54,108 @@ internal static class DashParryDebugLog
     // sites in the mod) once the directory demonstrably exists already. Cached after the first
     // successful creation; File.AppendAllText itself still opens/writes/closes every call (no
     // buffering) which is an accepted tradeoff for "never lose a line on a crash/relaunch".
+    private const long MaxLogBytes = 5L * 1024L * 1024L;
     private static bool directoryEnsured;
-
-    // Unity's own Update()/Harmony-patch call sites are all single-threaded (main thread), so in
-    // practice File.AppendAllText's own open-write-close per call can never truly overlap. This
-    // lock is cheap insurance in case anything (a coroutine callback, an async asset load
-    // continuation) ever calls Log() off the main thread, avoiding a rare "file in use"
-    // IOException that would otherwise be silently swallowed by the try/catch anyway - not
-    // relied upon as the only safety net, just removes the small remaining risk for near-zero cost.
+    private static bool sessionInitialized;
     private static readonly object fileLock = new object();
+    private static readonly HashSet<string> loggedOnceKeys = new HashSet<string>(StringComparer.Ordinal);
+
+    internal static bool VerboseEnabled = false;
+
+    internal static void InitializeSession()
+    {
+        try
+        {
+            string dir = System.IO.Path.Combine(UnityEngine.Application.persistentDataPath, "CoopLocalMod");
+            lock (fileLock)
+            {
+                if (sessionInitialized) return;
+                sessionInitialized = true;
+                if (!directoryEnsured)
+                {
+                    System.IO.Directory.CreateDirectory(dir);
+                    directoryEnsured = true;
+                }
+
+                string currentPath = System.IO.Path.Combine(dir, "debug_log.txt");
+                string prevPath = System.IO.Path.Combine(dir, "debug_log_prev.txt");
+                if (System.IO.File.Exists(currentPath))
+                {
+                    if (System.IO.File.Exists(prevPath))
+                    {
+                        System.IO.File.Delete(prevPath);
+                    }
+                    System.IO.File.Move(currentPath, prevPath);
+                }
+            }
+        }
+        catch { /* ignorado intencionalmente: fallo al rotar log de sesión no debe impedir arranque */ }
+    }
 
     internal static void Log(string message)
     {
-        string line = "[DashParryDebug] " + message;
+        WriteLine("[DashParryDebug] " + message, isWarning: false);
+    }
+
+    internal static void LogVerbose(string message)
+    {
+        if (!VerboseEnabled) return;
+        WriteLine("[DashParryDebug] " + message, isWarning: false);
+    }
+
+    internal static void LogOnce(string key, string message, bool isWarning = false)
+    {
+        if (string.IsNullOrEmpty(key)) return;
+        lock (fileLock)
+        {
+            if (!loggedOnceKeys.Add(key)) return;
+        }
+        WriteLine(message, isWarning);
+    }
+
+    private static void WriteLine(string line, bool isWarning)
+    {
         if (Main.CoopLocal != null)
         {
-            Blasphemous.ModdingAPI.ModLog.Info(line, Main.CoopLocal);
+            if (isWarning)
+                Blasphemous.ModdingAPI.ModLog.Warn(line, Main.CoopLocal);
+            else
+                Blasphemous.ModdingAPI.ModLog.Info(line, Main.CoopLocal);
         }
-        // Persistente append-only para que no se pierda al relanzar el juego (BepInEx/LogOutput.log se trunca)
+        // Persistente append-only con rotación a 5 MB (1 copia previa: debug_log_prev.txt)
         try
         {
             string dir = System.IO.Path.Combine(UnityEngine.Application.persistentDataPath, "CoopLocalMod");
             string ts = System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
             lock (fileLock)
             {
+                if (!sessionInitialized)
+                {
+                    sessionInitialized = true;
+                }
                 if (!directoryEnsured)
                 {
                     System.IO.Directory.CreateDirectory(dir);
                     directoryEnsured = true;
                 }
                 string path = System.IO.Path.Combine(dir, "debug_log.txt");
+                if (System.IO.File.Exists(path))
+                {
+                    var fi = new System.IO.FileInfo(path);
+                    if (fi.Length >= MaxLogBytes)
+                    {
+                        string prevPath = System.IO.Path.Combine(dir, "debug_log_prev.txt");
+                        if (System.IO.File.Exists(prevPath))
+                        {
+                            System.IO.File.Delete(prevPath);
+                        }
+                        System.IO.File.Move(path, prevPath);
+                    }
+                }
                 System.IO.File.AppendAllText(path, $"[{ts}] {line}{System.Environment.NewLine}");
             }
         }
-        catch { }
+        catch { /* ignorado intencionalmente: no fallar si el disco/archivo de debug_log está bloqueado */ }
     }
 
     internal static string PersistentLogPath => System.IO.Path.Combine(System.IO.Path.Combine(UnityEngine.Application.persistentDataPath, "CoopLocalMod"), "debug_log.txt");
@@ -114,7 +182,7 @@ internal static class AnimatorClipChangeLogger_Patch
         if (!lastClipName.TryGetValue(____penitent, out string last) || last != clipName)
         {
             lastClipName[____penitent] = clipName;
-            DashParryDebugLog.Log($"{DashParryDebugLog.Label(____penitent)} anim -> \"{clipName}\" (frame {Time.frameCount})");
+            DashParryDebugLog.LogVerbose($"{DashParryDebugLog.Label(____penitent)} anim -> \"{clipName}\" (frame {Time.frameCount})");
         }
     }
 }
@@ -139,7 +207,7 @@ internal static class PositionSamplerLogger_Patch
         float p1X = p1 != null ? p1.transform.position.x : float.NaN;
         float p2X = CoopLocal.Player2 != null ? CoopLocal.Player2.transform.position.x : float.NaN;
         bool p1MovementKeyHeld = Input.GetKey(KeyCode.LeftArrow) || Input.GetKey(KeyCode.RightArrow);
-        DashParryDebugLog.Log($"pos P1.x={p1X:F2} P2.x={p2X:F2} p1MovementKeyHeld={p1MovementKeyHeld} (frame {Time.frameCount})");
+        DashParryDebugLog.LogVerbose($"pos P1.x={p1X:F2} P2.x={p2X:F2} p1MovementKeyHeld={p1MovementKeyHeld} (frame {Time.frameCount})");
     }
 }
 
@@ -196,7 +264,7 @@ internal static class SetActionState_DebugLogger_Patch
         {
             if (windowOpen)
             {
-                DashParryDebugLog.Log($"P1 SetActionState({action}, {value}) (frame {Time.frameCount}) [watch window]");
+                DashParryDebugLog.LogVerbose($"P1 SetActionState({action}, {value}) (frame {Time.frameCount}) [watch window]");
             }
             return;
         }
@@ -212,7 +280,7 @@ internal static class SetActionState_DebugLogger_Patch
 
         if (windowOpen)
         {
-            DashParryDebugLog.Log($"P1 SetActionState({action}, {value}) (frame {Time.frameCount}) [watch window]");
+            DashParryDebugLog.LogVerbose($"P1 SetActionState({action}, {value}) (frame {Time.frameCount}) [watch window]");
         }
 
         if (!value)
@@ -220,7 +288,7 @@ internal static class SetActionState_DebugLogger_Patch
             PlatformCharacterInput p1Input = p1.PlatformCharacterInput;
             float rawRewiredAxis = p1Input.Rewired != null ? p1Input.Rewired.GetAxisRaw(0) : float.NaN;
             bool rawInputBlocked = Core.Input.InputBlocked;
-            DashParryDebugLog.Log(
+            DashParryDebugLog.LogVerbose(
                 $"P1 SetActionState({action}, false) (frame {Time.frameCount}) - " +
                 $"RewiredAxisRaw0={rawRewiredAxis:F3} FHorAxis={p1Input.FHorAxis:F3} ForceHorizontalMovement={p1Input.forceHorizontalMovement:F3} " +
                 $"Blocked={p1Input.Blocked} RawInputBlocked={rawInputBlocked} IsGrabbingLadder={p1.IsGrabbingLadder} IsCrouched={p1.IsCrouched} " +

@@ -1,3 +1,4 @@
+using Tools.Level.Interactables;
 using Framework.Managers;
 using Gameplay.GameControllers.Effects.Player.Recolor;
 using Gameplay.GameControllers.Penitent;
@@ -21,12 +22,19 @@ internal static class ColorPaletteSwapper_ForcePlayer2TrueApostasy_Patch
             string skinId = CoopGameConfig.Slots[playerIndex].SkinId;
             if (!string.IsNullOrEmpty(skinId)) return skinId;
         }
-        return CoopPlayerRegistry.GetSlot(playerIndex)?.SkinPaletteId ?? "PENITENT_ENDING_B";
+        string regSkin = CoopPlayerRegistry.GetSlot(playerIndex)?.SkinPaletteId;
+        if (!string.IsNullOrEmpty(regSkin)) return regSkin;
+
+        if (playerIndex == 0 && Core.ColorPaletteManager != null)
+        {
+            return Core.ColorPaletteManager.GetCurrentColorPaletteId();
+        }
+        return "PENITENT_DEFAULT";
     }
 
-    internal static Texture2D GetPlayer2PaletteTexture()
+    internal static Texture2D GetPlayerPaletteTexture(int playerIndex)
     {
-        string paletteId = GetPlayerPaletteId(1);
+        string paletteId = GetPlayerPaletteId(playerIndex);
         if (string.IsNullOrEmpty(paletteId) || Core.ColorPaletteManager == null)
         {
             return null;
@@ -35,25 +43,63 @@ internal static class ColorPaletteSwapper_ForcePlayer2TrueApostasy_Patch
         return paletteSprite != null ? paletteSprite.texture : null;
     }
 
+    internal static Texture2D GetPlayer2PaletteTexture()
+    {
+        return GetPlayerPaletteTexture(1);
+    }
+
     private static void Postfix(ColorPaletteSwapper __instance)
     {
+        if (__instance == null) return;
+
+        // Caso 1: Swapper en una instancia de jugador (P1, P2, P3, P4)
         Penitent owner = __instance.GetComponentInParent<Penitent>();
-        if (owner == null)
+        if (owner != null)
         {
+            if (CoopPlayerRegistry.TryGetSlot(owner, out CoopPlayerSlot slot) && slot.PlayerIndex > 0)
+            {
+                string paletteId = slot.SkinPaletteId;
+                if (string.IsNullOrEmpty(paletteId))
+                {
+                    paletteId = GetPlayerPaletteId(slot.PlayerIndex);
+                }
+                ApplySkinToSwapper(__instance, paletteId);
+            }
             return;
         }
 
-        // P1 mantiene su skin vanilla seleccionada en el menú Extras.
-        // Para P2, P3 y P4 (o cualquier invitado registrado):
-        if (CoopPlayerRegistry.TryGetSlot(owner, out CoopPlayerSlot slot) && slot.PlayerIndex > 0)
+        // Caso 2: Swapper dentro de una ejecución (Execution)
+        Execution exec = __instance.GetComponentInParent<Execution>();
+        if (exec != null)
         {
-            string paletteId = slot.SkinPaletteId;
-            if (string.IsNullOrEmpty(paletteId))
+            Penitent executor = exec.Penitent ?? Interactable_InteractionTriggered_Patch.LastInteractingPlayer ?? Core.Logic?.Penitent;
+            if (executor != null)
             {
-                paletteId = GetPlayerPaletteId(slot.PlayerIndex);
+                int pIndex = CoopPlayerRegistry.GetPlayerIndex(executor);
+                string paletteId = GetPlayerPaletteId(pIndex);
+                if (!string.IsNullOrEmpty(paletteId))
+                {
+                    ApplySkinToSwapper(__instance, paletteId);
+                }
             }
+            return;
+        }
 
-            ApplySkinToSwapper(__instance, paletteId);
+        // Caso 3: Swapper dentro de una FakeExecution (ej. Crisanta u otras cinemáticas)
+        FakeExecution fakeExec = __instance.GetComponentInParent<FakeExecution>();
+        if (fakeExec != null)
+        {
+            Penitent executor = fakeExec.Penitent ?? Interactable_InteractionTriggered_Patch.LastInteractingPlayer ?? Core.Logic?.Penitent;
+            if (executor != null)
+            {
+                int pIndex = CoopPlayerRegistry.GetPlayerIndex(executor);
+                string paletteId = GetPlayerPaletteId(pIndex);
+                if (!string.IsNullOrEmpty(paletteId))
+                {
+                    ApplySkinToSwapper(__instance, paletteId);
+                }
+            }
+            return;
         }
     }
 

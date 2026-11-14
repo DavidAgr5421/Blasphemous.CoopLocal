@@ -345,7 +345,20 @@ internal static class Player2Pad
     internal static bool ParryDown => GetParryDown(Pad);
     internal static bool HealDown => GetHealDown(Pad);
     internal static bool InteractDown => GetInteractDown(Pad);
-    internal static bool GetStartDown(Rewired.Joystick pad) => ButtonDown(pad, "Start", "Options", "Menu", "Back", "Select", "View", "Share");
+    internal static bool GetStartDown(Rewired.Joystick pad) => ButtonDown(pad, "Start", "Options", "Menu Button");
+    internal static bool GetMenuDown(Rewired.Joystick pad, int slotIndex = -1)
+    {
+        if (pad == null) return false;
+        if (slotIndex >= 0)
+        {
+            string mapped = CoopControlsConfig.GetBindings(slotIndex).PadMenu;
+            if (!string.IsNullOrEmpty(mapped))
+            {
+                if (GetButtonDownMapped(pad, mapped)) return true;
+            }
+        }
+        return ButtonDown(pad, "Back", "Select", "View", "Share", "Touchpad Button", "TouchpadButton", "Touchpad", "Menu", "Menu Button", "Start", "Options");
+    }
     internal static bool GetButtonDownMapped(Rewired.Joystick pad, string mapped)
     {
         if (pad == null || string.IsNullOrEmpty(mapped)) return false;
@@ -354,6 +367,7 @@ internal static class Player2Pad
         return false;
     }
     internal static bool StartDown => GetStartDown(Pad);
+    internal static bool MenuDown => GetMenuDown(Pad);
 
     internal static bool GetCancelDown(Rewired.Joystick pad) => ButtonDown(pad, "B Button", "Button B", "Action Button 2", "Circle", "Button 1", "B");
     internal static bool CancelDown => GetCancelDown(Pad);
@@ -371,7 +385,7 @@ internal static class Player2Pad
     private static bool loggedKnownButtons;
     private static bool loggedKnownAxes;
 
-    private static bool ButtonHeld(Rewired.Joystick pad, params string[] candidateNames)
+    internal static bool ButtonHeld(Rewired.Joystick pad, params string[] candidateNames)
     {
         if (pad == null) return false;
         int id = ResolveButtonId(pad, candidateNames);
@@ -380,7 +394,7 @@ internal static class Player2Pad
 
     private static bool ButtonHeld(params string[] candidateNames) => ButtonHeld(Pad, candidateNames);
 
-    private static bool ButtonDown(Rewired.Joystick pad, params string[] candidateNames)
+    internal static bool ButtonDown(Rewired.Joystick pad, params string[] candidateNames)
     {
         if (pad == null) return false;
         int id = ResolveButtonId(pad, candidateNames);
@@ -617,8 +631,23 @@ internal static class Player2Input
             return;
         }
 
-        ActiveKeyboardPlayerIndex = (ActiveKeyboardPlayerIndex + 1) % activeCount;
-        ApplyKeyboardPlayer(ActiveKeyboardPlayerIndex);
+        // Use the slot that really owns the keyboard as the starting point and skip online slots.
+        int start = ActiveKeyboardPlayerIndex;
+        for (int i = 0; i < activeCount; i++)
+        {
+            if (CoopGameConfig.Slots[i].Device == CoopDeviceType.Keyboard) { start = i; break; }
+        }
+        int next = start;
+        for (int step = 1; step <= activeCount; step++)
+        {
+            int candidate = (start + step) % activeCount;
+            if (CoopGameConfig.Slots[candidate].Device != CoopDeviceType.RemoteSteam)
+            {
+                next = candidate;
+                break;
+            }
+        }
+        ApplyKeyboardPlayer(next);
     }
 
     internal static void ApplyKeyboardPlayer(int playerIndex)
@@ -630,17 +659,51 @@ internal static class Player2Input
         }
         ActiveKeyboardPlayerIndex = Mathf.Clamp(playerIndex, 0, activeCount - 1);
 
-        int gamepadNum = 1;
+        // Swap devices instead of renumbering every pad: the player who held the keyboard takes
+        // the pad of the player who receives it, so every other player keeps the SAME physical
+        // gamepad. (Renumbering shifted every pad by one on each F9 press, which made P2's pad
+        // open P1's menu, P3's pad open P2's, etc.)
+        int oldHolder = -1;
         for (int i = 0; i < 4; i++)
         {
-            if (i == ActiveKeyboardPlayerIndex)
+            if (CoopGameConfig.Slots[i].Device == CoopDeviceType.Keyboard) { oldHolder = i; break; }
+        }
+
+        if (oldHolder != ActiveKeyboardPlayerIndex)
+        {
+            CoopDeviceType targetDevice = CoopGameConfig.Slots[ActiveKeyboardPlayerIndex].Device;
+            if (oldHolder >= 0)
             {
-                CoopGameConfig.Slots[i].Device = CoopDeviceType.Keyboard;
+                bool targetIsPad = targetDevice >= CoopDeviceType.Gamepad1 && targetDevice <= CoopDeviceType.Gamepad4;
+                CoopGameConfig.Slots[oldHolder].Device = targetIsPad ? targetDevice : CoopDeviceType.Unassigned;
             }
-            else
+            CoopGameConfig.Slots[ActiveKeyboardPlayerIndex].Device = CoopDeviceType.Keyboard;
+        }
+
+        // Make sure no non-keyboard local slot is left without a gamepad (or shares one).
+        bool[] padUsed = new bool[4];
+        for (int i = 0; i < 4; i++)
+        {
+            CoopDeviceType d = CoopGameConfig.Slots[i].Device;
+            if (d >= CoopDeviceType.Gamepad1 && d <= CoopDeviceType.Gamepad4)
             {
-                CoopGameConfig.Slots[i].Device = (CoopDeviceType)(gamepadNum + 1); // Gamepad1..4
-                gamepadNum++;
+                int padIdx = (int)d - (int)CoopDeviceType.Gamepad1;
+                if (padUsed[padIdx]) CoopGameConfig.Slots[i].Device = CoopDeviceType.Unassigned;
+                else padUsed[padIdx] = true;
+            }
+        }
+        for (int i = 0; i < 4; i++)
+        {
+            CoopDeviceType d = CoopGameConfig.Slots[i].Device;
+            if (d != CoopDeviceType.Unassigned) continue;
+            for (int g = 0; g < 4; g++)
+            {
+                if (!padUsed[g])
+                {
+                    padUsed[g] = true;
+                    CoopGameConfig.Slots[i].Device = (CoopDeviceType)((int)CoopDeviceType.Gamepad1 + g);
+                    break;
+                }
             }
         }
 
@@ -837,7 +900,9 @@ internal static class Player2Input
             || GetParryDown(slotIndex)
             || GetHealDown(slotIndex)
             || GetInteractDown(slotIndex)
-            || GetPrayerActivateDown(slotIndex);
+            || GetPrayerActivateDown(slotIndex)
+            || GetPauseDown(slotIndex)
+            || GetMenuDown(slotIndex);
     }
 
     internal static bool Left => Mode == Player2InputMode.Gamepad ? Player2Pad.Left : Input.GetKey(Player2Keys.Left);
@@ -868,9 +933,15 @@ internal static class Player2Input
     {
         if (slotIndex >= 0 && slotIndex < 4 && CoopGameConfig.Slots[slotIndex].Device == CoopDeviceType.RemoteSteam)
             return CoopNetworkManager.GetRemoteButtonDown(slotIndex, CoopButtonFlags.Menu);
-        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKeyDown(Player2Keys.Menu);
+        if (slotIndex == ActiveKeyboardPlayerIndex)
+        {
+            KeyCode k = CoopControlsConfig.GetBindings(slotIndex).KeyMenu;
+            if (k != KeyCode.None && Input.GetKeyDown(k)) return true;
+            if (Input.GetKeyDown(Player2Keys.Menu) || Input.GetKeyDown(KeyCode.Tab) || Input.GetKeyDown(KeyCode.M)) return true;
+            return false;
+        }
         var pad = Player2Pad.GetPadForSlot(slotIndex);
-        return pad != null && Player2Pad.GetStartDown(pad);
+        return Player2Pad.GetMenuDown(pad, slotIndex);
     }
 
     internal static bool MenuDown => GetMenuDown(1);
@@ -931,7 +1002,7 @@ internal static class Player2Input
         }
 
         // Menú de Pausa / Opciones / Configuración de Controles independiente para cada jugador
-        if (!CoopGameSetupUI.IsOpen && !HudLayoutDebugEditor.IsOpen && !Combat.BossDebugTeleportManager.IsMenuOpen && !(Gameplay.UI.UIController.instance != null && Gameplay.UI.UIController.instance.IsShowingMenu))
+        if (!PrieDieuCoopSync.IsKneeling && !CoopGameSetupUI.IsOpen && !HudLayoutDebugEditor.IsOpen && !Combat.BossDebugTeleportManager.IsMenuOpen && !(Gameplay.UI.UIController.instance != null && Gameplay.UI.UIController.instance.IsShowingMenu))
         {
             if (!CoopPlayerPauseMenu.IsOpen && CoopGameConfig.IsCoopEnabled)
             {
@@ -965,7 +1036,7 @@ internal static class Player2Input
             }
         }
 
-        if (Input.GetKeyDown(KeyCode.F6) || Input.GetKeyDown(KeyCode.F7))
+        if (Input.GetKeyDown(KeyCode.F6))
         {
             var p1 = Framework.Managers.Core.Logic.Penitent;
             if (p1 != null && p1.Stats != null && p1.Stats.Fervour != null)
@@ -980,40 +1051,43 @@ internal static class Player2Input
             }
             if (Main.CoopLocal != null)
             {
-                Blasphemous.ModdingAPI.ModLog.Info("[FervourShortcut] F6/F7 pressed -> P1 & P2 Fervour set to CurrentMax", Main.CoopLocal);
+                Blasphemous.ModdingAPI.ModLog.Info("[FervourShortcut] F6 pressed -> P1 & P2 Fervour set to CurrentMax", Main.CoopLocal);
             }
         }
-        int activeGuestCount = Mathf.Clamp(CoopGameConfig.PlayerCount, 2, 4);
-        for (int p = 1; p < activeGuestCount; p++)
+        if (!PrieDieuCoopSync.IsKneeling && !CoopGameSetupUI.IsOpen && !CoopPlayerPauseMenu.IsOpen && !HudLayoutDebugEditor.IsOpen && !Combat.BossDebugTeleportManager.IsMenuOpen)
         {
-            if (GetMenuDown(p) && Gameplay.UI.UIController.instance != null && Time.frameCount != Player2MenuView.LastMenuToggleFrame)
+            int activeGuestCount = Mathf.Clamp(CoopGameConfig.PlayerCount, 2, 4);
+            for (int p = 1; p < activeGuestCount; p++)
             {
-                NewInventoryWidget widget = NewInventoryMenuField.GetValue(Gameplay.UI.UIController.instance) as NewInventoryWidget;
-                bool isMenuOpen = widget != null && widget.currentlyActive;
-                if (!isMenuOpen)
+                if (GetMenuDown(p) && Gameplay.UI.UIController.instance != null && Time.frameCount != Player2MenuView.LastMenuToggleFrame)
                 {
-                    // Menú cerrado: abrir directamente para el jugador p
-                    Player2MenuView.RequestOpenAsPlayer(p);
-                    Player2MenuView.LastMenuToggleFrame = Time.frameCount;
-                    Gameplay.UI.UIController.instance.ToggleInventoryMenu();
+                    NewInventoryWidget widget = NewInventoryMenuField.GetValue(Gameplay.UI.UIController.instance) as NewInventoryWidget;
+                    bool isMenuOpen = widget != null && widget.currentlyActive;
+                    if (!isMenuOpen)
+                    {
+                        // Menú cerrado: abrir directamente para el jugador p
+                        Player2MenuView.RequestOpenAsPlayer(p);
+                        Player2MenuView.LastMenuToggleFrame = Time.frameCount;
+                        Gameplay.UI.UIController.instance.ToggleInventoryMenu();
+                    }
+                    else if (Player2MenuView.ActivePlayerIndex == p)
+                    {
+                        // Ya está viendo este jugador: cerrar menú
+                        Player2MenuView.LastMenuToggleFrame = Time.frameCount;
+                        Gameplay.UI.UIController.instance.ToggleInventoryMenu();
+                    }
+                    else
+                    {
+                        // Menú ya abierto en otro jugador: cambiar la vista directamente al jugador p
+                        Player2MenuView.SetActivePlayer(p);
+                        object currentTab = CurrentTabTypeField.GetValue(widget);
+                        SelectTabMethod.Invoke(widget, new object[] { currentTab, false });
+                        RefreshDeviceAssignment();
+                        CoopMenuOwnerBanner.Refresh(widget);
+                        Player2MenuView.LastMenuToggleFrame = Time.frameCount;
+                    }
+                    break;
                 }
-                else if (Player2MenuView.ActivePlayerIndex == p)
-                {
-                    // Ya está viendo este jugador: cerrar menú
-                    Player2MenuView.LastMenuToggleFrame = Time.frameCount;
-                    Gameplay.UI.UIController.instance.ToggleInventoryMenu();
-                }
-                else
-                {
-                    // Menú ya abierto en otro jugador: cambiar la vista directamente al jugador p
-                    Player2MenuView.SetActivePlayer(p);
-                    object currentTab = CurrentTabTypeField.GetValue(widget);
-                    SelectTabMethod.Invoke(widget, new object[] { currentTab, false });
-                    RefreshDeviceAssignment();
-                    CoopMenuOwnerBanner.Refresh(widget);
-                    Player2MenuView.LastMenuToggleFrame = Time.frameCount;
-                }
-                break;
             }
         }
 // Ronda 49: ocultado a pedido del usuario - el tuner interactivo usa flechas/./-/+, las
@@ -1047,6 +1121,11 @@ internal static class Player2Input
     {
         get
         {
+            if (Core.GameModeManager != null && Core.GameModeManager.IsCurrentMode(GameModeManager.GAME_MODES.MENU))
+            {
+                return (Rewired.ControllerType)(-1);
+            }
+
             bool guestDriving = Player2MenuView.IsInventoryP2View;
             if (guestDriving)
             {
@@ -1068,8 +1147,14 @@ internal static class Player2Input
         {
             return;
         }
+        Rewired.ControllerType excluded = ExcludedFromPlayer0;
+        if ((int)excluded < 0)
+        {
+            p1Rewired.controllers.excludeFromControllerAutoAssignment = false;
+            return;
+        }
         p1Rewired.controllers.excludeFromControllerAutoAssignment = true;
-        p1Rewired.controllers.ClearControllersOfType(ExcludedFromPlayer0);
+        p1Rewired.controllers.ClearControllersOfType(excluded);
         ReattachAllowedDevice(p1Rewired);
     }
 
@@ -1110,6 +1195,10 @@ internal static class Player2Input
             return;
         }
         Rewired.ControllerType excluded = ExcludedFromPlayer0;
+        if ((int)excluded < 0)
+        {
+            return;
+        }
         int before = excluded == Rewired.ControllerType.Joystick
             ? p1Rewired.controllers.joystickCount
             : (p1Rewired.controllers.ContainsController(Rewired.ControllerType.Keyboard, 0) ? 1 : 0);
@@ -1120,6 +1209,63 @@ internal static class Player2Input
                 $"Player 0 still had a {excluded} controller assigned - cleared again (swapping for menu/gameplay).");
         }
         ReattachAllowedDevice(p1Rewired);
+    }
+
+    internal static void ResetToMainMenuInput()
+    {
+        everTicked = false;
+        ActiveKeyboardPlayerIndex = 0;
+        Mode = Player2InputMode.Gamepad;
+
+        try
+        {
+            Player2ModeIndicator.SetMenuOverlayHidden(true);
+
+            Rewired.Player p1Rewired = GetP1Rewired();
+            if (p1Rewired != null)
+            {
+                p1Rewired.controllers.excludeFromControllerAutoAssignment = false;
+
+                if (Rewired.ReInput.isReady && Rewired.ReInput.controllers != null)
+                {
+                    var keyboard = Rewired.ReInput.controllers.Keyboard;
+                    if (keyboard != null && !p1Rewired.controllers.ContainsController(keyboard))
+                    {
+                        p1Rewired.controllers.AddController(keyboard, false);
+                    }
+
+                    if (Rewired.ReInput.controllers.Joysticks != null)
+                    {
+                        foreach (var joy in Rewired.ReInput.controllers.Joysticks)
+                        {
+                            if (joy != null && !p1Rewired.controllers.ContainsController(joy))
+                            {
+                                p1Rewired.controllers.AddController(joy, false);
+                            }
+                        }
+                    }
+                }
+            }
+
+            CoopGameConfig.Slots[0].Device = CoopDeviceType.Keyboard;
+            for (int i = 1; i < CoopGameConfig.Slots.Length; i++)
+            {
+                if (CoopGameConfig.Slots[i].Device == CoopDeviceType.Keyboard)
+                {
+                    CoopGameConfig.Slots[i].Device = (CoopDeviceType)(i + 1);
+                }
+            }
+            CoopGameConfig.ApplyToRegistry();
+
+            if (Main.CoopLocal != null)
+            {
+                Blasphemous.ModdingAPI.ModLog.Info("[Player2Input] Teclado restaurado a P1 para navegación en el Menú Principal.", Main.CoopLocal);
+            }
+        }
+        catch (Exception ex)
+        {
+            DashParryDebugLog.Log($"[Player2Input] Error restoring P1 main menu input: {ex.Message}");
+        }
     }
 
     private static void LogModeAndControllers(string message)
@@ -1178,6 +1324,7 @@ internal static class Player2ModeIndicator
         EnsureCreated();
         if (label != null)
         {
+            label.gameObject.SetActive(true);
             int total = CoopGameConfig.IsCoopEnabled ? Mathf.Clamp(CoopGameConfig.PlayerCount, 2, 4) : 1;
             label.text = $"[F9] Teclado: P{playerIndex + 1} ({playerName}) [Partida: {total}P]";
             label.color = CoopPlayerRegistry.GetLabelColor(playerIndex);

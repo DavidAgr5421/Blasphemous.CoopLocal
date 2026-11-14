@@ -245,7 +245,10 @@ public class CoopClientWorldSync : MonoBehaviour
                 }
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            DashParryDebugLog.LogOnce("CoopClientWorldSync.ApplyState", $"[CoopClientWorldSync] Error aplicando estado remoto: {ex.Message}", isWarning: true);
+        }
     }
 
     public void ClearPuppets()

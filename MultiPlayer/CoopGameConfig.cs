@@ -32,6 +32,7 @@ internal sealed class PlayerSlotConfig
         {
             if (PlayerIndex == 0) return true;
             if (Device == CoopDeviceType.RemoteSteam) return IsOnlineConnected;
+            if (Device == CoopDeviceType.Unassigned) return false;
             return true;
         }
     }
@@ -56,14 +57,41 @@ internal static class CoopGameConfig
     public static bool IsCoopEnabled = true;
     public static int PlayerCount = 2; // 1 a 4
     public static bool EnableElementalUpgrades = true;
+    public static bool VerboseDebugLog = false;
 
-    // Configuración visual del árbol elemental (posición y escala calibradas permanentemente)
-    public static float TreeOffsetX = 1.0f;
-    public static float TreeOffsetY = -8.0f;
-    public static float TreeScale = 0.85f;
-    public static float SkillTextScale = 1.0f; // Escala del texto de descripciones ({ aumenta, } disminuye)
-    public static float ElementalBranchSpacing = 220f; // Distancia horizontal entre rama Veneno y Sangrado (calibrado)
-    public static float ElementalNodeVerticalSpacing = 79.5f; // Distancia vertical entre niveles I, II y III
+    // Configuración visual del árbol elemental (posición y escala calibradas para 3 columnas: Veneno | Vanilla | Sangrado | Electricidad)
+    public const float DefaultTreeOffsetX = -30.0f;
+    public const float DefaultTreeOffsetY = 2.5f;
+    public const float DefaultTreeScale = 0.68f;
+    public const float DefaultSkillTextScale = 1.0f; // Escala del texto de descripciones ({ aumenta, } disminuye)
+    public const float DefaultElementalBranchSpacing = 247.0f; // Distancia horizontal entre rama Veneno y Sangrado (calibrado)
+    public const float DefaultElementalNodeVerticalSpacing = 73.0f; // Distancia vertical entre niveles I, II y III
+    public const float DefaultElectricoColumnOffset = 62.0f; // Desplazamiento horizontal de la columna Electricidad a la derecha de Sangrado
+    public const float DefaultMaldicionColumnOffset = 62.0f; // Desplazamiento horizontal de la columna Maldición a la izquierda de Veneno
+    public const float DefaultDescPanelOffsetX = 0.0f; // Desplazamiento del panel de descripción del menú de habilidades (relativo a su posición base)
+    public const float DefaultDescPanelOffsetY = 0.0f;
+    public const float DefaultDescPanelScale = 1.0f;
+
+    // Versión del layout del árbol. Si el cfg guardado tiene una versión menor, se restablecen los parámetros de árbol/descripción a los defaults actuales.
+    public const int CurrentTreeLayoutVersion = 2;
+
+    public static float TreeOffsetX = DefaultTreeOffsetX;
+    public static float TreeOffsetY = DefaultTreeOffsetY;
+    public static float TreeScale = DefaultTreeScale;
+    public static float SkillTextScale = DefaultSkillTextScale;
+    public static float ElementalBranchSpacing = DefaultElementalBranchSpacing;
+    public static float ElementalNodeVerticalSpacing = DefaultElementalNodeVerticalSpacing;
+    public static float ElectricoColumnOffset = DefaultElectricoColumnOffset;
+    public static float MaldicionColumnOffset = DefaultMaldicionColumnOffset;
+    public static float DescPanelOffsetX = DefaultDescPanelOffsetX;
+    public static float DescPanelOffsetY = DefaultDescPanelOffsetY;
+    public static float DescPanelScale = DefaultDescPanelScale;
+
+    // Versión del layout leída del cfg (0 si no existe la clave). Se compara en Load().
+    public static int TreeLayoutVersion = 0;
+    // true tras una migración de versión: el Save() se difiere al primer uso del árbol (ver SwordElementalUpgrades.EnsureSkillTreeNodesInjected)
+    // porque Load() corre en el constructor estático y Save() toca CoopSaveManager.CurrentSlot.
+    public static bool TreeLayoutMigrationPending = false;
 
     public static readonly PlayerSlotConfig[] Slots = new PlayerSlotConfig[4]
     {
@@ -164,9 +192,64 @@ internal static class CoopGameConfig
         new string[] { "P4", "Cruzado", "Penitente 4", "Heraldo", "Martirio", "Milagro" }
     };
 
-    private static string ConfigPath => Path.Combine(
-        Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) ?? "",
-        "coop_game_settings.cfg");
+    public static string PrimaryConfigPath
+    {
+        get
+        {
+            try
+            {
+                string p = Application.persistentDataPath;
+                if (!string.IsNullOrEmpty(p))
+                {
+                    string dir = Path.Combine(p, "CoopLocalMod");
+                    if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                    return Path.Combine(dir, "coop_game_settings.cfg");
+                }
+            }
+            catch { /* ignorado intencionalmente: Application.persistentDataPath puede no estar disponible antes de inicializar Unity */ }
+            return null;
+        }
+    }
+
+    public static string SecondaryConfigPath
+    {
+        get
+        {
+            try
+            {
+                string asmLoc = System.Reflection.Assembly.GetExecutingAssembly().Location;
+                if (!string.IsNullOrEmpty(asmLoc))
+                {
+                    string dir = Path.GetDirectoryName(asmLoc);
+                    if (!string.IsNullOrEmpty(dir))
+                    {
+                        return Path.Combine(dir, "coop_game_settings.cfg");
+                    }
+                }
+            }
+            catch { /* ignorado intencionalmente: Application.persistentDataPath puede no estar disponible antes de inicializar Unity */ }
+            return null;
+        }
+    }
+
+    public static string TertiaryConfigPath
+    {
+        get
+        {
+            try
+            {
+                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                if (!string.IsNullOrEmpty(baseDir))
+                {
+                    return Path.Combine(Path.Combine(Path.Combine(baseDir, "Modding"), "config"), "coop_game_settings.cfg");
+                }
+            }
+            catch { /* ignorado intencionalmente: Application.persistentDataPath puede no estar disponible antes de inicializar Unity */ }
+            return null;
+        }
+    }
+
+    private static string ConfigPath => PrimaryConfigPath ?? SecondaryConfigPath;
 
     static CoopGameConfig()
     {
@@ -260,6 +343,7 @@ internal static class CoopGameConfig
             StringBuilder sb = new StringBuilder();
             sb.AppendLine($"IsCoopEnabled={IsCoopEnabled}");
             sb.AppendLine($"EnableElementalUpgrades={EnableElementalUpgrades}");
+            sb.AppendLine($"VerboseDebugLog={VerboseDebugLog}");
             sb.AppendLine($"PlayerCount={PlayerCount}");
             sb.AppendLine($"TreeOffsetX={TreeOffsetX.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
             sb.AppendLine($"TreeOffsetY={TreeOffsetY.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
@@ -267,6 +351,12 @@ internal static class CoopGameConfig
             sb.AppendLine($"SkillTextScale={SkillTextScale.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
             sb.AppendLine($"ElementalBranchSpacing={ElementalBranchSpacing.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
             sb.AppendLine($"ElementalNodeVerticalSpacing={ElementalNodeVerticalSpacing.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+            sb.AppendLine($"ElectricoColumnOffset={ElectricoColumnOffset.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+            sb.AppendLine($"MaldicionColumnOffset={MaldicionColumnOffset.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+            sb.AppendLine($"DescPanelOffsetX={DescPanelOffsetX.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+            sb.AppendLine($"DescPanelOffsetY={DescPanelOffsetY.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+            sb.AppendLine($"DescPanelScale={DescPanelScale.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+            sb.AppendLine($"TreeLayoutVersion={CurrentTreeLayoutVersion}");
             sb.AppendLine($"EnemyMultiplier={Combat.CoopEnemyScaling.ActiveEnemyMultiplier.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
             sb.AppendLine($"EnemyHealthMultiplier={Combat.CoopEnemyScaling.ActiveHealthMultiplier.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
             sb.AppendLine($"BossResistanceFactor={Combat.CoopEnemyScaling.ActiveBossResistanceFactor.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
@@ -277,7 +367,35 @@ internal static class CoopGameConfig
                 sb.AppendLine($"P{i}_Device={(int)Slots[i].Device}");
                 sb.AppendLine($"P{i}_Skin={Slots[i].SkinId}");
             }
-            File.WriteAllText(ConfigPath, sb.ToString());
+            string content = sb.ToString();
+            TreeLayoutMigrationPending = false;
+
+            string primary = PrimaryConfigPath;
+            if (!string.IsNullOrEmpty(primary))
+            {
+                try { File.WriteAllText(primary, content); } catch { }
+            }
+
+            string secondary = SecondaryConfigPath;
+            if (!string.IsNullOrEmpty(secondary) && !string.Equals(secondary, primary, StringComparison.OrdinalIgnoreCase))
+            {
+                try { File.WriteAllText(secondary, content); } catch { }
+            }
+
+            string tertiary = TertiaryConfigPath;
+            if (!string.IsNullOrEmpty(tertiary))
+            {
+                try
+                {
+                    string tDir = Path.GetDirectoryName(tertiary);
+                    if (Directory.Exists(tDir))
+                    {
+                        File.WriteAllText(tertiary, content);
+                    }
+                }
+                catch { /* ignorado intencionalmente: Application.persistentDataPath puede no estar disponible antes de inicializar Unity */ }
+            }
+
             int currentSlot = CoopSaveManager.CurrentSlot;
             if (currentSlot >= 0)
             {
@@ -286,15 +404,36 @@ internal static class CoopGameConfig
                 CoopSaveManager.SaveSlot(currentSlot);
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            DashParryDebugLog.LogOnce("CoopGameConfig.SaveOrLoad", $"[CoopGameConfig] Error en Save/Load: {ex.Message}", isWarning: true);
+        }
     }
 
     public static void Load()
     {
         try
         {
-            if (!File.Exists(ConfigPath)) return;
-            string[] lines = File.ReadAllLines(ConfigPath);
+            string targetPath = null;
+            string primary = PrimaryConfigPath;
+            string secondary = SecondaryConfigPath;
+            string tertiary = TertiaryConfigPath;
+
+            if (!string.IsNullOrEmpty(primary) && File.Exists(primary))
+            {
+                targetPath = primary;
+            }
+            else if (!string.IsNullOrEmpty(secondary) && File.Exists(secondary))
+            {
+                targetPath = secondary;
+            }
+            else if (!string.IsNullOrEmpty(tertiary) && File.Exists(tertiary))
+            {
+                targetPath = tertiary;
+            }
+
+            if (string.IsNullOrEmpty(targetPath) || !File.Exists(targetPath)) return;
+            string[] lines = File.ReadAllLines(targetPath);
             foreach (string rawLine in lines)
             {
                 string line = rawLine.Trim();
@@ -311,6 +450,10 @@ internal static class CoopGameConfig
                 else if (key.Equals("EnableElementalUpgrades", StringComparison.OrdinalIgnoreCase))
                 {
                     if (bool.TryParse(val, out bool b)) EnableElementalUpgrades = b;
+                }
+                else if (key.Equals("VerboseDebugLog", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (bool.TryParse(val, out bool b)) VerboseDebugLog = b;
                 }
                 else if (key.Equals("PlayerCount", StringComparison.OrdinalIgnoreCase))
                 {
@@ -339,6 +482,30 @@ internal static class CoopGameConfig
                 else if (key.Equals("ElementalNodeVerticalSpacing", StringComparison.OrdinalIgnoreCase))
                 {
                     if (float.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float vs)) ElementalNodeVerticalSpacing = Mathf.Clamp(vs, 15f, 100f);
+                }
+                else if (key.Equals("ElectricoColumnOffset", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (float.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float eco)) ElectricoColumnOffset = eco;
+                }
+                else if (key.Equals("MaldicionColumnOffset", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (float.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float mco)) MaldicionColumnOffset = mco;
+                }
+                else if (key.Equals("DescPanelOffsetX", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (float.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float dox)) DescPanelOffsetX = dox;
+                }
+                else if (key.Equals("DescPanelOffsetY", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (float.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float doy)) DescPanelOffsetY = doy;
+                }
+                else if (key.Equals("DescPanelScale", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (float.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float dsc)) DescPanelScale = Mathf.Clamp(dsc, 0.3f, 3.0f);
+                }
+                else if (key.Equals("TreeLayoutVersion", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (int.TryParse(val, out int tlv)) TreeLayoutVersion = tlv;
                 }
                 else if (key.Equals("EnemyMultiplier", StringComparison.OrdinalIgnoreCase))
                 {
@@ -376,9 +543,40 @@ internal static class CoopGameConfig
                     }
                 }
             }
+
+            MigrateTreeLayoutIfOutdated();
         }
-        catch { }
+        catch (Exception ex)
+        {
+            DashParryDebugLog.LogOnce("CoopGameConfig.SaveOrLoad", $"[CoopGameConfig] Error en Save/Load: {ex.Message}", isWarning: true);
+        }
     }
+
+    /// <summary>
+    /// Si la versión del layout guardada es menor que la del código, restablece los parámetros del árbol
+    /// y de la descripción a los defaults actuales (el cfg de usuario con valores antiguos los pisaría).
+    /// El guardado en disco se difiere (TreeLayoutMigrationPending).
+    /// </summary>
+    private static void MigrateTreeLayoutIfOutdated()
+    {
+        if (TreeLayoutVersion >= CurrentTreeLayoutVersion) return;
+
+        TreeOffsetX = DefaultTreeOffsetX;
+        TreeOffsetY = DefaultTreeOffsetY;
+        TreeScale = DefaultTreeScale;
+        ElementalBranchSpacing = DefaultElementalBranchSpacing;
+        ElementalNodeVerticalSpacing = DefaultElementalNodeVerticalSpacing;
+        ElectricoColumnOffset = DefaultElectricoColumnOffset;
+        MaldicionColumnOffset = DefaultMaldicionColumnOffset;
+        DescPanelOffsetX = DefaultDescPanelOffsetX;
+        DescPanelOffsetY = DefaultDescPanelOffsetY;
+        DescPanelScale = DefaultDescPanelScale;
+
+        TreeLayoutVersion = CurrentTreeLayoutVersion;
+        TreeLayoutMigrationPending = true;
+    }
+
+    public static bool IsHudLayout3Plus => GetActiveConnectedPlayerCount() >= 3;
 
     public static int GetActiveConnectedPlayerCount()
     {

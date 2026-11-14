@@ -60,11 +60,18 @@ public class CoopJoinLobbyUI : MonoBehaviour
 
     private Font gameFont;
 
+    private static GameObject CreateUiElement(string name, Transform parent)
+    {
+        GameObject go = new GameObject(name, typeof(RectTransform));
+        go.transform.SetParent(parent, false);
+        return go;
+    }
+
     private static void CreateUI()
     {
         if (_instance != null) return;
 
-        GameObject go = new GameObject("CoopJoinLobbyUI");
+        GameObject go = new GameObject("CoopJoinLobbyUI", typeof(RectTransform));
         UnityEngine.Object.DontDestroyOnLoad(go);
         _instance = go.AddComponent<CoopJoinLobbyUI>();
         _instance.BuildInterface();
@@ -90,23 +97,7 @@ public class CoopJoinLobbyUI : MonoBehaviour
     {
         if (rootCanvasObj != null) return;
 
-        gameFont = Font.CreateDynamicFontFromOSFont("Trajan Pro", 18);
-        if (gameFont == null)
-        {
-            Font[] fonts = Resources.FindObjectsOfTypeAll<Font>();
-            if (fonts != null && fonts.Length > 0)
-            {
-                for (int i = 0; i < fonts.Length; i++)
-                {
-                    if (fonts[i] != null && (fonts[i].name.Contains("Trajan") || fonts[i].name.Contains("Pixel") || fonts[i].name.Contains("Blasphemous")))
-                    {
-                        gameFont = fonts[i];
-                        break;
-                    }
-                }
-                if (gameFont == null && fonts.Length > 0) gameFont = fonts[0];
-            }
-        }
+        gameFont = CoopGameSetupUI.GetGameFont();
 
         rootCanvasObj = new GameObject("JoinLobbyCanvas");
         rootCanvasObj.transform.SetParent(transform, false);
@@ -122,9 +113,9 @@ public class CoopJoinLobbyUI : MonoBehaviour
         rootCanvasObj.AddComponent<GraphicRaycaster>();
 
         // Fondo oscuro total
-        GameObject darkOverlay = new GameObject("DarkOverlay");
-        darkOverlay.transform.SetParent(rootCanvasObj.transform, false);
-        RectTransform doRt = darkOverlay.AddComponent<RectTransform>();
+        GameObject darkOverlay = CreateUiElement("DarkOverlay", rootCanvasObj.transform);
+
+        RectTransform doRt = darkOverlay.GetComponent<RectTransform>();
         doRt.anchorMin = Vector2.zero;
         doRt.anchorMax = Vector2.one;
         doRt.sizeDelta = Vector2.zero;
@@ -132,9 +123,9 @@ public class CoopJoinLobbyUI : MonoBehaviour
         doImg.color = new Color(0.03f, 0.03f, 0.04f, 0.90f);
 
         // Panel Central
-        GameObject panelObj = new GameObject("Panel");
-        panelObj.transform.SetParent(rootCanvasObj.transform, false);
-        RectTransform panelRt = panelObj.AddComponent<RectTransform>();
+        GameObject panelObj = CreateUiElement("Panel", rootCanvasObj.transform);
+
+        RectTransform panelRt = panelObj.GetComponent<RectTransform>();
         panelRt.anchorMin = new Vector2(0.5f, 0.5f);
         panelRt.anchorMax = new Vector2(0.5f, 0.5f);
         panelRt.pivot = new Vector2(0.5f, 0.5f);
@@ -147,9 +138,9 @@ public class CoopJoinLobbyUI : MonoBehaviour
         pnlOut.effectDistance = new Vector2(2.5f, -2.5f);
 
         // Título Principal
-        GameObject hdrObj = new GameObject("Title");
-        hdrObj.transform.SetParent(panelObj.transform, false);
-        RectTransform hdrRt = hdrObj.AddComponent<RectTransform>();
+        GameObject hdrObj = CreateUiElement("Title", panelObj.transform);
+
+        RectTransform hdrRt = hdrObj.GetComponent<RectTransform>();
         hdrRt.anchoredPosition = new Vector2(0f, 255f);
         hdrRt.sizeDelta = new Vector2(800f, 40f);
         headerTitleText = hdrObj.AddComponent<Text>();
@@ -160,9 +151,9 @@ public class CoopJoinLobbyUI : MonoBehaviour
         headerTitleText.text = "=== UNIRSE A SALA CO-OP (STEAM P2P) ===";
 
         // Subtítulo
-        GameObject subObj = new GameObject("Subtitle");
-        subObj.transform.SetParent(panelObj.transform, false);
-        RectTransform subRt = subObj.AddComponent<RectTransform>();
+        GameObject subObj = CreateUiElement("Subtitle", panelObj.transform);
+
+        RectTransform subRt = subObj.GetComponent<RectTransform>();
         subRt.anchoredPosition = new Vector2(0f, 220f);
         subRt.sizeDelta = new Vector2(800f, 30f);
         headerSubtitleText = subObj.AddComponent<Text>();
@@ -185,18 +176,18 @@ public class CoopJoinLobbyUI : MonoBehaviour
         playerSkinValueText = CreateConfigRow(panelObj.transform, 3, -60f, "ASPECTO / SKIN:", "◄ Por Defecto ►");
 
         // Mini preview de Skin
-        GameObject prevObj = new GameObject("SkinPreview");
-        prevObj.transform.SetParent(panelObj.transform, false);
-        RectTransform prRt = prevObj.AddComponent<RectTransform>();
+        GameObject prevObj = CreateUiElement("SkinPreview", panelObj.transform);
+
+        RectTransform prRt = prevObj.GetComponent<RectTransform>();
         prRt.anchoredPosition = new Vector2(250f, -60f);
         prRt.sizeDelta = new Vector2(50f, 50f);
         skinPreviewImage = prevObj.AddComponent<Image>();
         skinPreviewImage.preserveAspect = true;
 
         // Estado / Feedback
-        GameObject stObj = new GameObject("StatusFeedback");
-        stObj.transform.SetParent(panelObj.transform, false);
-        RectTransform stRt = stObj.AddComponent<RectTransform>();
+        GameObject stObj = CreateUiElement("StatusFeedback", panelObj.transform);
+
+        RectTransform stRt = stObj.GetComponent<RectTransform>();
         stRt.anchoredPosition = new Vector2(0f, -145f);
         stRt.sizeDelta = new Vector2(760f, 40f);
         statusFeedbackText = stObj.AddComponent<Text>();
@@ -207,9 +198,9 @@ public class CoopJoinLobbyUI : MonoBehaviour
         statusFeedbackText.text = "[ Ingresa el código y presiona CONECTARSE ]";
 
         // Botón Conectarse
-        GameObject connBtnObj = new GameObject("ConnectButton");
-        connBtnObj.transform.SetParent(panelObj.transform, false);
-        RectTransform cbRt = connBtnObj.AddComponent<RectTransform>();
+        GameObject connBtnObj = CreateUiElement("ConnectButton", panelObj.transform);
+
+        RectTransform cbRt = connBtnObj.GetComponent<RectTransform>();
         cbRt.anchoredPosition = new Vector2(0f, -210f);
         cbRt.sizeDelta = new Vector2(480f, 48f);
         connectButtonBg = connBtnObj.AddComponent<Image>();
@@ -217,9 +208,10 @@ public class CoopJoinLobbyUI : MonoBehaviour
         Outline cbOut = connBtnObj.AddComponent<Outline>();
         cbOut.effectColor = new Color(0.35f, 0.85f, 0.45f, 0.8f);
 
-        GameObject cbTxtObj = new GameObject("Text");
-        cbTxtObj.transform.SetParent(connBtnObj.transform, false);
-        RectTransform cbtRt = cbTxtObj.AddComponent<RectTransform>();
+        GameObject cbTxtObj = CreateUiElement("Text", connBtnObj.transform);
+
+
+        RectTransform cbtRt = cbTxtObj.GetComponent<RectTransform>();
         cbtRt.sizeDelta = new Vector2(460f, 45f);
         connectButtonText = cbTxtObj.AddComponent<Text>();
         connectButtonText.font = gameFont;
@@ -229,9 +221,9 @@ public class CoopJoinLobbyUI : MonoBehaviour
         connectButtonText.text = "CONECTARSE (ENTER)";
 
         // Barra inferior de atajos
-        GameObject lgdObj = new GameObject("Legend");
-        lgdObj.transform.SetParent(panelObj.transform, false);
-        RectTransform lgdRt = lgdObj.AddComponent<RectTransform>();
+        GameObject lgdObj = CreateUiElement("Legend", panelObj.transform);
+
+        RectTransform lgdRt = lgdObj.GetComponent<RectTransform>();
         lgdRt.anchoredPosition = new Vector2(0f, -275f);
         lgdRt.sizeDelta = new Vector2(800f, 30f);
         Text lgdText = lgdObj.AddComponent<Text>();
@@ -246,16 +238,16 @@ public class CoopJoinLobbyUI : MonoBehaviour
 
     private Text CreateConfigRow(Transform parent, int rowIndex, float posY, string label, string defaultValue)
     {
-        GameObject rowObj = new GameObject($"Row_{rowIndex}");
-        rowObj.transform.SetParent(parent, false);
-        RectTransform rRt = rowObj.AddComponent<RectTransform>();
+        GameObject rowObj = CreateUiElement($"Row_{rowIndex}", parent);
+
+        RectTransform rRt = rowObj.GetComponent<RectTransform>();
         rRt.anchoredPosition = new Vector2(0f, posY);
         rRt.sizeDelta = new Vector2(760f, 50f);
 
         // Etiqueta
-        GameObject lblObj = new GameObject("Label");
-        lblObj.transform.SetParent(rowObj.transform, false);
-        RectTransform lRt = lblObj.AddComponent<RectTransform>();
+        GameObject lblObj = CreateUiElement("Label", rowObj.transform);
+
+        RectTransform lRt = lblObj.GetComponent<RectTransform>();
         lRt.anchoredPosition = new Vector2(-180f, 0f);
         lRt.sizeDelta = new Vector2(360f, 40f);
         Text lTxt = lblObj.AddComponent<Text>();
@@ -266,9 +258,9 @@ public class CoopJoinLobbyUI : MonoBehaviour
         lTxt.text = label;
 
         // Valor / Entrada
-        GameObject valObj = new GameObject("Value");
-        valObj.transform.SetParent(rowObj.transform, false);
-        RectTransform vRt = valObj.AddComponent<RectTransform>();
+        GameObject valObj = CreateUiElement("Value", rowObj.transform);
+
+        RectTransform vRt = valObj.GetComponent<RectTransform>();
         vRt.anchoredPosition = new Vector2(160f, 0f);
         vRt.sizeDelta = new Vector2(340f, 40f);
         Text vTxt = valObj.AddComponent<Text>();

@@ -118,7 +118,7 @@ internal static class Player2HudFadeSync
     internal static bool ShouldP2PurgeBeVisible()
     {
         if (!ShouldP2HudBeVisible()) return false;
-        if (CoopGameConfig.PlayerCount >= 3)
+        if (CoopGameConfig.IsHudLayout3Plus)
         {
             return true;
         }
@@ -148,7 +148,7 @@ internal static class Player2HudFadeSync
         CoopHealthBars.SetVisibleAll(true, instant: true);
         CoopFervourBars.SetVisibleAll(true, instant: true);
 
-        if (CoopGameConfig.PlayerCount >= 3)
+        if (CoopGameConfig.IsHudLayout3Plus)
         {
             CoopPurgeHUD.SetVisible(ShouldP2PurgeBeVisible(), instant: true);
             Player2PurgePoints.SetVisible(false, instant: true);
@@ -156,6 +156,7 @@ internal static class Player2HudFadeSync
         }
         else
         {
+            RestoreVanillaRightPartIn2P();
             Player2PurgePoints.SetVisible(ShouldP2PurgeBeVisible(), instant: true);
             CoopPurgeHUD.SetVisible(false, instant: true);
         }
@@ -163,9 +164,25 @@ internal static class Player2HudFadeSync
         Player2ModeIndicator.SetMenuOverlayHidden(false);
     }
 
+    internal static void RestoreVanillaRightPartIn2P()
+    {
+        if (!CoopGameConfig.IsHudLayout3Plus)
+        {
+            GameplayWidget gw = Core.UI?.GameplayUI;
+            if (gw != null && RightPartRootField != null)
+            {
+                var rightRoot = RightPartRootField.GetValue(gw) as GameObject;
+                if (rightRoot != null && !rightRoot.activeSelf)
+                {
+                    rightRoot.SetActive(true);
+                }
+            }
+        }
+    }
+
     private static void HideVanillaRightPartIn3Plus()
     {
-        if (CoopGameConfig.PlayerCount >= 3)
+        if (CoopGameConfig.IsHudLayout3Plus)
         {
             GameplayWidget gw = Core.UI?.GameplayUI;
             if (gw != null && RightPartRootField != null)
@@ -191,7 +208,7 @@ internal static class Player2HudFadeSync
                 CoopHealthBars.SetVisibleAll(true, instant);
                 CoopFervourBars.SetVisibleAll(true, instant);
 
-                if (CoopGameConfig.PlayerCount >= 3)
+                if (CoopGameConfig.IsHudLayout3Plus)
                 {
                     CoopPurgeHUD.SetVisible(ShouldP2PurgeBeVisible(), instant);
                     Player2PurgePoints.SetVisible(false, instant);
@@ -218,7 +235,7 @@ internal static class Player2HudFadeSync
         {
             // Sincronización fina de Purge (monedas) según el estado de rightPartRoot
             bool purgeVisible = ShouldP2PurgeBeVisible();
-            if (CoopGameConfig.PlayerCount >= 3)
+            if (CoopGameConfig.IsHudLayout3Plus)
             {
                 CoopPurgeHUD.SetVisible(purgeVisible, instant);
                 Player2PurgePoints.SetVisible(false, instant);

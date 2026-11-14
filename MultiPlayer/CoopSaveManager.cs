@@ -605,7 +605,10 @@ internal static class CoopSaveManager
                 if (int.TryParse(val, out int d)) p.Device = (CoopDeviceType)d;
                 else p.Device = (CoopDeviceType)Enum.Parse(typeof(CoopDeviceType), val, true);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                DashParryDebugLog.LogOnce($"CoopSaveManager.ParseDevice:{val}", $"[CoopSaveManager] Error parseando Device='{val}': {ex.Message}", isWarning: true);
+            }
         }
         else if (key.Equals("SkinId", StringComparison.OrdinalIgnoreCase)) p.SkinId = val;
         else if (key.Equals("PendingRevive", StringComparison.OrdinalIgnoreCase)) { if (bool.TryParse(val, out bool b)) p.PendingRevive = b; }
@@ -822,7 +825,7 @@ internal static class CoopSaveManager
                 string txt = File.ReadAllText(p1Death);
                 if (txt.IndexOf("PendingRevive=true", StringComparison.OrdinalIgnoreCase) >= 0) p1.PendingRevive = true;
             }
-            catch { }
+            catch { /* ignorado intencionalmente: migración legacy de deathstate opcional */ }
         }
         if (File.Exists(p2Death))
         {
@@ -831,7 +834,7 @@ internal static class CoopSaveManager
                 string txt = File.ReadAllText(p2Death);
                 if (txt.IndexOf("PendingRevive=true", StringComparison.OrdinalIgnoreCase) >= 0) p2.PendingRevive = true;
             }
-            catch { }
+            catch { /* ignorado intencionalmente: migración legacy de deathstate opcional */ }
         }
 
         // Heredar configuración activa de mandos y colores

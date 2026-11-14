@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
@@ -7,12 +8,14 @@ using Framework.Inventory;
 using Framework.Managers;
 using Gameplay.GameControllers.Effects.Entity;
 using Gameplay.GameControllers.Enemies.Framework.Damage;
+using Gameplay.GameControllers.Enemies.Framework.IA;
 using Gameplay.GameControllers.Entities;
 using Gameplay.GameControllers.Penitent;
 using Gameplay.GameControllers.Penitent.Attack;
 using Gameplay.UI.Others.Buttons;
 using Gameplay.UI.Others.MenuLogic;
 using HarmonyLib;
+using Tools.Items;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
@@ -36,17 +39,31 @@ internal static class SwordElementalUpgrades
     internal const string SkillSangrado2 = "SANGRADO_2";
     internal const string SkillSangrado3 = "SANGRADO_3";
 
+    internal const string SkillElectrico1 = "ELECTRICO_1";
+    internal const string SkillElectrico2 = "ELECTRICO_2";
+    internal const string SkillElectrico3 = "ELECTRICO_3";
+
+    internal const string SkillMaldicion1 = "MALDICION_1";
+    internal const string SkillMaldicion2 = "MALDICION_2";
+    internal const string SkillMaldicion3 = "MALDICION_3";
+
     internal const string HeartVenenoId = "HE_VENENO";
     internal const string HeartSangradoId = "HE_SANGRADO";
+    internal const string HeartElectricoId = "HE_ELECTRICO";
+    internal const string HeartMaldicionId = "HE_MALDICION";
 
     internal static bool IsElementalHeart(string id)
     {
         return string.Equals(id, HeartVenenoId, StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(id, HeartSangradoId, StringComparison.OrdinalIgnoreCase);
+               string.Equals(id, HeartSangradoId, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(id, HeartElectricoId, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(id, HeartMaldicionId, StringComparison.OrdinalIgnoreCase);
     }
 
     internal static readonly string[] VenenoSkills = { SkillVeneno1, SkillVeneno2, SkillVeneno3 };
     internal static readonly string[] SangradoSkills = { SkillSangrado1, SkillSangrado2, SkillSangrado3 };
+    internal static readonly string[] ElectricoSkills = { SkillElectrico1, SkillElectrico2, SkillElectrico3 };
+    internal static readonly string[] MaldicionSkills = { SkillMaldicion1, SkillMaldicion2, SkillMaldicion3 };
 
     private static readonly FieldInfo AllSkillsField = AccessTools.Field(typeof(SkillManager), "allSkills");
     private static readonly FieldInfo AllSwordsField = AccessTools.Field(typeof(InventoryManager), "allSwords");
@@ -56,12 +73,18 @@ internal static class SwordElementalUpgrades
     private static Sprite venenoSmallBuyedSprite;
     private static Sprite sangradoSmallSprite;
     private static Sprite sangradoSmallBuyedSprite;
+    private static Sprite electricoSmallSprite;
+    private static Sprite electricoSmallBuyedSprite;
+    private static Sprite maldicionSmallSprite;
+    private static Sprite maldicionSmallBuyedSprite;
     private static Sprite venenoHeartSprite;
     private static Sprite sangradoHeartSprite;
+    private static Sprite electricoHeartSprite;
+    private static Sprite maldicionHeartSprite;
 
     internal static bool IsElementalSkill(string skillId)
     {
-        return IsVenenoSkill(skillId) || IsSangradoSkill(skillId);
+        return IsVenenoSkill(skillId) || IsSangradoSkill(skillId) || IsElectricoSkill(skillId) || IsMaldicionSkill(skillId);
     }
 
     internal static bool IsVenenoSkill(string skillId)
@@ -72,6 +95,16 @@ internal static class SwordElementalUpgrades
     internal static bool IsSangradoSkill(string skillId)
     {
         return !string.IsNullOrEmpty(skillId) && skillId.StartsWith("SANGRADO_", StringComparison.OrdinalIgnoreCase);
+    }
+
+    internal static bool IsElectricoSkill(string skillId)
+    {
+        return !string.IsNullOrEmpty(skillId) && skillId.StartsWith("ELECTRICO_", StringComparison.OrdinalIgnoreCase);
+    }
+
+    internal static bool IsMaldicionSkill(string skillId)
+    {
+        return !string.IsNullOrEmpty(skillId) && skillId.StartsWith("MALDICION_", StringComparison.OrdinalIgnoreCase);
     }
 
     internal static bool HasOppositePathUnlockedP1(string skillId)
@@ -115,6 +148,40 @@ internal static class SwordElementalUpgrades
         if (Core.SkillManager.IsSkillUnlocked(SkillSangrado3)) return 3;
         if (Core.SkillManager.IsSkillUnlocked(SkillSangrado2)) return 2;
         if (Core.SkillManager.IsSkillUnlocked(SkillSangrado1)) return 1;
+        return 0;
+    }
+
+    internal static int GetUnlockedElectricoTier(bool isPlayer2) => GetUnlockedElectricoTier(isPlayer2 ? 1 : 0);
+    internal static int GetUnlockedElectricoTier(int playerIndex)
+    {
+        if (playerIndex > 0)
+        {
+            if (Player2SkillManager.IsUnlocked(playerIndex, SkillElectrico3)) return 3;
+            if (Player2SkillManager.IsUnlocked(playerIndex, SkillElectrico2)) return 2;
+            if (Player2SkillManager.IsUnlocked(playerIndex, SkillElectrico1)) return 1;
+            return 0;
+        }
+        if (Core.SkillManager == null) return 0;
+        if (Core.SkillManager.IsSkillUnlocked(SkillElectrico3)) return 3;
+        if (Core.SkillManager.IsSkillUnlocked(SkillElectrico2)) return 2;
+        if (Core.SkillManager.IsSkillUnlocked(SkillElectrico1)) return 1;
+        return 0;
+    }
+
+    internal static int GetUnlockedMaldicionTier(bool isPlayer2) => GetUnlockedMaldicionTier(isPlayer2 ? 1 : 0);
+    internal static int GetUnlockedMaldicionTier(int playerIndex)
+    {
+        if (playerIndex > 0)
+        {
+            if (Player2SkillManager.IsUnlocked(playerIndex, SkillMaldicion3)) return 3;
+            if (Player2SkillManager.IsUnlocked(playerIndex, SkillMaldicion2)) return 2;
+            if (Player2SkillManager.IsUnlocked(playerIndex, SkillMaldicion1)) return 1;
+            return 0;
+        }
+        if (Core.SkillManager == null) return 0;
+        if (Core.SkillManager.IsSkillUnlocked(SkillMaldicion3)) return 3;
+        if (Core.SkillManager.IsSkillUnlocked(SkillMaldicion2)) return 2;
+        if (Core.SkillManager.IsSkillUnlocked(SkillMaldicion1)) return 1;
         return 0;
     }
 
@@ -167,6 +234,60 @@ internal static class SwordElementalUpgrades
             default:
                 maxHpPercent = 0.07f; // 7% vida máxima (tope nerfeado a 7% a pedido del usuario)
                 progressiveDps = 4.5f; // 4.5 daño/s por 5s
+                break;
+        }
+    }
+
+    internal static void GetElectricoParams(int tier, out float instantDamage, out float stunHitDamage, out float stunCooldown)
+    {
+        stunCooldown = 3.0f;
+        switch (tier)
+        {
+            case 1:
+                instantDamage = 6f;
+                stunHitDamage = 4f;
+                break;
+            case 2:
+                instantDamage = 18f;
+                stunHitDamage = 7f;
+                break;
+            case 3:
+            default:
+                instantDamage = 30f;
+                stunHitDamage = 10f;
+                break;
+        }
+    }
+
+    /// <summary>Umbral eléctrico: golpes acumulados por enemigo antes de congelarlo, y duración del congelamiento (normal / jefe).</summary>
+    internal static void GetElectricoFreezeParams(int tier, out int hitThreshold, out float freezeSeconds, out float bossFreezeSeconds)
+    {
+        hitThreshold = 5;
+        freezeSeconds = 2.0f;
+        bossFreezeSeconds = 0.5f;
+    }
+
+    /// <summary>Maldición: reducción base del daño que el enemigo maldito inflige a jugadores, drenaje (% vida máx. del dueño por golpe) y cooldown del drenaje.</summary>
+    internal static void GetMaldicionParams(int tier, out float damageReduction, out float drainPercentMaxLife, out float drainCooldown, out float curseDuration, out int hitThreshold, out float thresholdMultiplier)
+    {
+        curseDuration = 8.0f;
+        drainCooldown = 0.5f;
+        hitThreshold = 5;
+        thresholdMultiplier = 1.5f;
+        switch (tier)
+        {
+            case 1:
+                damageReduction = 0.10f;
+                drainPercentMaxLife = 0.04f;
+                break;
+            case 2:
+                damageReduction = 0.20f;
+                drainPercentMaxLife = 0.06f;
+                break;
+            case 3:
+            default:
+                damageReduction = 0.30f;
+                drainPercentMaxLife = 0.08f;
                 break;
         }
     }
@@ -549,6 +670,154 @@ internal static class SwordElementalUpgrades
         return Sprite.Create(tex, new Rect(0f, 0f, w, h), new Vector2(0.5f, 0.5f), 32f);
     }
 
+    internal static Sprite CreateCurseIcon(bool unlocked)
+    {
+        int w = 32, h = 32;
+        Texture2D tex = new Texture2D(w, h, TextureFormat.RGBA32, false)
+        {
+            filterMode = FilterMode.Point,
+            wrapMode = TextureWrapMode.Clamp
+        };
+        Color[] pixels = new Color[w * h];
+        for (int i = 0; i < pixels.Length; i++) pixels[i] = Color.clear;
+
+        Color cMain = unlocked ? new Color(0.62f, 0.30f, 0.90f, 1f) : new Color(0.28f, 0.20f, 0.36f, 0.90f);
+        Color cLight = unlocked ? new Color(0.88f, 0.70f, 1f, 1f) : new Color(0.45f, 0.38f, 0.55f, 1f);
+        Color cDark = new Color(0.06f, 0.02f, 0.10f, 1f);
+
+        // Cráneo maldito: cráneo redondo + mandíbula, cuencas oscuras y nariz
+        for (int y = 0; y < h; y++)
+        {
+            for (int x = 0; x < w; x++)
+            {
+                float dx = x - 15.5f;
+                float dy = y - 18f;
+                bool head = dx * dx + dy * dy <= 10.5f * 10.5f;
+                bool jaw = y >= 4 && y <= 10 && x >= 10 && x <= 21;
+                if (!(head || jaw)) continue;
+
+                float d = Mathf.Sqrt(dx * dx + dy * dy);
+                Color c = cMain;
+                if (head && d > 8.5f) c = cLight;
+                pixels[y * w + x] = c;
+            }
+        }
+        void Hole(int x0, int y0, int x1, int y1)
+        {
+            for (int y = y0; y <= y1; y++)
+                for (int x = x0; x <= x1; x++)
+                    if (x >= 0 && x < w && y >= 0 && y < h) pixels[y * w + x] = cDark;
+        }
+        Hole(10, 16, 13, 20);
+        Hole(18, 16, 21, 20);
+        Hole(15, 12, 16, 14);
+        for (int x = 11; x <= 20; x += 3) Hole(x, 4, x, 7);
+
+        tex.SetPixels(pixels);
+        tex.Apply();
+        return Sprite.Create(tex, new Rect(0f, 0f, w, h), new Vector2(0.5f, 0.5f), 32f);
+    }
+
+    internal static Sprite CreateLightningBoltIcon(bool unlocked)
+    {
+        int w = 32, h = 32;
+        Texture2D tex = new Texture2D(w, h, TextureFormat.RGBA32, false)
+        {
+            filterMode = FilterMode.Point,
+            wrapMode = TextureWrapMode.Clamp
+        };
+        Color[] pixels = new Color[w * h];
+        for (int i = 0; i < pixels.Length; i++) pixels[i] = Color.clear;
+
+        void SetPx(int x, int y, Color c)
+        {
+            if (x >= 0 && x < w && y >= 0 && y < h) pixels[y * w + x] = c;
+        }
+
+        void FillRect(int x0, int y0, int x1, int y1, Color c)
+        {
+            for (int y = y0; y <= y1; y++)
+            {
+                for (int x = x0; x <= x1; x++)
+                {
+                    SetPx(x, y, c);
+                }
+            }
+        }
+
+        Color cBorder = new Color(0.05f, 0.08f, 0.14f, 0.92f);
+        Color cGlow = unlocked ? new Color(0.22f, 0.65f, 0.95f, 0.85f) : new Color(0.18f, 0.30f, 0.42f, 0.70f);
+        Color cMain = unlocked ? new Color(0.45f, 0.92f, 1.0f, 1f) : new Color(0.32f, 0.52f, 0.65f, 0.95f);
+        Color cCore = unlocked ? new Color(1.0f, 0.97f, 0.72f, 1f) : new Color(0.58f, 0.72f, 0.80f, 0.95f);
+
+        // Halo / borde exterior del rayo (y=0 abajo .. y=31 arriba en Texture2D)
+        for (int row = 0; row < 24; row++)
+        {
+            int y = 4 + row;
+            int cx;
+            int halfW;
+            if (row >= 14) // Tramo superior inclinado hacia la derecha -> centro
+            {
+                cx = 19 - (row - 14) / 2;
+                halfW = 2;
+            }
+            else if (row >= 11) // Quiebre central ancho
+            {
+                cx = 16;
+                halfW = 5;
+            }
+            else // Punta inferior hacia la izquierda
+            {
+                cx = 11 + (row * 5) / 11;
+                halfW = Mathf.Max(1, row / 4 + 1);
+            }
+
+            FillRect(cx - halfW - 2, y - 1, cx + halfW + 2, y + 1, cBorder);
+        }
+
+        // Relleno eléctrico y núcleo brillante
+        for (int row = 0; row < 24; row++)
+        {
+            int y = 4 + row;
+            int cx;
+            int halfW;
+            if (row >= 14)
+            {
+                cx = 19 - (row - 14) / 2;
+                halfW = 2;
+            }
+            else if (row >= 11)
+            {
+                cx = 16;
+                halfW = 5;
+            }
+            else
+            {
+                cx = 11 + (row * 5) / 11;
+                halfW = Mathf.Max(1, row / 4 + 1);
+            }
+
+            FillRect(cx - halfW - 1, y, cx + halfW + 1, y, cGlow);
+            FillRect(cx - halfW, y, cx + halfW, y, cMain);
+            if (halfW >= 2)
+            {
+                FillRect(cx - halfW + 1, y, cx + halfW - 1, y, cCore);
+            }
+            else
+            {
+                SetPx(cx, y, cCore);
+            }
+        }
+
+        // Chispas laterales
+        SetPx(8, 22, cCore); SetPx(9, 23, cMain);
+        SetPx(23, 10, cCore); SetPx(22, 9, cMain);
+
+        tex.SetPixels(pixels);
+        tex.Apply();
+        return Sprite.Create(tex, new Rect(0f, 0f, w, h), new Vector2(0.5f, 0.5f), 32f);
+    }
+
     private static void EnsureSpritesCreated()
     {
         if (venenoSmallSprite == null)
@@ -575,6 +844,34 @@ internal static class SwordElementalUpgrades
             UnityEngine.Object.DontDestroyOnLoad(sangradoSmallBuyedSprite.texture);
             UnityEngine.Object.DontDestroyOnLoad(sangradoSmallBuyedSprite);
         }
+        if (electricoSmallSprite == null)
+        {
+            electricoSmallSprite = CreateLightningBoltIcon(unlocked: false);
+            UnityEngine.Object.DontDestroyOnLoad(electricoSmallSprite.texture);
+            UnityEngine.Object.DontDestroyOnLoad(electricoSmallSprite);
+        }
+        if (electricoSmallBuyedSprite == null)
+        {
+            electricoSmallBuyedSprite = CreateLightningBoltIcon(unlocked: true);
+            UnityEngine.Object.DontDestroyOnLoad(electricoSmallBuyedSprite.texture);
+            UnityEngine.Object.DontDestroyOnLoad(electricoSmallBuyedSprite);
+        }
+        if (maldicionSmallSprite == null)
+        {
+            maldicionSmallSprite = CreateCurseIcon(unlocked: false);
+            UnityEngine.Object.DontDestroyOnLoad(maldicionSmallSprite.texture);
+            UnityEngine.Object.DontDestroyOnLoad(maldicionSmallSprite);
+        }
+        if (maldicionSmallBuyedSprite == null)
+        {
+            maldicionSmallBuyedSprite = CreateCurseIcon(unlocked: true);
+            UnityEngine.Object.DontDestroyOnLoad(maldicionSmallBuyedSprite.texture);
+            UnityEngine.Object.DontDestroyOnLoad(maldicionSmallBuyedSprite);
+        }
+        if (maldicionHeartSprite == null)
+        {
+            maldicionHeartSprite = maldicionSmallBuyedSprite;
+        }
         if (venenoHeartSprite == null)
         {
             venenoHeartSprite = venenoSmallBuyedSprite;
@@ -582,6 +879,10 @@ internal static class SwordElementalUpgrades
         if (sangradoHeartSprite == null)
         {
             sangradoHeartSprite = sangradoSmallBuyedSprite;
+        }
+        if (electricoHeartSprite == null)
+        {
+            electricoHeartSprite = electricoSmallBuyedSprite;
         }
     }
 
@@ -676,6 +977,84 @@ internal static class SwordElementalUpgrades
             sangradoSmallSprite,
             sangradoSmallBuyedSprite,
             baseBig);
+
+        RegisterOrUpdateSkill(
+            allSkills,
+            SkillElectrico1,
+            "Centella de Mea Culpa I",
+            "Cada golpe de espada descarga un rayo (+6 daño instantáneo) y 1s después cae un segundo rayo real (4 daño) capaz de aturdir.\nRequiere equipar el Corazón del Relámpago Consagrado.",
+            "Requiere equipar el Corazón del Relámpago Consagrado en el menú de Mea Culpa.",
+            tier: 1,
+            cost: 600,
+            parent: "",
+            electricoSmallSprite,
+            electricoSmallBuyedSprite,
+            baseBig);
+
+        RegisterOrUpdateSkill(
+            allSkills,
+            SkillElectrico2,
+            "Centella de Mea Culpa II",
+            "Intensifica la descarga: +18 daño instantáneo y un segundo rayo real a 1s (7 daño) capaz de aturdir.\nRequiere equipar el Corazón del Relámpago Consagrado.",
+            "Requiere equipar el Corazón del Relámpago Consagrado en el menú de Mea Culpa.",
+            tier: 2,
+            cost: 6500,
+            parent: SkillElectrico1,
+            electricoSmallSprite,
+            electricoSmallBuyedSprite,
+            baseBig);
+
+        RegisterOrUpdateSkill(
+            allSkills,
+            SkillElectrico3,
+            "Centella de Mea Culpa III",
+            "Tormenta fulminante máxima: +30 daño instantáneo y un segundo rayo real a 1s (10 daño) capaz de aturdir.\nRequiere equipar el Corazón del Relámpago Consagrado.",
+            "Requiere equipar el Corazón del Relámpago Consagrado en el menú de Mea Culpa.",
+            tier: 3,
+            cost: 16000,
+            parent: SkillElectrico2,
+            electricoSmallSprite,
+            electricoSmallBuyedSprite,
+            baseBig);
+
+        RegisterOrUpdateSkill(
+            allSkills,
+            SkillMaldicion1,
+            "Maldición de Mea Culpa I",
+            "Cada golpe maldice al enemigo 8s: su daño a los jugadores se reduce un 10%. Tras 5 golpes sobre el mismo enemigo la reducción se multiplica x1.5 mientras dure la maldición. Cada golpe además cura al portador un 4% de su salud máx. (0.5s de enfriamiento).\nRequiere equipar el Corazón de la Maldición Penitente.",
+            "Requiere equipar el Corazón de la Maldición Penitente en el menú de Mea Culpa.",
+            tier: 1,
+            cost: 600,
+            parent: "",
+            maldicionSmallSprite,
+            maldicionSmallBuyedSprite,
+            baseBig);
+
+        RegisterOrUpdateSkill(
+            allSkills,
+            SkillMaldicion2,
+            "Maldición de Mea Culpa II",
+            "Maldición más profunda: -20% al daño del enemigo (x1.5 tras 5 golpes) y drenaje del 6% de salud máx. por golpe.\nRequiere equipar el Corazón de la Maldición Penitente.",
+            "Requiere equipar el Corazón de la Maldición Penitente en el menú de Mea Culpa.",
+            tier: 2,
+            cost: 6500,
+            parent: SkillMaldicion1,
+            maldicionSmallSprite,
+            maldicionSmallBuyedSprite,
+            baseBig);
+
+        RegisterOrUpdateSkill(
+            allSkills,
+            SkillMaldicion3,
+            "Maldición de Mea Culpa III",
+            "Maldición suprema: -30% al daño del enemigo (x1.5 tras 5 golpes) y drenaje del 8% de salud máx. por golpe.\nRequiere equipar el Corazón de la Maldición Penitente.",
+            "Requiere equipar el Corazón de la Maldición Penitente en el menú de Mea Culpa.",
+            tier: 3,
+            cost: 16000,
+            parent: SkillMaldicion2,
+            maldicionSmallSprite,
+            maldicionSmallBuyedSprite,
+            baseBig);
     }
 
     private static void RegisterOrUpdateSkill(
@@ -740,6 +1119,8 @@ internal static class SwordElementalUpgrades
             {
                 Player2InventoryManager.RemoveOwnedSword(HeartVenenoId, p);
                 Player2InventoryManager.RemoveOwnedSword(HeartSangradoId, p);
+                Player2InventoryManager.RemoveOwnedSword(HeartElectricoId, p);
+                Player2InventoryManager.RemoveOwnedSword(HeartMaldicionId, p);
             }
             return;
         }
@@ -764,8 +1145,31 @@ internal static class SwordElementalUpgrades
             "Forjado en sangre coagulada del Milagro, desgarra el interior de quienes sufren el castigo reiterado del acero.",
             sangradoHeartSprite);
 
-        Player2InventoryManager.AddOwnedSword(HeartVenenoId);
-        Player2InventoryManager.AddOwnedSword(HeartSangradoId);
+        RegisterOrUpdateSwordHeart(
+            allSwords,
+            ownSwords,
+            HeartElectricoId,
+            "Corazón del Relámpago Consagrado",
+            "Canaliza la Senda de la Electricidad desbloqueada en el Árbol de Habilidades.\nCada espadazo descarga un rayo instantáneo y 1s después un segundo rayo real capaz de aturdir (3s de enfriamiento por enemigo).\n• Centella I: +6 daño instantáneo + 4 daño de rayo a 1s.\n• Centella II: +18 daño instantáneo + 7 daño de rayo a 1s.\n• Centella III: +30 daño instantáneo + 10 daño de rayo a 1s.\n(El rayo solo se activa mientras este corazón está equipado y se posee al menos Centella de Mea Culpa I).",
+            "Un corazón atravesado por centellas benditas del Milagro que resuena con cada tajo de Mea Culpa.",
+            electricoHeartSprite);
+
+        RegisterOrUpdateSwordHeart(
+            allSwords,
+            ownSwords,
+            HeartMaldicionId,
+            "Corazón de la Maldición Penitente",
+            "Canaliza la Senda de la Maldición desbloqueada en el Árbol de Habilidades.\nCada impacto maldice al enemigo durante 8s (renovable): reduce el daño que inflige a los jugadores.\n• Maldición I: -10% daño enemigo + drenaje 4% de vida máx.\n• Maldición II: -20% daño enemigo + drenaje 6% de vida máx.\n• Maldición III: -30% daño enemigo + drenaje 8% de vida máx.\nTras 5 golpes sobre el mismo enemigo la reducción se multiplica x1.5 mientras dure la maldición. El drenaje tiene 0.5s de enfriamiento.\n(Solo se aplica mientras este corazón está equipado y se posee al menos Maldición de Mea Culpa I).",
+            "Un corazón envuelto en cera negra y plegarias retorcidas: marchita la furia de quien osa herir al Penitente.",
+            maldicionHeartSprite);
+
+        for (int p = 1; p < 4; p++)
+        {
+            Player2InventoryManager.AddOwnedSword(HeartVenenoId, p);
+            Player2InventoryManager.AddOwnedSword(HeartSangradoId, p);
+            Player2InventoryManager.AddOwnedSword(HeartElectricoId, p);
+            Player2InventoryManager.AddOwnedSword(HeartMaldicionId, p);
+        }
     }
 
     private static void RegisterOrUpdateSwordHeart(
@@ -852,22 +1256,69 @@ internal static class SwordElementalUpgrades
                 }
             }
         }
+        else if (IsElectricoSkill(skillId))
+        {
+            if (targetIdx > 0)
+            {
+                Player2InventoryManager.AddOwnedSword(HeartElectricoId, targetIdx);
+                if (string.IsNullOrEmpty(Player2InventoryManager.GetEquippedSwordId(targetIdx)))
+                {
+                    Player2InventoryManager.EquipSword(HeartElectricoId, targetIdx);
+                }
+            }
+            else if (Core.InventoryManager != null)
+            {
+                Core.InventoryManager.AddSword(HeartElectricoId);
+                if (Core.InventoryManager.GetSwordInSlot(0) == null)
+                {
+                    Core.InventoryManager.SetSwordInSlot(0, HeartElectricoId);
+                }
+            }
+        }
+        else if (IsMaldicionSkill(skillId))
+        {
+            if (targetIdx > 0)
+            {
+                Player2InventoryManager.AddOwnedSword(HeartMaldicionId, targetIdx);
+                if (string.IsNullOrEmpty(Player2InventoryManager.GetEquippedSwordId(targetIdx)))
+                {
+                    Player2InventoryManager.EquipSword(HeartMaldicionId, targetIdx);
+                }
+            }
+            else if (Core.InventoryManager != null)
+            {
+                Core.InventoryManager.AddSword(HeartMaldicionId);
+                if (Core.InventoryManager.GetSwordInSlot(0) == null)
+                {
+                    Core.InventoryManager.SetSwordInSlot(0, HeartMaldicionId);
+                }
+            }
+        }
     }
 
-    internal static void ResetElementalPath(bool isPlayer2)
+    internal static void ResetElementalPath(bool isPlayer2) => ResetElementalPath(isPlayer2 ? 1 : 0);
+
+    internal static void ResetElementalPath(int playerIndex)
     {
         float refunded = 0f;
-        string[] allElem = { SkillVeneno1, SkillVeneno2, SkillVeneno3, SkillSangrado1, SkillSangrado2, SkillSangrado3 };
+        string[] allElem =
+        {
+            SkillVeneno1, SkillVeneno2, SkillVeneno3,
+            SkillSangrado1, SkillSangrado2, SkillSangrado3,
+            SkillElectrico1, SkillElectrico2, SkillElectrico3,
+            SkillMaldicion1, SkillMaldicion2, SkillMaldicion3
+        };
 
+        bool isGuest = playerIndex > 0;
         foreach (string id in allElem)
         {
             UnlockableSkill sk = Core.SkillManager != null ? Core.SkillManager.GetSkill(id) : null;
             int cost = sk != null ? sk.cost : 0;
-            if (isPlayer2)
+            if (isGuest)
             {
-                if (Player2SkillManager.IsUnlocked(id))
+                if (Player2SkillManager.IsUnlocked(playerIndex, id))
                 {
-                    Player2SkillManager.SetUnlocked(id, false);
+                    Player2SkillManager.SetUnlocked(playerIndex, id, false);
                     refunded += cost;
                 }
             }
@@ -880,13 +1331,17 @@ internal static class SwordElementalUpgrades
 
         if (refunded > 0f)
         {
-            if (isPlayer2 && CoopLocal.Player2 != null)
+            if (isGuest)
             {
-                CoopLocal.Player2.Stats.Purge.Current += refunded;
+                Penitent guest = CoopPlayerRegistry.GetPenitent(playerIndex);
+                if (guest != null && guest.Stats?.Purge != null)
+                {
+                    guest.Stats.Purge.Current += refunded;
+                    Player2StatsSync.SaveCurrentVitals(guest, playerIndex);
+                }
                 Player2SkillManager.Persist();
-                Player2StatsSync.SaveCurrentVitals(CoopLocal.Player2);
             }
-            else if (!isPlayer2 && Core.Logic?.Penitent != null)
+            else if (Core.Logic?.Penitent != null)
             {
                 Core.Logic.Penitent.Stats.Purge.Current += refunded;
             }
@@ -912,15 +1367,15 @@ internal static class SwordElementalUpgrades
         EnsureSkillsRegistered(Core.SkillManager);
         EnsureSwordsRegistered(Core.InventoryManager);
 
-        debugCycleIndex = (debugCycleIndex + 1) % 7;
+        debugCycleIndex = (debugCycleIndex + 1) % 9;
         string modeDescription = "";
 
         switch (debugCycleIndex)
         {
             case 0:
                 // Modo 0: Resetear sendas elementales en ambos jugadores
-                ResetElementalPath(false);
-                ResetElementalPath(true);
+                ResetElementalPath(0);
+                ResetElementalPath(1);
                 if (Core.InventoryManager.GetSwordInSlot(0) != null) Core.InventoryManager.SetSwordInSlot(0, (Sword)null);
                 Player2InventoryManager.UnequipSword();
                 modeDescription = "Elemental: NINGUNO (Espada estándar)";
@@ -946,14 +1401,24 @@ internal static class SwordElementalUpgrades
                 modeDescription = "Elemental: SANGRADO III (7% Max HP + 5 DPS / 5s) + Corazón Hemorragia";
                 break;
             case 5:
-                // Modo 5: P1 Veneno III, P2 Sangrado III (Híbrido)
+                // Modo 5: Electricidad I en ambos
+                ApplyDebugElemental(SkillElectrico1, HeartElectricoId);
+                modeDescription = "Elemental: ELECTRICIDAD I (+6 instantáneo / 4 rayo 1s) + Corazón Relámpago";
+                break;
+            case 6:
+                // Modo 6: Electricidad III en ambos
+                ApplyDebugElemental(SkillElectrico3, HeartElectricoId);
+                modeDescription = "Elemental: ELECTRICIDAD III (+30 instantáneo / 10 rayo 1s) + Corazón Relámpago";
+                break;
+            case 7:
+                // Modo 7: P1 Veneno III, P2 Sangrado III (Híbrido)
                 ApplyDebugElementalPerPlayer(p1Skill: SkillVeneno3, p1Heart: HeartVenenoId, p2Skill: SkillSangrado3, p2Heart: HeartSangradoId);
                 modeDescription = "Elemental: HÍBRIDO (P1 Veneno III | P2 Sangrado III)";
                 break;
-            case 6:
-                // Modo 6: P1 Sangrado III, P2 Veneno III (Híbrido inverso)
-                ApplyDebugElementalPerPlayer(p1Skill: SkillSangrado3, p1Heart: HeartSangradoId, p2Skill: SkillVeneno3, p2Heart: HeartVenenoId);
-                modeDescription = "Elemental: HÍBRIDO (P1 Sangrado III | P2 Veneno III)";
+            case 8:
+                // Modo 8: P1 Sangrado III, P2 Electricidad III (Híbrido inverso)
+                ApplyDebugElementalPerPlayer(p1Skill: SkillSangrado3, p1Heart: HeartSangradoId, p2Skill: SkillElectrico3, p2Heart: HeartElectricoId);
+                modeDescription = "Elemental: HÍBRIDO (P1 Sangrado III | P2 Electricidad III)";
                 break;
         }
 
@@ -1062,6 +1527,9 @@ internal static class SwordElementalUpgrades
         var cachedSkills = CachedSkillsField?.GetValue(layout) as List<NewInventory_Skill>;
         if (skillsRoot == null || cachedSkills == null || cachedSkills.Count == 0) return;
 
+        // Guardado diferido de la migración de versión de layout (ver CoopGameConfig.MigrateTreeLayoutIfOutdated)
+        if (CoopGameConfig.TreeLayoutMigrationPending) CoopGameConfig.Save();
+
         Transform containerTrans = skillsRoot.transform.Find("ElementalTreeContainer");
         if (containerTrans != null)
         {
@@ -1084,6 +1552,14 @@ internal static class SwordElementalUpgrades
         NewInventory_Skill s2Node = cachedSkills.Find(s => s != null && s.GetSkillId() == SkillSangrado2);
         NewInventory_Skill s3Node = cachedSkills.Find(s => s != null && s.GetSkillId() == SkillSangrado3);
 
+        NewInventory_Skill e1Node = cachedSkills.Find(s => s != null && s.GetSkillId() == SkillElectrico1);
+        NewInventory_Skill e2Node = cachedSkills.Find(s => s != null && s.GetSkillId() == SkillElectrico2);
+        NewInventory_Skill e3Node = cachedSkills.Find(s => s != null && s.GetSkillId() == SkillElectrico3);
+
+        NewInventory_Skill m1Node = cachedSkills.Find(s => s != null && s.GetSkillId() == SkillMaldicion1);
+        NewInventory_Skill m2Node = cachedSkills.Find(s => s != null && s.GetSkillId() == SkillMaldicion2);
+        NewInventory_Skill m3Node = cachedSkills.Find(s => s != null && s.GetSkillId() == SkillMaldicion3);
+
         // Comprobar si ya fueron inyectados
         if (v1Node != null)
         {
@@ -1095,27 +1571,36 @@ internal static class SwordElementalUpgrades
                 if (oldSan != null) UnityEngine.Object.Destroy(oldSan.gameObject);
 
                 containerTrans.gameObject.SetActive(CoopGameConfig.EnableElementalUpgrades);
+                UpdateElementalTreeTransform(skillsRoot);
             }
 
             if (CoopGameConfig.EnableElementalUpgrades)
             {
-                WireNodeNavigation(v1Node, up: null, down: v2Node, left: null, right: leftTier1);
-                WireNodeNavigation(v2Node, up: v1Node, down: v3Node, left: null, right: leftTier2 ?? leftTier1);
-                WireNodeNavigation(v3Node, up: v2Node, down: null, left: null, right: leftTier3 ?? leftTier2 ?? leftTier1);
+                WireNodeNavigation(v1Node, up: null, down: v2Node, left: m1Node, right: leftTier1);
+                WireNodeNavigation(v2Node, up: v1Node, down: v3Node, left: m2Node, right: leftTier2 ?? leftTier1);
+                WireNodeNavigation(v3Node, up: v2Node, down: null, left: m3Node, right: leftTier3 ?? leftTier2 ?? leftTier1);
+
+                WireNodeNavigation(m1Node, up: null, down: m2Node, left: null, right: v1Node);
+                WireNodeNavigation(m2Node, up: m1Node, down: m3Node, left: null, right: v2Node);
+                WireNodeNavigation(m3Node, up: m2Node, down: null, left: null, right: v3Node);
 
                 ConnectLeftNeighbor(leftTier1, v1Node);
                 ConnectLeftNeighbor(leftTier2, v2Node);
                 ConnectLeftNeighbor(leftTier3, v3Node);
 
-                WireNodeNavigation(s1Node, up: null, down: s2Node, left: rightTier1, right: null);
-                WireNodeNavigation(s2Node, up: s1Node, down: s3Node, left: rightTier2 ?? rightTier1, right: null);
-                WireNodeNavigation(s3Node, up: s2Node, down: null, left: rightTier3 ?? rightTier2 ?? rightTier1, right: null);
+                WireNodeNavigation(s1Node, up: null, down: s2Node, left: rightTier1, right: e1Node);
+                WireNodeNavigation(s2Node, up: s1Node, down: s3Node, left: rightTier2 ?? rightTier1, right: e2Node);
+                WireNodeNavigation(s3Node, up: s2Node, down: null, left: rightTier3 ?? rightTier2 ?? rightTier1, right: e3Node);
 
                 ConnectRightNeighbor(rightTier1, s1Node);
                 ConnectRightNeighbor(rightTier2, s2Node);
                 ConnectRightNeighbor(rightTier3, s3Node);
 
-                SanitizeVanillaNodeNavigation(cachedSkills, v1Node, v2Node, v3Node, s1Node, s2Node, s3Node);
+                WireNodeNavigation(e1Node, up: null, down: e2Node, left: s1Node, right: null);
+                WireNodeNavigation(e2Node, up: e1Node, down: e3Node, left: s2Node, right: null);
+                WireNodeNavigation(e3Node, up: e2Node, down: null, left: s3Node, right: null);
+
+                SanitizeVanillaNodeNavigation(cachedSkills, v1Node, v2Node, v3Node, s1Node, s2Node, s3Node, e1Node, e2Node, e3Node, m1Node, m2Node, m3Node);
             }
             else
             {
@@ -1158,11 +1643,11 @@ internal static class SwordElementalUpgrades
 
         containerObj.SetActive(CoopGameConfig.EnableElementalUpgrades);
 
-        // Si TreeOffsetX aún tiene el centinela (-9999f), inicializarlo a la posición calibrada permanente
-        if (CoopGameConfig.TreeOffsetX < -500f)
+        // Si TreeOffsetX aún tiene centinela o valor inválido, inicializarlo a la posición calibrada permanente
+        if (CoopGameConfig.TreeOffsetX < -500f || CoopGameConfig.TreeOffsetX > 500f)
         {
-            CoopGameConfig.TreeOffsetX = -2.0f;
-            CoopGameConfig.TreeOffsetY = 4.0f;
+            CoopGameConfig.TreeOffsetX = CoopGameConfig.DefaultTreeOffsetX;
+            CoopGameConfig.TreeOffsetY = CoopGameConfig.DefaultTreeOffsetY;
             CoopGameConfig.Save();
         }
 
@@ -1171,13 +1656,19 @@ internal static class SwordElementalUpgrades
 
         if (CoopGameConfig.ElementalBranchSpacing < 20f)
         {
-            CoopGameConfig.ElementalBranchSpacing = 178f;
+            CoopGameConfig.ElementalBranchSpacing = CoopGameConfig.DefaultElementalBranchSpacing;
+        }
+        if (CoopGameConfig.ElementalNodeVerticalSpacing < 10f)
+        {
+            CoopGameConfig.ElementalNodeVerticalSpacing = CoopGameConfig.DefaultElementalNodeVerticalSpacing;
         }
 
-        // Posicionar columnas simétricas a los extremos: Veneno (extremo izquierdo) y Sangrado (extremo derecho)
+        // Posicionar columnas: Veneno (extremo izquierdo), Sangrado (derecha vanilla) y Electricidad (a la derecha de Sangrado)
         float halfSpacing = CoopGameConfig.ElementalBranchSpacing * 0.5f;
         float localVenenoX = -halfSpacing;
         float localSangradoX = halfSpacing;
+        float localElectricoX = halfSpacing + CoopGameConfig.ElectricoColumnOffset;
+        float localMaldicionX = -halfSpacing - CoopGameConfig.MaldicionColumnOffset;
 
         // Separación vertical entre niveles I, II y III según configuración (Nivel 1 ARRIBA, Nivel 3 ABAJO)
         float elemTier2Y = yTier2;
@@ -1192,11 +1683,23 @@ internal static class SwordElementalUpgrades
         NewInventory_Skill s2 = CloneSkillNode(layout, containerTrans, templateNode, SkillSangrado2, new Vector3(localSangradoX, elemTier2Y, 0f), new Color(1f, 0.55f, 0.55f));
         NewInventory_Skill s3 = CloneSkillNode(layout, containerTrans, templateNode, SkillSangrado3, new Vector3(localSangradoX, elemTier3Y, 0f), new Color(1f, 0.55f, 0.55f));
 
-        // Configurar navegación explícita simétrica:
-        // Veneno (extremo izquierdo) <-> Rama Izquierda Vanilla (v1 arriba -> down v2 -> down v3)
-        WireNodeNavigation(v1, up: null, down: v2, left: null, right: leftTier1);
-        WireNodeNavigation(v2, up: v1, down: v3, left: null, right: leftTier2 ?? leftTier1);
-        WireNodeNavigation(v3, up: v2, down: null, left: null, right: leftTier3 ?? leftTier2 ?? leftTier1);
+        NewInventory_Skill e1 = CloneSkillNode(layout, containerTrans, templateNode, SkillElectrico1, new Vector3(localElectricoX, elemTier1Y, 0f), new Color(0.45f, 0.9f, 1f));
+        NewInventory_Skill e2 = CloneSkillNode(layout, containerTrans, templateNode, SkillElectrico2, new Vector3(localElectricoX, elemTier2Y, 0f), new Color(0.45f, 0.9f, 1f));
+        NewInventory_Skill e3 = CloneSkillNode(layout, containerTrans, templateNode, SkillElectrico3, new Vector3(localElectricoX, elemTier3Y, 0f), new Color(0.45f, 0.9f, 1f));
+
+        NewInventory_Skill m1 = CloneSkillNode(layout, containerTrans, templateNode, SkillMaldicion1, new Vector3(localMaldicionX, elemTier1Y, 0f), new Color(0.78f, 0.55f, 1f));
+        NewInventory_Skill m2 = CloneSkillNode(layout, containerTrans, templateNode, SkillMaldicion2, new Vector3(localMaldicionX, elemTier2Y, 0f), new Color(0.78f, 0.55f, 1f));
+        NewInventory_Skill m3 = CloneSkillNode(layout, containerTrans, templateNode, SkillMaldicion3, new Vector3(localMaldicionX, elemTier3Y, 0f), new Color(0.78f, 0.55f, 1f));
+
+        // Configurar navegación explícita:
+        // Maldición (extremo izquierdo) <-> Veneno <-> Rama Izquierda Vanilla (v1 arriba -> down v2 -> down v3)
+        WireNodeNavigation(m1, up: null, down: m2, left: null, right: v1);
+        WireNodeNavigation(m2, up: m1, down: m3, left: null, right: v2);
+        WireNodeNavigation(m3, up: m2, down: null, left: null, right: v3);
+
+        WireNodeNavigation(v1, up: null, down: v2, left: m1, right: leftTier1);
+        WireNodeNavigation(v2, up: v1, down: v3, left: m2, right: leftTier2 ?? leftTier1);
+        WireNodeNavigation(v3, up: v2, down: null, left: m3, right: leftTier3 ?? leftTier2 ?? leftTier1);
 
         if (CoopGameConfig.EnableElementalUpgrades)
         {
@@ -1205,10 +1708,10 @@ internal static class SwordElementalUpgrades
             ConnectLeftNeighbor(leftTier3, v3);
         }
 
-        // Rama Derecha Vanilla <-> Sangrado (extremo derecho) (s1 arriba -> down s2 -> down s3)
-        WireNodeNavigation(s1, up: null, down: s2, left: rightTier1, right: null);
-        WireNodeNavigation(s2, up: s1, down: s3, left: rightTier2 ?? rightTier1, right: null);
-        WireNodeNavigation(s3, up: s2, down: null, left: rightTier3 ?? rightTier2 ?? rightTier1, right: null);
+        // Rama Derecha Vanilla <-> Sangrado <-> Electricidad (extremo derecho)
+        WireNodeNavigation(s1, up: null, down: s2, left: rightTier1, right: e1);
+        WireNodeNavigation(s2, up: s1, down: s3, left: rightTier2 ?? rightTier1, right: e2);
+        WireNodeNavigation(s3, up: s2, down: null, left: rightTier3 ?? rightTier2 ?? rightTier1, right: e3);
 
         if (CoopGameConfig.EnableElementalUpgrades)
         {
@@ -1217,11 +1720,65 @@ internal static class SwordElementalUpgrades
             ConnectRightNeighbor(rightTier3, s3);
         }
 
-        SanitizeVanillaNodeNavigation(cachedSkills, v1, v2, v3, s1, s2, s3);
+        WireNodeNavigation(e1, up: null, down: e2, left: s1, right: null);
+        WireNodeNavigation(e2, up: e1, down: e3, left: s2, right: null);
+        WireNodeNavigation(e3, up: e2, down: null, left: s3, right: null);
+
+        SanitizeVanillaNodeNavigation(cachedSkills, v1, v2, v3, s1, s2, s3, e1, e2, e3, m1, m2, m3);
+        UpdateElementalTreeTransform(skillsRoot);
 
         NewInventory_Description desc = LayoutDescriptionField?.GetValue(layout) as NewInventory_Description;
         ApplyDescriptionTextScale(desc);
-        UpdateDebugBanner(layout, visible: true);
+    }
+
+    // Último layout de habilidades que ha corrido su Update (marca de menú abierto para el editor HUD/Árbol)
+    private static NewInventory_LayoutSkill lastSkillLayout = null;
+    private static int lastSkillLayoutFrame = -100;
+
+    internal static void MarkSkillLayoutActive(NewInventory_LayoutSkill layout)
+    {
+        lastSkillLayout = layout;
+        lastSkillLayoutFrame = Time.frameCount;
+    }
+
+    /// <summary>True si el menú de habilidades está en pantalla (su Update corrió en el último par de frames).</summary>
+    internal static bool IsSkillMenuActive => lastSkillLayout != null && Time.frameCount - lastSkillLayoutFrame <= 2;
+
+    // Posición/escala base del panel de descripción, capturadas la primera vez para poder restablecerlas
+    private static NewInventory_Description descPanelOwner = null;
+    private static Vector3 descPanelBasePos;
+    private static Vector3 descPanelBaseScale;
+
+    /// <summary>Aplica DescPanelOffsetX/Y y DescPanelScale sobre el RectTransform del panel de descripción (relativo a su base).</summary>
+    internal static void ApplyDescPanelTransform(NewInventory_Description desc)
+    {
+        if (desc == null) return;
+        RectTransform rt = desc.transform as RectTransform;
+        if (rt == null) return;
+
+        if (descPanelOwner != desc)
+        {
+            descPanelOwner = desc;
+            descPanelBasePos = rt.anchoredPosition3D;
+            descPanelBaseScale = rt.localScale;
+        }
+
+        rt.anchoredPosition3D = descPanelBasePos + new Vector3(CoopGameConfig.DescPanelOffsetX, CoopGameConfig.DescPanelOffsetY, 0f);
+        rt.localScale = descPanelBaseScale * CoopGameConfig.DescPanelScale;
+    }
+
+    /// <summary>Aplica en vivo los parámetros del árbol y de la descripción sobre el menú abierto (si lo hay).</summary>
+    internal static void ApplyTreeLayoutLive()
+    {
+        if (!IsSkillMenuActive) return;
+        var layout = lastSkillLayout;
+
+        var skillsRoot = SkillsRootField?.GetValue(layout) as GameObject;
+        UpdateElementalTreeTransform(skillsRoot);
+
+        NewInventory_Description desc = LayoutDescriptionField?.GetValue(layout) as NewInventory_Description;
+        ApplyDescPanelTransform(desc);
+        ApplyDescriptionTextScale(desc);
     }
 
     private static readonly FieldInfo LayoutDescriptionField = AccessTools.Field(typeof(NewInventory_LayoutSkill), "description");
@@ -1313,6 +1870,8 @@ internal static class SwordElementalUpgrades
             float halfSpacing = CoopGameConfig.ElementalBranchSpacing * 0.5f;
             float localVenenoX = -halfSpacing;
             float localSangradoX = halfSpacing;
+            float localElectricoX = halfSpacing + CoopGameConfig.ElectricoColumnOffset;
+            float localMaldicionX = -halfSpacing - CoopGameConfig.MaldicionColumnOffset;
 
             Transform tV2 = containerTrans.Find("Skill_VENENO_2");
             float centerTier2Y = tV2 != null ? tV2.localPosition.y : 0f;
@@ -1327,54 +1886,23 @@ internal static class SwordElementalUpgrades
             UpdateNodeLocalPos(containerTrans, "Skill_SANGRADO_2", localSangradoX, centerTier2Y);
             UpdateNodeLocalPos(containerTrans, "Skill_SANGRADO_3", localSangradoX, elemTier3Y);
 
+            UpdateNodeLocalPos(containerTrans, "Skill_ELECTRICO_1", localElectricoX, elemTier1Y);
+            UpdateNodeLocalPos(containerTrans, "Skill_ELECTRICO_2", localElectricoX, centerTier2Y);
+            UpdateNodeLocalPos(containerTrans, "Skill_ELECTRICO_3", localElectricoX, elemTier3Y);
+
+            UpdateNodeLocalPos(containerTrans, "Skill_MALDICION_1", localMaldicionX, elemTier1Y);
+            UpdateNodeLocalPos(containerTrans, "Skill_MALDICION_2", localMaldicionX, centerTier2Y);
+            UpdateNodeLocalPos(containerTrans, "Skill_MALDICION_3", localMaldicionX, elemTier3Y);
+
+            if (Main.CoopLocal != null)
+            {
+                Blasphemous.ModdingAPI.ModLog.Info($"[ElementalTree] Posicionado: Offset=({CoopGameConfig.TreeOffsetX:F1}, {CoopGameConfig.TreeOffsetY:F1}) | Escala={CoopGameConfig.TreeScale:F2} | SepH={CoopGameConfig.ElementalBranchSpacing:F0} | SepV={CoopGameConfig.ElementalNodeVerticalSpacing:F0} | Tier2Y={centerTier2Y:F1}", Main.CoopLocal);
+            }
+
             Transform lblVeneno = containerTrans.Find("Lbl_Veneno");
             Transform lblSangrado = containerTrans.Find("Lbl_Sangrado");
             if (lblVeneno != null) UnityEngine.Object.Destroy(lblVeneno.gameObject);
             if (lblSangrado != null) UnityEngine.Object.Destroy(lblSangrado.gameObject);
-        }
-    }
-
-    private static float saveConfigCooldown = 0f;
-
-    internal static void UpdateDebugBanner(NewInventory_LayoutSkill layout, bool visible)
-    {
-        if (layout == null) return;
-        Transform bannerTrans = layout.transform.Find("ElementalDebugBanner");
-        GameObject bannerObj;
-        Text bannerText;
-
-        if (bannerTrans == null)
-        {
-            bannerObj = new GameObject("ElementalDebugBanner", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text), typeof(Outline));
-            bannerObj.transform.SetParent(layout.transform, false);
-            RectTransform rt = bannerObj.GetComponent<RectTransform>();
-            rt.anchorMin = new Vector2(0.5f, 0f);
-            rt.anchorMax = new Vector2(0.5f, 0f);
-            rt.pivot = new Vector2(0.5f, 0f);
-            rt.anchoredPosition = new Vector2(0f, 18f);
-            rt.sizeDelta = new Vector2(920f, 40f);
-
-            bannerText = bannerObj.GetComponent<Text>();
-            Text refTxt = layout.GetComponentInChildren<Text>(true);
-            if (refTxt != null) bannerText.font = refTxt.font;
-            bannerText.fontSize = 12;
-            bannerText.alignment = TextAnchor.MiddleCenter;
-            bannerText.color = new Color(1f, 0.92f, 0.45f, 1f);
-
-            Outline ol = bannerObj.GetComponent<Outline>();
-            ol.effectColor = new Color(0f, 0f, 0f, 0.95f);
-            ol.effectDistance = new Vector2(1f, -1f);
-        }
-        else
-        {
-            bannerObj = bannerTrans.gameObject;
-            bannerText = bannerObj.GetComponent<Text>();
-        }
-
-        bannerObj.SetActive(visible);
-        if (visible && bannerText != null)
-        {
-            bannerText.text = $"[DEBUG ÁRBOL] Pos: X={CoopGameConfig.TreeOffsetX:F1}, Y={CoopGameConfig.TreeOffsetY:F1} | Sep H={CoopGameConfig.ElementalBranchSpacing:F0} | Sep V={CoopGameConfig.ElementalNodeVerticalSpacing:F0} | Escala={CoopGameConfig.TreeScale:F2}\n[Flechas]: Mover | [Shift+Flechas]: Rápido | [N / M]: Separación H | [U / J]: Separación V | [. / -]: Escala | [F8/Enter]: Guardar";
         }
     }
 
@@ -1495,21 +2023,21 @@ internal static class SwordElementalUpgrades
 
     private static void SanitizeVanillaNodeNavigation(
         List<NewInventory_Skill> cachedSkills,
-        NewInventory_Skill v1,
-        NewInventory_Skill v2,
-        NewInventory_Skill v3,
-        NewInventory_Skill s1,
-        NewInventory_Skill s2,
-        NewInventory_Skill s3)
+        params NewInventory_Skill[] elemNodes)
     {
         if (cachedSkills == null) return;
         var elemButtons = new HashSet<Selectable>();
-        if (v1 != null && v1.GetEventButton() != null) elemButtons.Add(v1.GetEventButton());
-        if (v2 != null && v2.GetEventButton() != null) elemButtons.Add(v2.GetEventButton());
-        if (v3 != null && v3.GetEventButton() != null) elemButtons.Add(v3.GetEventButton());
-        if (s1 != null && s1.GetEventButton() != null) elemButtons.Add(s1.GetEventButton());
-        if (s2 != null && s2.GetEventButton() != null) elemButtons.Add(s2.GetEventButton());
-        if (s3 != null && s3.GetEventButton() != null) elemButtons.Add(s3.GetEventButton());
+        if (elemNodes != null)
+        {
+            for (int i = 0; i < elemNodes.Length; i++)
+            {
+                var node = elemNodes[i];
+                if (node != null && node.GetEventButton() != null)
+                {
+                    elemButtons.Add(node.GetEventButton());
+                }
+            }
+        }
 
         foreach (var skill in cachedSkills)
         {
@@ -1566,100 +2094,12 @@ internal static class SwordElementalUpgrades
     internal static void HandleSkillTreeShortcuts(NewInventory_LayoutSkill layout)
     {
         if (layout == null || !CoopGameConfig.EnableElementalUpgrades) return;
+        // El editor HUD/Árbol (F7) captura el input mientras está abierto: sin navegación del árbol
+        if (HudLayoutDebugEditor.IsOpen) return;
         var cachedSkills = CachedSkillsField?.GetValue(layout) as List<NewInventory_Skill>;
         if (cachedSkills == null || cachedSkills.Count == 0) return;
 
-        var skillsRoot = SkillsRootField?.GetValue(layout) as GameObject;
         float dt = Time.unscaledDeltaTime;
-
-        // =====================================================================
-        // 1. SISTEMA DEBUG ÁRBOL ELEMENTAL (Mover con Flechas, Escala . / -, Sep H: N/M, Sep V: U/J)
-        // =====================================================================
-        if (skillsRoot != null)
-        {
-            float moveStep = (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift)) ? 8f : 1.5f;
-            bool treeTransformChanged = false;
-
-            if (Input.GetKey(KeyCode.LeftArrow))
-            {
-                CoopGameConfig.TreeOffsetX -= moveStep;
-                treeTransformChanged = true;
-            }
-            if (Input.GetKey(KeyCode.RightArrow))
-            {
-                CoopGameConfig.TreeOffsetX += moveStep;
-                treeTransformChanged = true;
-            }
-            if (Input.GetKey(KeyCode.UpArrow))
-            {
-                CoopGameConfig.TreeOffsetY += moveStep;
-                treeTransformChanged = true;
-            }
-            if (Input.GetKey(KeyCode.DownArrow))
-            {
-                CoopGameConfig.TreeOffsetY -= moveStep;
-                treeTransformChanged = true;
-            }
-
-            if (Input.GetKeyDown(KeyCode.Period) || Input.GetKeyDown(KeyCode.KeypadPeriod) || Input.GetKeyDown(KeyCode.Plus) || Input.GetKeyDown(KeyCode.KeypadPlus))
-            {
-                CoopGameConfig.TreeScale = Mathf.Clamp(CoopGameConfig.TreeScale + 0.05f, 0.35f, 2.50f);
-                treeTransformChanged = true;
-            }
-            if (Input.GetKeyDown(KeyCode.Minus) || Input.GetKeyDown(KeyCode.KeypadMinus))
-            {
-                CoopGameConfig.TreeScale = Mathf.Clamp(CoopGameConfig.TreeScale - 0.05f, 0.35f, 2.50f);
-                treeTransformChanged = true;
-            }
-
-            if (Input.GetKey(KeyCode.M))
-            {
-                CoopGameConfig.ElementalBranchSpacing += moveStep * 2f;
-                treeTransformChanged = true;
-            }
-            if (Input.GetKey(KeyCode.N))
-            {
-                CoopGameConfig.ElementalBranchSpacing = Mathf.Max(20f, CoopGameConfig.ElementalBranchSpacing - moveStep * 2f);
-                treeTransformChanged = true;
-            }
-
-            if (Input.GetKey(KeyCode.U))
-            {
-                CoopGameConfig.ElementalNodeVerticalSpacing += moveStep;
-                treeTransformChanged = true;
-            }
-            if (Input.GetKey(KeyCode.J))
-            {
-                CoopGameConfig.ElementalNodeVerticalSpacing = Mathf.Max(15f, CoopGameConfig.ElementalNodeVerticalSpacing - moveStep);
-                treeTransformChanged = true;
-            }
-
-            if (treeTransformChanged)
-            {
-                UpdateElementalTreeTransform(skillsRoot);
-                UpdateDebugBanner(layout, visible: true);
-                saveConfigCooldown = 0.5f;
-            }
-
-            if (Input.GetKeyDown(KeyCode.F8) || Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))
-            {
-                CoopGameConfig.Save();
-                UpdateDebugBanner(layout, visible: true);
-                if (Main.CoopLocal != null)
-                {
-                    Blasphemous.ModdingAPI.ModLog.Info($"[ElementalTree Debug] Guardado permanente: Offset=({CoopGameConfig.TreeOffsetX:F1}, {CoopGameConfig.TreeOffsetY:F1}) | Sep H={CoopGameConfig.ElementalBranchSpacing:F0} | Sep V={CoopGameConfig.ElementalNodeVerticalSpacing:F0} | Escala={CoopGameConfig.TreeScale:F2}", Main.CoopLocal);
-                }
-            }
-
-            if (saveConfigCooldown > 0f)
-            {
-                saveConfigCooldown -= dt;
-                if (saveConfigCooldown <= 0f)
-                {
-                    CoopGameConfig.Save();
-                }
-            }
-        }
 
         int currentSelected = (int)SkillTreeUIHelper.CurrentSelectedField.GetValue(layout);
         if (navCooldown > 0f) navCooldown -= dt;
@@ -1718,6 +2158,13 @@ internal static class SwordElementalUpgrades
                             else if (curId == SkillVeneno2) targetIdx = cachedSkills.FindIndex(s => s != null && s.GetSkillId() == "COMBO_2");
                             else if (curId == SkillVeneno3) targetIdx = cachedSkills.FindIndex(s => s != null && s.GetSkillId() == "COMBO_3");
                         }
+                        else if (wantLeft)
+                        {
+                            // De Veneno hacia la izquierda -> entra en la columna Maldición
+                            if (curId == SkillVeneno1) targetIdx = cachedSkills.FindIndex(s => s != null && s.GetSkillId() == SkillMaldicion1);
+                            else if (curId == SkillVeneno2) targetIdx = cachedSkills.FindIndex(s => s != null && s.GetSkillId() == SkillMaldicion2);
+                            else if (curId == SkillVeneno3) targetIdx = cachedSkills.FindIndex(s => s != null && s.GetSkillId() == SkillMaldicion3);
+                        }
                         else if (wantUp)
                         {
                             // Nivel 1 arriba, 2 centro, 3 abajo: Up sube hacia Nivel 1
@@ -1731,7 +2178,27 @@ internal static class SwordElementalUpgrades
                             else if (curId == SkillVeneno2) targetIdx = cachedSkills.FindIndex(s => s != null && s.GetSkillId() == SkillVeneno3);
                         }
                     }
-                    // 2. DENTRO DE LA RAMA DE SANGRADO (extremo derecho)
+                    // 1b. DENTRO DE LA RAMA DE MALDICIÓN (extremo izquierdo, a la izquierda de Veneno)
+                    else if (IsMaldicionSkill(curId))
+                    {
+                        if (wantRight)
+                        {
+                            if (curId == SkillMaldicion1) targetIdx = cachedSkills.FindIndex(s => s != null && s.GetSkillId() == SkillVeneno1);
+                            else if (curId == SkillMaldicion2) targetIdx = cachedSkills.FindIndex(s => s != null && s.GetSkillId() == SkillVeneno2);
+                            else if (curId == SkillMaldicion3) targetIdx = cachedSkills.FindIndex(s => s != null && s.GetSkillId() == SkillVeneno3);
+                        }
+                        else if (wantUp)
+                        {
+                            if (curId == SkillMaldicion3) targetIdx = cachedSkills.FindIndex(s => s != null && s.GetSkillId() == SkillMaldicion2);
+                            else if (curId == SkillMaldicion2) targetIdx = cachedSkills.FindIndex(s => s != null && s.GetSkillId() == SkillMaldicion1);
+                        }
+                        else if (wantDown)
+                        {
+                            if (curId == SkillMaldicion1) targetIdx = cachedSkills.FindIndex(s => s != null && s.GetSkillId() == SkillMaldicion2);
+                            else if (curId == SkillMaldicion2) targetIdx = cachedSkills.FindIndex(s => s != null && s.GetSkillId() == SkillMaldicion3);
+                        }
+                    }
+                    // 2. DENTRO DE LA RAMA DE SANGRADO (columna media derecha)
                     else if (IsSangradoSkill(curId))
                     {
                         if (wantLeft)
@@ -1740,6 +2207,13 @@ internal static class SwordElementalUpgrades
                             if (curId == SkillSangrado1) targetIdx = cachedSkills.FindIndex(s => s != null && s.GetSkillId() == "LUNGE_1");
                             else if (curId == SkillSangrado2) targetIdx = cachedSkills.FindIndex(s => s != null && s.GetSkillId() == "LUNGE_2");
                             else if (curId == SkillSangrado3) targetIdx = cachedSkills.FindIndex(s => s != null && s.GetSkillId() == "LUNGE_3");
+                        }
+                        else if (wantRight)
+                        {
+                            // De Sangrado hacia la derecha -> entra en la columna Electricidad
+                            if (curId == SkillSangrado1) targetIdx = cachedSkills.FindIndex(s => s != null && s.GetSkillId() == SkillElectrico1);
+                            else if (curId == SkillSangrado2) targetIdx = cachedSkills.FindIndex(s => s != null && s.GetSkillId() == SkillElectrico2);
+                            else if (curId == SkillSangrado3) targetIdx = cachedSkills.FindIndex(s => s != null && s.GetSkillId() == SkillElectrico3);
                         }
                         else if (wantUp)
                         {
@@ -1754,7 +2228,27 @@ internal static class SwordElementalUpgrades
                             else if (curId == SkillSangrado2) targetIdx = cachedSkills.FindIndex(s => s != null && s.GetSkillId() == SkillSangrado3);
                         }
                     }
-                    // 3. EN EL ÁRBOL VANILLA
+                    // 3. DENTRO DE LA RAMA DE ELECTRICIDAD (extremo derecho)
+                    else if (IsElectricoSkill(curId))
+                    {
+                        if (wantLeft)
+                        {
+                            if (curId == SkillElectrico1) targetIdx = cachedSkills.FindIndex(s => s != null && s.GetSkillId() == SkillSangrado1);
+                            else if (curId == SkillElectrico2) targetIdx = cachedSkills.FindIndex(s => s != null && s.GetSkillId() == SkillSangrado2);
+                            else if (curId == SkillElectrico3) targetIdx = cachedSkills.FindIndex(s => s != null && s.GetSkillId() == SkillSangrado3);
+                        }
+                        else if (wantUp)
+                        {
+                            if (curId == SkillElectrico3) targetIdx = cachedSkills.FindIndex(s => s != null && s.GetSkillId() == SkillElectrico2);
+                            else if (curId == SkillElectrico2) targetIdx = cachedSkills.FindIndex(s => s != null && s.GetSkillId() == SkillElectrico1);
+                        }
+                        else if (wantDown)
+                        {
+                            if (curId == SkillElectrico1) targetIdx = cachedSkills.FindIndex(s => s != null && s.GetSkillId() == SkillElectrico2);
+                            else if (curId == SkillElectrico2) targetIdx = cachedSkills.FindIndex(s => s != null && s.GetSkillId() == SkillElectrico3);
+                        }
+                    }
+                    // 4. EN EL ÁRBOL VANILLA
                     else
                     {
                         // Acceso a Veneno: ÚNICAMENTE desde Last Words (COMBO_1), Ascending Edge (COMBO_2) y Azure Cyclone (COMBO_3)
@@ -2012,6 +2506,7 @@ internal static class SwordElementalCombatBridge
     internal static void TryApplyElementalStatus(Enemy enemy, Penitent attacker, int hitWeight = 1)
     {
         if (!CoopGameConfig.EnableElementalUpgrades) return;
+        if (EnemyDamageArea_TakeDamage_ElementalStatus_Patch.IsApplyingStatusDamage) return;
         if (enemy == null || enemy.Status.Dead || attacker == null) return;
 
         int playerIdx = CoopPlayerRegistry.GetPlayerIndex(attacker);
@@ -2039,6 +2534,61 @@ internal static class SwordElementalCombatBridge
                 ctrl.AddBleedHit(enemy, attacker, bleedTier, hitWeight);
             }
         }
+
+        // 3. Electricidad y 4. Maldición: efectos host-only (en cliente online el host los resuelve)
+        if (Blasphemous.CoopLocal.MultiPlayer.CoopNetworkManager.IsOnlineClient) return;
+
+        if (SwordElementalUpgrades.IsHeartEquipped(playerIdx, SwordElementalUpgrades.HeartElectricoId))
+        {
+            int electricTier = SwordElementalUpgrades.GetUnlockedElectricoTier(playerIdx);
+            if (electricTier > 0)
+            {
+                ctrl.AddElectricHit(enemy, attacker, electricTier, hitWeight);
+            }
+        }
+
+        if (SwordElementalUpgrades.IsHeartEquipped(playerIdx, SwordElementalUpgrades.HeartMaldicionId))
+        {
+            int curseTier = SwordElementalUpgrades.GetUnlockedMaldicionTier(playerIdx);
+            if (curseTier > 0)
+            {
+                ctrl.ApplyCurseHit(enemy, attacker, playerIdx, curseTier, hitWeight);
+            }
+        }
+    }
+}
+
+// Maldición: choke point de daño al jugador. Entity.GetReducedDamage(Hit) no es virtual y lo llama PenitentDamageArea.RaiseDamageEvent
+// (P1 y clones). Si el atacante es un Enemy maldito, el daño resultante se multiplica por (1 - reducción).
+[HarmonyPatch(typeof(Entity), "GetReducedDamage")]
+internal static class Entity_GetReducedDamage_Curse_Patch
+{
+    private static void Postfix(Entity __instance, Hit hit, ref float __result)
+    {
+        try
+        {
+            if (!CoopGameConfig.EnableElementalUpgrades) return;
+            if (!(__instance is Penitent)) return;
+            if (Blasphemous.CoopLocal.MultiPlayer.CoopNetworkManager.IsOnlineClient) return;
+            if (hit.AttackingEntity == null) return;
+
+            Enemy attackerEnemy = hit.AttackingEntity.GetComponent<Enemy>() ?? hit.AttackingEntity.GetComponentInParent<Enemy>();
+            if (attackerEnemy == null) return;
+
+            EnemyElementalStatusController ctrl = attackerEnemy.GetComponent<EnemyElementalStatusController>();
+            if (ctrl == null) return;
+
+            float mult = ctrl.GetCurseDamageMultiplier();
+            if (mult >= 0.999f) return;
+
+            float before = __result;
+            __result = before * mult;
+            DashParryDebugLog.LogVerbose($"[Curse] {attackerEnemy.name} -> {__instance.name}: daño {before:F1} -> {__result:F1} (x{mult:F2})");
+        }
+        catch (Exception ex)
+        {
+            DashParryDebugLog.LogVerbose("[Curse] Error en GetReducedDamage postfix: " + ex.Message);
+        }
     }
 }
 
@@ -2056,10 +2606,8 @@ internal static class Weapon_AttackDamageableEntities_ElementalStatus_Patch
             if (!CoopGameConfig.EnableElementalUpgrades) return;
             if (EnemyDamageArea_TakeDamage_ElementalStatus_Patch.IsApplyingStatusDamage) return;
 
-            Penitent attacker = weaponHit.AttackingEntity?.GetComponent<Penitent>()
-                ?? weaponHit.AttackingEntity?.GetComponentInParent<Penitent>()
-                ?? __instance.GetComponentInParent<Penitent>()
-                ?? Core.Logic?.Penitent;
+            Penitent attacker = Blasphemous.CoopLocal.PrayerAttackOwnerTracker.ResolveAttacker(weaponHit.AttackingEntity)
+                ?? __instance.GetComponentInParent<Penitent>();
             if (attacker == null) return;
 
             int hitWeight = SwordElementalCombatBridge.GetThresholdHitWeight(attacker, weaponHit, __instance);
@@ -2104,9 +2652,7 @@ internal static class EnemyDamageArea_TakeDamage_ElementalStatus_Patch
         if (!CoopGameConfig.EnableElementalUpgrades) return;
         if (IsApplyingStatusDamage) return;
 
-        Penitent attacker = hit.AttackingEntity?.GetComponent<Penitent>()
-            ?? hit.AttackingEntity?.GetComponentInParent<Penitent>()
-            ?? Core.Logic?.Penitent;
+        Penitent attacker = Blasphemous.CoopLocal.PrayerAttackOwnerTracker.ResolveAttacker(hit.AttackingEntity);
         if (attacker == null) return;
 
         Enemy enemy = __instance.GetComponent<Enemy>() ?? __instance.GetComponentInParent<Enemy>();
@@ -2148,6 +2694,28 @@ internal sealed class EnemyElementalStatusController : MonoBehaviour
     private float bleedTickTimer;
     private int lastBleedHitFrame = -1;
     private Penitent lastBleedAttacker;
+
+    // Estado de Electricidad (umbral -> congelamiento)
+    private int electricHitCount;
+    private int lastElectricHitFrame = -1;
+    private Penitent lastElectricAttacker;
+    private bool electricFrozen;
+    private Coroutine electricFreezeRoutine;
+    private Animator[] frozenAnimators;
+    private float[] frozenAnimatorSpeeds;
+    private bool frozeBehaviour;
+
+    // Estado de Maldición
+    private float curseRemaining;
+    private int curseTier;
+    private float curseBaseReduction;
+    private int curseHitCount;
+    private int curseHitThreshold = 5;
+    private float curseThresholdMultiplier = 1.5f;
+    private bool curseEnhanced;
+    private int lastCurseHitFrame = -1;
+    private Penitent lastCurseAttacker;
+    private static readonly Dictionary<int, float> NextCurseDrainTime = new Dictionary<int, float>();
 
     // Feedback visual sobre el enemigo
     private SpriteRenderer[] spriteRenderers;
@@ -2259,6 +2827,19 @@ internal sealed class EnemyElementalStatusController : MonoBehaviour
         lastBleedHitFrame = -1;
         lastBleedAttacker = null;
 
+        electricHitCount = 0;
+        lastElectricHitFrame = -1;
+        lastElectricAttacker = null;
+        EndElectricFreeze();
+
+        curseRemaining = 0f;
+        curseTier = 0;
+        curseBaseReduction = 0f;
+        curseHitCount = 0;
+        curseEnhanced = false;
+        lastCurseHitFrame = -1;
+        lastCurseAttacker = null;
+
         poisonBar?.Hide();
         bleedBar?.Hide();
         if (barsContainerObj != null && barsContainerObj.activeSelf)
@@ -2270,9 +2851,24 @@ internal sealed class EnemyElementalStatusController : MonoBehaviour
 
     private void CacheRenderers()
     {
-        spriteRenderers = GetComponentsInChildren<SpriteRenderer>(true);
-        if (spriteRenderers != null)
+        if (tintRestoreTimer > 0f && originalColors != null && originalColors.Length > 0)
         {
+            return;
+        }
+        var all = GetComponentsInChildren<SpriteRenderer>(true);
+        if (all != null)
+        {
+            var list = new List<SpriteRenderer>();
+            for (int i = 0; i < all.Length; i++)
+            {
+                if (all[i] == null) continue;
+                if (barsContainerObj != null && all[i].transform.IsChildOf(barsContainerObj.transform))
+                {
+                    continue;
+                }
+                list.Add(all[i]);
+            }
+            spriteRenderers = list.ToArray();
             originalColors = new Color[spriteRenderers.Length];
             for (int i = 0; i < spriteRenderers.Length; i++)
             {
@@ -2377,7 +2973,7 @@ internal sealed class EnemyElementalStatusController : MonoBehaviour
     internal void ApplyPoison(Enemy target, Penitent attacker, int tier, int hitWeight = 1)
     {
         if (!CoopGameConfig.EnableElementalUpgrades) return;
-        if (target == null || target.Status.Dead) return;
+        if (target == null || target.Status.Dead || Execution_OnUse_Patch.IsEnemyBeingExecuted(target)) return;
 
         if (lastPoisonAttacker == attacker && lastPoisonHitFrame == Time.frameCount)
         {
@@ -2431,7 +3027,7 @@ internal sealed class EnemyElementalStatusController : MonoBehaviour
                 try
                 {
                     Vector3 skullPos = enemy.transform.position + new Vector3(0f, Mathf.Clamp(GetEnemyTopY(), 1.0f, 3.8f) + 0.60f, 0f);
-                    FloatingUpgradeSkull.Spawn(skullPos, isPoison: true, $"+{poisonBonusPercent}%");
+                    FloatingUpgradeSkull.Spawn(skullPos, ElementSkill.Poison, $"+{poisonBonusPercent}%");
                 }
                 catch { }
             }
@@ -2454,7 +3050,7 @@ internal sealed class EnemyElementalStatusController : MonoBehaviour
     internal void AddBleedHit(Enemy target, Penitent attacker, int tier, int hitWeight = 1)
     {
         if (!CoopGameConfig.EnableElementalUpgrades) return;
-        if (target == null || target.Status.Dead) return;
+        if (target == null || target.Status.Dead || Execution_OnUse_Patch.IsEnemyBeingExecuted(target)) return;
 
         // Si el enemigo ya se encuentra con el estado de sangrado progresivo,
         // no se le puede volver a aplicar sangrado hasta que se acabe
@@ -2504,7 +3100,7 @@ internal sealed class EnemyElementalStatusController : MonoBehaviour
             try
             {
                 Vector3 skullPos = enemy.transform.position + new Vector3(0f, Mathf.Clamp(GetEnemyTopY(), 1.0f, 3.8f) + 0.60f, 0f);
-                FloatingUpgradeSkull.Spawn(skullPos, isPoison: false, $"+{bleedBonusPercent}%");
+                FloatingUpgradeSkull.Spawn(skullPos, ElementSkill.Bleed, $"+{bleedBonusPercent}%");
             }
             catch { }
 
@@ -2525,6 +3121,227 @@ internal sealed class EnemyElementalStatusController : MonoBehaviour
         UpdateStatusBars();
     }
 
+    private void OnDisable()
+    {
+        EndElectricFreeze();
+    }
+
+    // ---------------------------------------------------------------------
+    // Electricidad: N golpes -> congelar al enemigo (host-only)
+    // ---------------------------------------------------------------------
+    internal void AddElectricHit(Enemy target, Penitent attacker, int tier, int hitWeight = 1)
+    {
+        if (!CoopGameConfig.EnableElementalUpgrades) return;
+        if (Blasphemous.CoopLocal.MultiPlayer.CoopNetworkManager.IsOnlineClient) return;
+        if (target == null || target.Status.Dead || Execution_OnUse_Patch.IsEnemyBeingExecuted(target)) return;
+        if (electricFrozen) return;
+
+        if (lastElectricAttacker == attacker && lastElectricHitFrame == Time.frameCount) return;
+        lastElectricHitFrame = Time.frameCount;
+        lastElectricAttacker = attacker;
+
+        enemy = target;
+        SwordElementalUpgrades.GetElectricoFreezeParams(tier, out int threshold, out float freezeSeconds, out float bossFreezeSeconds);
+
+        electricHitCount += Mathf.Max(1, hitWeight);
+        DashParryDebugLog.LogVerbose($"[Electric] golpe {electricHitCount}/{threshold} en {target.name} (tier {tier})");
+        if (electricHitCount < threshold) return;
+
+        electricHitCount = 0;
+        bool isBoss = IsBossEnemy(target, GetEnemyMaxHealth());
+        float seconds = isBoss ? bossFreezeSeconds : freezeSeconds;
+
+        // No hay una señal fiable de "en mitad de un ataque" común a todos los enemigos: no se bloquea el congelamiento.
+        DashParryDebugLog.LogVerbose($"[Electric] detección de ataque en curso no disponible; se congela igualmente a {target.name}");
+        DashParryDebugLog.Log($"[Electric] Umbral alcanzado: congelando {target.name} {seconds:0.0}s (boss={isBoss}, atacante={CoopPlayerRegistry.GetPlayerIndex(attacker)})");
+
+        StartElectricFreeze(seconds);
+        CoopLightningVfx.Play(target, GetEnemyTopY());
+
+        try
+        {
+            Vector3 skullPos = target.transform.position + new Vector3(0f, Mathf.Clamp(GetEnemyTopY(), 1.0f, 3.8f) + 0.60f, 0f);
+            FloatingUpgradeSkull.Spawn(skullPos, ElementSkill.Electric, $"{seconds:0.#}s");
+        }
+        catch { }
+    }
+
+    private void StartElectricFreeze(float seconds)
+    {
+        if (electricFrozen || enemy == null) return;
+        electricFrozen = true;
+
+        // Patrón vanilla: pausar BehaviourTree + detener movimiento + congelar Animators (velocidad 0)
+        frozeBehaviour = false;
+        try
+        {
+            EnemyBehaviour beh = enemy.EnemyBehaviour != null ? enemy.EnemyBehaviour : enemy.GetComponentInChildren<EnemyBehaviour>();
+            if (beh != null)
+            {
+                bool wasRunning = beh.BehaviourTree != null && beh.BehaviourTree.isRunning;
+                beh.PauseBehaviour();
+                beh.StopMovement();
+                frozeBehaviour = wasRunning;
+            }
+        }
+        catch (Exception ex)
+        {
+            DashParryDebugLog.LogVerbose("[Electric] Error pausando comportamiento: " + ex.Message);
+        }
+
+        frozenAnimators = enemy.GetComponentsInChildren<Animator>(true);
+        frozenAnimatorSpeeds = new float[frozenAnimators.Length];
+        for (int i = 0; i < frozenAnimators.Length; i++)
+        {
+            if (frozenAnimators[i] == null) continue;
+            frozenAnimatorSpeeds[i] = frozenAnimators[i].speed;
+            frozenAnimators[i].speed = 0f;
+        }
+
+        PulseEnemyColor(new Color(0.55f, 0.9f, 1f, 1f), seconds);
+        electricFreezeRoutine = StartCoroutine(ElectricFreezeRoutine(seconds));
+    }
+
+    private IEnumerator ElectricFreezeRoutine(float seconds)
+    {
+        float t = 0f;
+        while (t < seconds)
+        {
+            if (this == null || enemy == null || enemy.Status.Dead) break;
+            t += Time.deltaTime;
+            yield return null;
+        }
+        electricFreezeRoutine = null;
+        EndElectricFreeze();
+    }
+
+    private void EndElectricFreeze()
+    {
+        if (!electricFrozen) return;
+        electricFrozen = false;
+
+        if (electricFreezeRoutine != null)
+        {
+            StopCoroutine(electricFreezeRoutine);
+            electricFreezeRoutine = null;
+        }
+
+        if (frozenAnimators != null)
+        {
+            for (int i = 0; i < frozenAnimators.Length; i++)
+            {
+                if (frozenAnimators[i] != null)
+                {
+                    frozenAnimators[i].speed = frozenAnimatorSpeeds[i];
+                }
+            }
+        }
+        frozenAnimators = null;
+        frozenAnimatorSpeeds = null;
+
+        try
+        {
+            if (enemy != null && !enemy.Status.Dead)
+            {
+                EnemyBehaviour beh = enemy.EnemyBehaviour != null ? enemy.EnemyBehaviour : enemy.GetComponentInChildren<EnemyBehaviour>();
+                if (beh != null && frozeBehaviour) beh.StartBehaviour();
+                DashParryDebugLog.LogVerbose($"[Electric] {enemy.name} descongelado");
+            }
+        }
+        catch (Exception ex)
+        {
+            DashParryDebugLog.LogVerbose("[Electric] Error reanudando comportamiento: " + ex.Message);
+        }
+        frozeBehaviour = false;
+    }
+
+    // ---------------------------------------------------------------------
+    // Maldición: reduce el daño del enemigo a jugadores + drenaje al dueño (host-only)
+    // ---------------------------------------------------------------------
+    internal float GetCurseDamageMultiplier()
+    {
+        if (curseRemaining <= 0f || curseBaseReduction <= 0f) return 1f;
+        float reduction = curseBaseReduction * (curseEnhanced ? curseThresholdMultiplier : 1f);
+        return 1f - Mathf.Clamp(reduction, 0f, 0.9f);
+    }
+
+    internal void ApplyCurseHit(Enemy target, Penitent attacker, int playerIdx, int tier, int hitWeight = 1)
+    {
+        if (!CoopGameConfig.EnableElementalUpgrades) return;
+        if (Blasphemous.CoopLocal.MultiPlayer.CoopNetworkManager.IsOnlineClient) return;
+        if (target == null || target.Status.Dead || Execution_OnUse_Patch.IsEnemyBeingExecuted(target)) return;
+
+        if (lastCurseAttacker == attacker && lastCurseHitFrame == Time.frameCount) return;
+        lastCurseHitFrame = Time.frameCount;
+        lastCurseAttacker = attacker;
+
+        enemy = target;
+        SwordElementalUpgrades.GetMaldicionParams(tier, out float reduction, out float drainPct, out float drainCooldown, out float duration, out int threshold, out float thresholdMult);
+
+        bool wasCursed = curseRemaining > 0f;
+        if (!wasCursed || tier >= curseTier)
+        {
+            curseTier = tier;
+            curseBaseReduction = reduction;
+        }
+        curseHitThreshold = threshold;
+        curseThresholdMultiplier = thresholdMult;
+        curseRemaining = duration; // renovable por golpe
+
+        if (!wasCursed)
+        {
+            DashParryDebugLog.LogVerbose($"[Curse] {target.name} maldito (tier {tier}, -{reduction * 100f:0}% daño, {duration:0.#}s) por P{playerIdx + 1}");
+        }
+
+        // Umbral: cada N golpes la reducción se multiplica x1.5 mientras dure esta maldición
+        curseHitCount += Mathf.Max(1, hitWeight);
+        if (curseHitCount >= curseHitThreshold)
+        {
+            curseHitCount = 0;
+            if (!curseEnhanced)
+            {
+                curseEnhanced = true;
+                float effective = Mathf.Min(0.9f, curseBaseReduction * curseThresholdMultiplier);
+                DashParryDebugLog.Log($"[Curse] Umbral alcanzado en {target.name}: reducción {curseBaseReduction * 100f:0}% -> {effective * 100f:0}%");
+                try
+                {
+                    Vector3 skullPos = target.transform.position + new Vector3(0f, Mathf.Clamp(GetEnemyTopY(), 1.0f, 3.8f) + 0.60f, 0f);
+                    FloatingUpgradeSkull.Spawn(skullPos, ElementSkill.Curse, $"-{Mathf.RoundToInt(effective * 100f)}%");
+                }
+                catch { }
+            }
+        }
+
+        PulseEnemyColor(new Color(0.75f, 0.5f, 1f, 1f), 0.15f);
+
+        TryCurseDrain(attacker, playerIdx, drainPct, drainCooldown);
+    }
+
+    private static void TryCurseDrain(Penitent owner, int playerIdx, float percentMaxLife, float cooldown)
+    {
+        if (owner == null || owner.Status == null || owner.Status.Dead) return;
+        if (owner.Stats == null || owner.Stats.Life == null) return;
+
+        float now = Time.time;
+        if (NextCurseDrainTime.TryGetValue(playerIdx, out float next) && now < next) return;
+
+        float max = owner.Stats.Life.CurrentMax;
+        float cur = owner.Stats.Life.Current;
+        if (max <= 0f || cur <= 0f || cur >= max) return;
+
+        float amount = max * percentMaxLife;
+        float newLife = Mathf.Min(max, cur + amount);
+        owner.Stats.Life.Current = newLife;
+        NextCurseDrainTime[playerIdx] = now + cooldown;
+
+        DashParryDebugLog.LogVerbose($"[Curse] Drenaje: P{playerIdx + 1} +{newLife - cur:0.#} vida ({percentMaxLife * 100f:0}% de {max:0})");
+        try
+        {
+            FloatingDamageNumber.Spawn(owner.transform.position + new Vector3(0f, 2.2f, 0f), "+" + Mathf.RoundToInt(newLife - cur), new Color(0.78f, 0.45f, 1f, 1f), isLarge: false);
+        }
+        catch { }
+    }
+
     private void Update()
     {
         if (!CoopGameConfig.EnableElementalUpgrades)
@@ -2533,7 +3350,7 @@ internal sealed class EnemyElementalStatusController : MonoBehaviour
             return;
         }
 
-        if (enemy == null || enemy.Status.Dead)
+        if (enemy == null || enemy.Status.Dead || Execution_OnUse_Patch.IsEnemyBeingExecuted(enemy))
         {
             poisonBar?.Hide();
             bleedBar?.Hide();
@@ -2598,6 +3415,21 @@ internal sealed class EnemyElementalStatusController : MonoBehaviour
             if (bleedProgressiveRemainingTime <= 0f)
             {
                 bleedProgressiveRemainingTime = 0f;
+            }
+        }
+
+        // Maldición: expira tras su duración (renovable por golpe)
+        if (curseRemaining > 0f)
+        {
+            curseRemaining -= dt;
+            if (curseRemaining <= 0f)
+            {
+                DashParryDebugLog.LogVerbose($"[Curse] Maldición expirada en {name} (umbral x1.5 era {curseEnhanced})");
+                curseRemaining = 0f;
+                curseTier = 0;
+                curseBaseReduction = 0f;
+                curseHitCount = 0;
+                curseEnhanced = false;
             }
         }
 
@@ -2851,6 +3683,80 @@ internal sealed class EnemyElementalStatusController : MonoBehaviour
     }
 }
 
+/// <summary>
+/// VFX de rayo reutilizable: usa el prefab prefabIntoEnemies del rezo PR15 (PenitentAreaAttack) vía PoolManager.
+/// Fallback (prefab no accesible): destello amarillo sobre los sprites del enemigo + sonido existente.
+/// </summary>
+internal static class CoopLightningVfx
+{
+    private const string FallbackSound = "event:/SFX/Penitent/Damage/PenitentMagicDamage";
+    private static GameObject cachedPrefab;
+    private static Vector2 cachedOffset;
+    private static string cachedHitSound;
+    private static bool resolved;
+
+    private static void Resolve()
+    {
+        if (resolved) return;
+        try
+        {
+            Prayer pr15 = Core.InventoryManager != null ? Core.InventoryManager.GetPrayer("PR15") : null;
+            PenitentAreaAttack area = pr15 != null ? pr15.GetComponent<PenitentAreaAttack>() : null;
+            if (area == null) return;
+
+            cachedPrefab = AccessTools.Field(typeof(PenitentAreaAttack), "prefabIntoEnemies")?.GetValue(area) as GameObject;
+            object off = AccessTools.Field(typeof(PenitentAreaAttack), "intoEnemiesOffset")?.GetValue(area);
+            cachedOffset = off is Vector2 v ? v : Vector2.zero;
+            cachedHitSound = AccessTools.Field(typeof(PenitentAreaAttack), "HitSound")?.GetValue(area) as string;
+            resolved = true;
+            DashParryDebugLog.LogVerbose($"[Electric] VFX PR15 resuelto: prefab={(cachedPrefab != null ? cachedPrefab.name : "null")} sonido={cachedHitSound}");
+        }
+        catch (Exception ex)
+        {
+            DashParryDebugLog.LogVerbose("[Electric] Error resolviendo VFX PR15: " + ex.Message);
+        }
+    }
+
+    internal static void Play(Enemy target, float topY)
+    {
+        if (target == null) return;
+        Resolve();
+
+        bool spawned = false;
+        try
+        {
+            if (cachedPrefab != null && PoolManager.Instance != null)
+            {
+                Vector3 pos = target.transform.position + new Vector3(0f, Mathf.Clamp(topY * 0.5f, 0.3f, 2f), 0f) + (Vector3)cachedOffset;
+                PoolManager.Instance.ReuseObject(cachedPrefab, pos, Quaternion.identity, createPoolIfNeeded: true, poolSize: 2);
+                spawned = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            DashParryDebugLog.LogVerbose("[Electric] Error instanciando rayo PR15: " + ex.Message);
+        }
+
+        try
+        {
+            string snd = !string.IsNullOrEmpty(cachedHitSound) ? cachedHitSound : FallbackSound;
+            Core.Audio?.PlayOneShot(snd);
+        }
+        catch { }
+
+        if (!spawned)
+        {
+            // Fallback: el destello amarillo lo aplica el propio controlador (color de congelación) — aquí se tiñe el sprite principal
+            try
+            {
+                SpriteRenderer sr = target.SpriteRenderer;
+                if (sr != null) sr.color = new Color(1f, 0.95f, 0.35f, 1f);
+            }
+            catch { }
+        }
+    }
+}
+
 internal sealed class FloatingDamageNumber : MonoBehaviour
 {
     private TextMesh textMesh;
@@ -2913,6 +3819,9 @@ internal sealed class FloatingDamageNumber : MonoBehaviour
     }
 }
 
+/// <summary>Elemento de Mea Culpa asociado a una calavera flotante de mejora.</summary>
+internal enum ElementSkill { Poison, Bleed, Electric, Curse }
+
 internal sealed class FloatingUpgradeSkull : MonoBehaviour
 {
     private SpriteRenderer bgRenderer;
@@ -2927,27 +3836,19 @@ internal sealed class FloatingUpgradeSkull : MonoBehaviour
     private float floatSpeed = 0.45f;
     private Vector3 initialScale;
 
-    private static Sprite _poisonSkullSprite;
-    private static Sprite _bleedSkullSprite;
     private static Sprite _poisonBackdropSprite;
     private static Sprite _bleedBackdropSprite;
 
-    public static Sprite GetPoisonSkullSprite()
-    {
-        if (_poisonSkullSprite == null)
-        {
-            _poisonSkullSprite = LoadSkullSprite(true);
-        }
-        return _poisonSkullSprite;
-    }
+    private static readonly Dictionary<ElementSkill, Sprite> _skullSprites = new Dictionary<ElementSkill, Sprite>();
 
-    public static Sprite GetBleedSkullSprite()
+    public static Sprite GetSkullSprite(ElementSkill element)
     {
-        if (_bleedSkullSprite == null)
+        if (!_skullSprites.TryGetValue(element, out Sprite sp) || sp == null)
         {
-            _bleedSkullSprite = LoadSkullSprite(false);
+            sp = LoadSkullSprite(element);
+            _skullSprites[element] = sp;
         }
-        return _bleedSkullSprite;
+        return sp;
     }
 
     public static Sprite GetBackdropSprite(bool isPoison)
@@ -3348,12 +4249,378 @@ internal sealed class FloatingUpgradeSkull : MonoBehaviour
         + "EulvhqFGKLaVurLcshpqKQ3oMJypAxz+GxwYPR8aMlA/C3UtyMOBMHVadeNQCVryio68/X9tJS9AZrfCr0MJ28SZNsrw51Ql/EcLC3PVRrJVIs2AlP+Psv3Z"
         + "M2uzyK6zMO/7eXdWf55PS/nPSj/+H2maWHFfnTwEAAAAAElFTkSuQmCC";
 
-    private static Sprite LoadSkullSprite(bool isPoison)
+    private static readonly string ElectricSkullBase64 = 
+        "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";
+
+    private static readonly string CurseSkullBase64 = 
+        "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";
+
+    private static Sprite LoadSkullSprite(ElementSkill element)
     {
         try
         {
             byte[] data = null;
-            string fileName = isPoison ? "skull_poison_96.png" : "skull_bleed_96.png";
+            string fileName;
+            switch (element)
+            {
+                case ElementSkill.Poison: fileName = "skull_poison_96.png"; break;
+                case ElementSkill.Electric: fileName = "skull_electric_96.png"; break;
+                case ElementSkill.Curse: fileName = "skull_curse_96.png"; break;
+                default: fileName = "skull_bleed_96.png"; break;
+            }
 
             // 1. Intentar cargar desde el directorio de plugins / skulls si existe en disco
             try
@@ -3370,7 +4637,14 @@ internal sealed class FloatingUpgradeSkull : MonoBehaviour
             // 2. Si no está en disco, usar los datos Base64 embebidos de las imágenes oficiales del usuario
             if (data == null || data.Length == 0)
             {
-                string base64 = isPoison ? PoisonSkullBase64 : BleedSkullBase64;
+                string base64;
+                switch (element)
+                {
+                    case ElementSkill.Poison: base64 = PoisonSkullBase64; break;
+                    case ElementSkill.Electric: base64 = ElectricSkullBase64; break;
+                    case ElementSkill.Curse: base64 = CurseSkullBase64; break;
+                    default: base64 = BleedSkullBase64; break;
+                }
                 data = Convert.FromBase64String(base64);
             }
 
@@ -3392,10 +4666,16 @@ internal sealed class FloatingUpgradeSkull : MonoBehaviour
             Blasphemous.ModdingAPI.ModLog.Error("Error loading skull sprite: " + ex, Main.CoopLocal);
         }
 
-        return isPoison ? SwordElementalUpgrades.CreatePoisonBubblesIcon(true) : SwordElementalUpgrades.CreateBloodSymbolIcon(true);
+        switch (element)
+        {
+            case ElementSkill.Poison: return SwordElementalUpgrades.CreatePoisonBubblesIcon(true);
+            case ElementSkill.Electric: return SwordElementalUpgrades.CreateLightningBoltIcon(true);
+            case ElementSkill.Curse: return SwordElementalUpgrades.CreateCurseIcon(true);
+            default: return SwordElementalUpgrades.CreateBloodSymbolIcon(true);
+        }
     }
 
-    public static void Spawn(Vector3 worldPos, bool isPoison, string text = "+")
+    public static void Spawn(Vector3 worldPos, ElementSkill element, string text = "+")
     {
         try
         {
@@ -3409,7 +4689,7 @@ internal sealed class FloatingUpgradeSkull : MonoBehaviour
             skullObj.transform.localPosition = new Vector3(-0.14f, 0f, 0f);
 
             SpriteRenderer sr = skullObj.AddComponent<SpriteRenderer>();
-            sr.sprite = isPoison ? GetPoisonSkullSprite() : GetBleedSkullSprite();
+            sr.sprite = GetSkullSprite(element);
             sr.sortingOrder = 30016;
 
             // Texto principal "+" / "+50%" con brillo elemental
@@ -3424,7 +4704,14 @@ internal sealed class FloatingUpgradeSkull : MonoBehaviour
             tm.fontStyle = FontStyle.Bold;
             tm.anchor = TextAnchor.MiddleLeft;
             tm.alignment = TextAlignment.Left;
-            Color fontColor = isPoison ? new Color(0.35f, 1f, 0.45f, 1f) : new Color(1f, 0.28f, 0.30f, 1f);
+            Color fontColor;
+            switch (element)
+            {
+                case ElementSkill.Poison: fontColor = new Color(0.35f, 1f, 0.45f, 1f); break;
+                case ElementSkill.Electric: fontColor = new Color(0.45f, 0.9f, 1f, 1f); break;
+                case ElementSkill.Curse: fontColor = new Color(0.78f, 0.45f, 1f, 1f); break;
+                default: fontColor = new Color(1f, 0.28f, 0.30f, 1f); break;
+            }
             tm.color = fontColor;
 
             MeshRenderer mr = textObj.GetComponent<MeshRenderer>();

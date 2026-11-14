@@ -26,6 +26,8 @@ internal static class Player2SkillManager
         "VERTICAL_1", "VERTICAL_2", "VERTICAL_3",
         "VENENO_1", "VENENO_2", "VENENO_3",
         "SANGRADO_1", "SANGRADO_2", "SANGRADO_3",
+        "ELECTRICO_1", "ELECTRICO_2", "ELECTRICO_3",
+        "MALDICION_1", "MALDICION_2", "MALDICION_3",
     };
 
     private static PlayerCoopData P2Data => CoopSaveManager.CurrentSave.GetPlayer(1);

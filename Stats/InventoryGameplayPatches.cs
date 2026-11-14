@@ -61,3 +61,25 @@ internal static class Inv_IsSwordEquipped_P2_Patch
         if (Player2InventoryManager.IsAnyGuestSwordEquipped(idSword)) __result = true;
     }
 }
+
+[HarmonyPatch(typeof(InventoryManager), "IsRelicEquipped", new[] { typeof(string) })]
+internal static class Inv_IsRelicEquipped_P2_Patch
+{
+    private static void Postfix(string idRelic, ref bool __result)
+    {
+        if (__result) return;
+        if (Gameplay.UI.UIController.instance != null && Gameplay.UI.UIController.instance.IsShowingInventory) return;
+        if (Player2InventoryManager.IsAnyGuestRelicEquipped(idRelic)) __result = true;
+    }
+}
+
+[HarmonyPatch(typeof(InventoryManager), "IsRelicEquipped", new[] { typeof(Relic) })]
+internal static class Inv_IsRelicObjEquipped_P2_Patch
+{
+    private static void Postfix(Relic relic, ref bool __result)
+    {
+        if (__result) return;
+        if (Gameplay.UI.UIController.instance != null && Gameplay.UI.UIController.instance.IsShowingInventory) return;
+        if (relic != null && Player2InventoryManager.IsAnyGuestRelicEquipped(relic.id)) __result = true;
+    }
+}

@@ -148,6 +148,28 @@ public static class CoopEnemyScaling
         }
     }
 
+    private static readonly HashSet<Type> DuplicationExcludedTypes = new HashSet<Type>
+    {
+        typeof(Gameplay.GameControllers.Enemies.TrinityMinion.TrinityMinion),
+        typeof(Gameplay.GameControllers.Enemies.ChasingHead.ChasingHead),
+        typeof(Gameplay.GameControllers.Enemies.WaxCrawler.WaxCrawler),
+        typeof(Gameplay.GameControllers.Enemies.CrossCrawler.CrossCrawler)
+    };
+
+    /// <summary>
+    /// Enemigos excluidos de la duplicación de sala (mantienen escalado de vida).
+    /// </summary>
+    public static bool IsExcludedFromDuplication(Enemy enemy)
+    {
+        if (enemy == null) return true;
+        if (DuplicationExcludedTypes.Contains(enemy.GetType())) return true;
+        if (enemy is Gameplay.GameControllers.Enemies.ExplodingEnemy.ExplodingEnemy exploding && exploding.IsSummoned)
+        {
+            return true;
+        }
+        return false;
+    }
+
     /// <summary>
     /// Identifica si una entidad enemiga es considerada un Jefe.
     /// </summary>
@@ -272,8 +294,8 @@ public static class CoopEnemyScaling
             // 1. Aplicar multiplicador de vida a la entidad (sea jefe o regular)
             ScaleEnemyHp(enemy, ActiveHealthMultiplier);
 
-            // 2. Determinar si califica para duplicación de sala (no duplicar jefes ni partes hijas)
-            if (!IsBoss(enemy) && !enemy.Status.Dead && enemy.gameObject.activeInHierarchy)
+            // 2. Determinar si califica para duplicación de sala (no duplicar jefes, excluidos ni partes hijas)
+            if (!IsBoss(enemy) && !IsExcludedFromDuplication(enemy) && !enemy.Status.Dead && enemy.gameObject.activeInHierarchy)
             {
                 // Asegurar que no sea una sub-parte de otro enemigo
                 if (enemy.transform.parent == null || enemy.transform.parent.GetComponentInParent<Enemy>() == null)
@@ -451,7 +473,10 @@ public static class CoopEnemyScaling
                 }
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            DashParryDebugLog.LogOnce($"CoopEnemyScaling.Clone:{original?.name}", $"[CoopEnemyScaling] Error clonando {original?.name}: {ex.Message}", isWarning: true);
+        }
     }
 }
 
@@ -496,7 +521,10 @@ internal static class UIController_ShowBossHealth_CoopScaling_Patch
                 if (lossImg != null) lossImg.fillAmount = 1f;
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            DashParryDebugLog.LogOnce("CoopEnemyScaling.ShowBossHealth", $"[CoopEnemyScaling] ShowBossHealth error: {ex.Message}", isWarning: true);
+        }
     }
 }
 

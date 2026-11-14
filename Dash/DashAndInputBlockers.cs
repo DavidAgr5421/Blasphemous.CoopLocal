@@ -344,7 +344,11 @@ internal static class InputManager_SetBlocker_Patch
         return true;
     }
 
-    private static void Postfix(string name, bool blocking) => GlobalBlockerTracker.Track(name, blocking);
+    private static void Postfix(string name, bool blocking)
+    {
+        GlobalBlockerTracker.Track(name, blocking);
+        CinematicMovementSync.OnGlobalBlockerChanged(name, blocking);
+    }
 }
 
 [HarmonyPatch(typeof(DashBehaviour), "OnStateEnter")]

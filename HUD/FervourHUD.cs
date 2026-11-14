@@ -174,10 +174,20 @@ internal static class CoopFervourBars
         }
 
         PlayerFervour original = OriginalFervour;
-        if (original == null || penitent == null)
+        if (original == null)
         {
-            DashParryDebugLog.Log($"CoopFervourBars.EnsureCreated: cancelado para P{slotIndex + 1} - original={original != null}, penitent={penitent != null}");
+            DashParryDebugLog.Log($"CoopFervourBars.EnsureCreated: cancelado para P{slotIndex + 1} - original={original != null}");
             return;
+        }
+
+        if (penitent == null)
+        {
+            penitent = Core.Logic?.Penitent;
+            if (penitent == null)
+            {
+                DashParryDebugLog.Log($"CoopFervourBars.EnsureCreated: cancelado para P{slotIndex + 1} - penitent nulo");
+                return;
+            }
         }
 
         Canvas canvas = original.GetComponentInParent<Canvas>();
@@ -214,7 +224,7 @@ internal static class CoopFervourBars
         RectTransform rect = cloneObject.GetComponent<RectTransform>();
         if (rect != null)
         {
-            bool is3Plus = CoopGameConfig.PlayerCount >= 3;
+            bool is3Plus = CoopGameConfig.IsHudLayout3Plus;
             var cfg = HudLayoutConfig.Current;
 
             if (slotIndex == 1) // P2
@@ -308,7 +318,7 @@ internal static class CoopFervourBars
         FervourBarSlotInfo slot = slots[slotIndex];
         if (slot == null || slot.CloneRect == null) return;
 
-        bool is3Plus = CoopGameConfig.PlayerCount >= 3;
+        bool is3Plus = CoopGameConfig.IsHudLayout3Plus;
         if (slotIndex == 1 && !is3Plus)
         {
             return;

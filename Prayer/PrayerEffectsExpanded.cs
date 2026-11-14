@@ -19,6 +19,73 @@ using UnityEngine;
 
 namespace Blasphemous.CoopLocal;
 
+/// <summary>
+/// Tracks pooled and instantiated prayer attack GameObjects back to their casting Penitent
+/// (cleaned up automatically on OnDisable/OnDestroy).
+/// </summary>
+internal static class PrayerAttackOwnerTracker
+{
+    private static readonly Dictionary<int, Penitent> ownersByInstanceId = new Dictionary<int, Penitent>();
+
+    internal static void Register(GameObject go, Penitent owner)
+    {
+        if (go == null || owner == null) return;
+        ownersByInstanceId[go.GetInstanceID()] = owner;
+
+        var cleanup = go.GetComponent<PrayerAttackOwnerCleanup>();
+        if (cleanup == null)
+        {
+            cleanup = go.AddComponent<PrayerAttackOwnerCleanup>();
+        }
+        cleanup.TrackedId = go.GetInstanceID();
+    }
+
+    internal static void Unregister(int instanceId)
+    {
+        ownersByInstanceId.Remove(instanceId);
+    }
+
+    internal static Penitent ResolveAttacker(GameObject attackingEntity)
+    {
+        if (attackingEntity == null) return null;
+
+        Penitent direct = attackingEntity.GetComponent<Penitent>() ?? attackingEntity.GetComponentInParent<Penitent>();
+        if (direct != null) return direct;
+
+        Transform t = attackingEntity.transform;
+        while (t != null)
+        {
+            if (ownersByInstanceId.TryGetValue(t.gameObject.GetInstanceID(), out Penitent owner) && owner != null)
+            {
+                return owner;
+            }
+            t = t.parent;
+        }
+        return null;
+    }
+}
+
+internal sealed class PrayerAttackOwnerCleanup : MonoBehaviour
+{
+    internal int TrackedId;
+
+    private void OnDisable()
+    {
+        if (TrackedId != 0)
+        {
+            PrayerAttackOwnerTracker.Unregister(TrackedId);
+        }
+    }
+
+    private void OnDestroy()
+    {
+        if (TrackedId != 0)
+        {
+            PrayerAttackOwnerTracker.Unregister(TrackedId);
+        }
+    }
+}
+
 // Ronda 85: Implementación completa y paridad de todas las oraciones (rezos) para P2.
 // Resuelve todas las instancias donde el juego vanilla asume P1 como el único lanzador:
 // - PR03 / PR101: Zarabanda del Salvador Solitario / Seguidilla al Velo (Escudos orbitales)
@@ -62,6 +129,10 @@ internal static class ShieldSystemPrayer_InstantiateShield_Patch
     private static void Postfix(ShieldSystemPrayer __instance, GameObject ____instantiatedShield)
     {
         Penitent caster = PrayerCasterTracker.LastCaster;
+        if (caster != null && ____instantiatedShield != null)
+        {
+            PrayerAttackOwnerTracker.Register(____instantiatedShield, caster);
+        }
         if (caster != null && CoopLocal.IsGuestPlayer(caster, out _) && ____instantiatedShield != null)
         {
             ____instantiatedShield.transform.position = caster.transform.position;
@@ -123,6 +194,10 @@ internal static class AlliedCherubPrayer_InstantiateCherubs_Patch
     private static void Postfix(AlliedCherubPrayer __instance, GameObject ____instantiatedAlliedCherubSystem)
     {
         Penitent caster = PrayerCasterTracker.LastCaster;
+        if (caster != null && ____instantiatedAlliedCherubSystem != null)
+        {
+            PrayerAttackOwnerTracker.Register(____instantiatedAlliedCherubSystem, caster);
+        }
         if (caster != null && CoopLocal.IsGuestPlayer(caster, out _) && ____instantiatedAlliedCherubSystem != null)
         {
             ____instantiatedAlliedCherubSystem.transform.position = caster.transform.position;
@@ -806,6 +881,17 @@ internal static class ObjectEffect_Stat_OnApplyEffect_P2_Patch
         {
             return PrayerCasterTracker.LastCaster;
         }
+        if (instance != null &&
+            (instance.effectType == ObjectEffect.EffectType.OnHitEnemy || instance.effectType == ObjectEffect.EffectType.OnHitReceived) &&
+            CurrentHitField != null)
+        {
+            Hit hit = (Hit)CurrentHitField.GetValue(instance);
+            Penitent hitOwner = PrayerAttackOwnerTracker.ResolveAttacker(hit.AttackingEntity);
+            if (hitOwner != null)
+            {
+                return hitOwner;
+            }
+        }
         if (Player2MenuView.IsInventoryP2View)
         {
             int activeIdx = Player2MenuView.ActivePlayerIndex;
@@ -1095,9 +1181,12 @@ internal static class ProtectionDomeEffect_OnUpdate_P2_Patch
 [HarmonyPatch(typeof(ToxicCloudEffect), "InstantiateToxicCloud")]
 internal static class ToxicCloudEffect_InstantiateToxicCloud_P2_Patch
 {
+    internal static Penitent ActiveToxicCloudCaster;
+
     private static bool Prefix(ToxicCloudEffect __instance)
     {
         Penitent caster = ObjectEffectCasterTracker.GetCaster(__instance);
+        ActiveToxicCloudCaster = caster ?? PrayerCasterTracker.LastCaster ?? Core.Logic?.Penitent;
         if (caster == null || !CoopLocal.IsGuestPlayer(caster, out _))
         {
             return true;
@@ -1109,9 +1198,11 @@ internal static class ToxicCloudEffect_InstantiateToxicCloud_P2_Patch
             PoolManager.ObjectInstance objectInstance = PoolManager.Instance.ReuseObject(__instance.ToxicCloudPrefab, position, Quaternion.identity);
             if (objectInstance != null)
             {
+                PrayerAttackOwnerTracker.Register(objectInstance.GameObject, caster);
                 var poison = objectInstance.GameObject.GetComponentInChildren<Gameplay.GameControllers.Environment.AreaEffects.PoisonAreaEffect>();
                 if (poison != null)
                 {
+                    PrayerAttackOwnerTracker.Register(poison.gameObject, caster);
                     poison.DamageAmount = caster.Stats.PrayerStrengthMultiplier.Final * __instance.DamageAmount;
                 }
                 if (!string.IsNullOrEmpty(__instance.InstantiateToxicCloudFx))
@@ -1121,6 +1212,84 @@ internal static class ToxicCloudEffect_InstantiateToxicCloud_P2_Patch
             }
         }
         return false;
+    }
+
+    private static void Postfix()
+    {
+        ActiveToxicCloudCaster = null;
+    }
+}
+
+[HarmonyPatch(typeof(PoolManager), nameof(PoolManager.ReuseObject))]
+internal static class PoolManager_ReuseObject_PrayerOwner_Patch
+{
+    private static void Postfix(PoolManager.ObjectInstance __result)
+    {
+        if (ToxicCloudEffect_InstantiateToxicCloud_P2_Patch.ActiveToxicCloudCaster != null &&
+            __result != null && __result.GameObject != null)
+        {
+            PrayerAttackOwnerTracker.Register(__result.GameObject, ToxicCloudEffect_InstantiateToxicCloud_P2_Patch.ActiveToxicCloudCaster);
+        }
+    }
+}
+
+[HarmonyPatch(typeof(Gameplay.GameControllers.Bosses.Quirce.Attack.BossAreaSummonAttack), "InstantiateArea")]
+internal static class BossAreaSummonAttack_InstantiateArea_Owner_Patch
+{
+    private static void Postfix(Gameplay.GameControllers.Bosses.Quirce.Attack.BossAreaSummonAttack __instance, GameObject __result)
+    {
+        if (__result == null || __instance == null) return;
+        Penitent owner = __instance.GetComponentInParent<Penitent>() ?? PrayerCasterTracker.LastCaster;
+        if (owner != null)
+        {
+            PrayerAttackOwnerTracker.Register(__result, owner);
+        }
+    }
+}
+
+[HarmonyPatch(typeof(Gameplay.GameControllers.Enemies.BellGhost.ProjectileWeapon), "SetOwner")]
+internal static class ProjectileWeapon_SetOwner_PrayerOwner_Patch
+{
+    private static void Postfix(Gameplay.GameControllers.Enemies.BellGhost.ProjectileWeapon __instance, GameObject enemy)
+    {
+        if (__instance == null) return;
+        Penitent p = (enemy != null ? enemy.GetComponentInParent<Penitent>() : null)
+            ?? __instance.GetComponentInParent<Penitent>();
+        if (p != null)
+        {
+            PrayerAttackOwnerTracker.Register(__instance.gameObject, p);
+        }
+    }
+}
+
+[HarmonyPatch(typeof(Gameplay.GameControllers.Bosses.Quirce.Attack.BossInstantProjectileAttack), "InstantiateObject")]
+internal static class BossInstantProjectileAttack_InstantiateObject_Owner_Patch
+{
+    private static void Postfix(Gameplay.GameControllers.Bosses.Quirce.Attack.BossInstantProjectileAttack __instance, GameObject __result)
+    {
+        if (__result == null || __instance == null) return;
+        Penitent owner = __instance.GetComponentInParent<Penitent>()
+            ?? (__instance.GetComponentInParent<Enemy>() == null ? PrayerCasterTracker.LastCaster : null);
+        if (owner != null)
+        {
+            PrayerAttackOwnerTracker.Register(__result, owner);
+        }
+    }
+}
+
+[HarmonyPatch(typeof(Gameplay.GameControllers.Bosses.CommonAttacks.BossStraightProjectileAttack), "Shoot",
+    new[] { typeof(Vector2) })]
+internal static class BossStraightProjectileAttack_Shoot_Owner_Patch
+{
+    private static void Postfix(Gameplay.GameControllers.Bosses.CommonAttacks.BossStraightProjectileAttack __instance, Gameplay.GameControllers.Enemies.Projectiles.StraightProjectile __result)
+    {
+        if (__result == null || __instance == null) return;
+        Penitent owner = __instance.GetComponentInParent<Penitent>()
+            ?? (__instance.GetComponentInParent<Enemy>() == null ? PrayerCasterTracker.LastCaster : null);
+        if (owner != null)
+        {
+            PrayerAttackOwnerTracker.Register(__result.gameObject, owner);
+        }
     }
 }
 

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using Gameplay.UI.Others.MenuLogic;
+using Gameplay.UI.Others.Buttons;
 using Gameplay.UI.Widgets;
 using HarmonyLib;
 using UnityEngine;
@@ -9,8 +10,43 @@ using UnityEngine;
 namespace Blasphemous.CoopLocal.MultiPlayer;
 
 /// <summary>
+/// Provee control centralizado de los modales cooperativos en la pantalla de ranuras de guardado.
+/// </summary>
+internal static class CoopGameSetupPatches
+{
+    public static bool IsAnyCoopModalOpen =>
+        CoopGameSetupUI.IsOpen || CoopJoinLobbyUI.IsOpen || CoopMatchConfigUI.IsOpen;
+
+    internal static void RestoreSaveSlotsMenu(SelectSaveSlots instance, int capturedSlot)
+    {
+        SelectSaveSlots_OnAcceptSlots_CoopSetup_Patch.SuppressVanillaSaveSlotsFrames = 5;
+        try
+        {
+            var isShowingProp = AccessTools.Property(typeof(SelectSaveSlots), "IsShowing");
+            isShowingProp?.SetValue(instance, true, null);
+        }
+        catch { }
+
+        try
+        {
+            var parentField = AccessTools.Field(typeof(SelectSaveSlots), "parentMainMenu");
+            var parentMenu = parentField?.GetValue(instance) as NewMainMenu;
+            var modeField = AccessTools.Field(typeof(SelectSaveSlots), "CurrentSlotsMode");
+            var mode = modeField != null ? (SelectSaveSlots.SlotsModes)modeField.GetValue(instance) : 0;
+            if (parentMenu != null)
+            {
+                instance.SetAllData(parentMenu, mode);
+            }
+        }
+        catch { }
+
+        instance.OnSelectedSlots(capturedSlot);
+    }
+}
+
+/// <summary>
 /// Parches de integración para mostrar la pantalla de configuración cooperativa
-/// antes de crear una nueva partida en los slots de guardado, o mediante el atajo 'C' en el menú.
+/// antes de crear una nueva partida (pre-match setup) o de configurar una partida ya existente.
 /// </summary>
 [HarmonyPatch(typeof(SelectSaveSlots), nameof(SelectSaveSlots.OnAcceptSlots))]
 internal static class SelectSaveSlots_OnAcceptSlots_CoopSetup_Patch
@@ -21,7 +57,7 @@ internal static class SelectSaveSlots_OnAcceptSlots_CoopSetup_Patch
     private static bool Prefix(SelectSaveSlots __instance, int idxSlot)
     {
         if (BypassIntercept) return true;
-        if (CoopGameSetupUI.IsOpen || CoopJoinLobbyUI.IsOpen || SuppressVanillaSaveSlotsFrames > 0) return false;
+        if (CoopGameSetupPatches.IsAnyCoopModalOpen || SuppressVanillaSaveSlotsFrames > 0) return false;
         if (!__instance.IsShowing) return true;
 
         var slotsField = AccessTools.Field(typeof(SelectSaveSlots), "slots");
@@ -31,73 +67,106 @@ internal static class SelectSaveSlots_OnAcceptSlots_CoopSetup_Patch
             SaveSlot targetSlot = slots[idxSlot];
             int capturedSlot = idxSlot;
             SelectSaveSlots instance = __instance;
+            bool isNewGame = targetSlot.IsEmpty;
 
-            // Si la partida ya está iniciada (slot no vacío):
-            // NO pedir configuración ni mostrar menús. Entrar DIRECTAMENTE con la config guardada de este slot.
-            if (!targetSlot.IsEmpty)
+            if (Main.CoopLocal != null)
             {
-                CoopSaveManager.TargetSetupSlot = idxSlot;
-                var slotData = CoopSaveManager.GetSlotData(idxSlot);
-                CoopSaveManager.ApplyConfigToGame(slotData);
-
-                // Si no tiene mandos configurados, asignar P1 Mando 1 y P2 Teclado por defecto
-                if (CoopGameConfig.Slots[0].Device == CoopDeviceType.Unassigned)
-                    CoopGameConfig.Slots[0].Device = CoopDeviceType.Gamepad1;
-                if (CoopGameConfig.Slots[1].Device == CoopDeviceType.Unassigned)
-                    CoopGameConfig.Slots[1].Device = CoopDeviceType.Keyboard;
-                CoopGameConfig.ApplyToRegistry();
-
-                int activePlayers = Mathf.Clamp(CoopGameConfig.PlayerCount, 2, 4);
-                if (Combat.CoopEnemyScaling.ActiveEnemyMultiplier <= 1.01f && Combat.CoopEnemyScaling.ActiveHealthMultiplier <= 1.01f)
-                {
-                    Combat.CoopEnemyScaling.SetDefaultsForPlayerCount(activePlayers);
-                }
-
-                return true;
+                Blasphemous.ModdingAPI.ModLog.Info($"[CoopGameSetupPatches] Interceptando OnAcceptSlots: Slot={capturedSlot}, isNewGame={isNewGame}", Main.CoopLocal);
             }
 
-            // Si el slot está vacío (NUEVA PARTIDA) -> Mostrar CoopGameSetupUI para configurar desde cero
             CoopSaveManager.TargetSetupSlot = capturedSlot;
-            CoopGameSetupUI.Show(
-                onConfirm: () =>
-                {
-                    BypassIntercept = true;
-                    Player2SlotResetHelper.ResetAllSlotData(capturedSlot);
+            var slotData = CoopSaveManager.GetSlotData(capturedSlot);
+            CoopSaveManager.ApplyConfigToGame(slotData);
 
-                    // Guardar la configuración seleccionada en el archivo unificado de la ranura
-                    var slotData = CoopSaveManager.GetSlotData(capturedSlot);
-                    CoopSaveManager.SyncConfigFromGame(slotData);
-                    slotData.HasCompletedSetup = true;
-                    CoopSaveManager.SaveSlot(capturedSlot);
+            // Si es un slot sin mandos asignados, asignar por defecto
+            if (CoopGameConfig.Slots[0].Device == CoopDeviceType.Unassigned)
+                CoopGameConfig.Slots[0].Device = CoopDeviceType.Gamepad1;
+            if (CoopGameConfig.Slots[1].Device == CoopDeviceType.Unassigned)
+                CoopGameConfig.Slots[1].Device = CoopDeviceType.Keyboard;
+            CoopGameConfig.ApplyToRegistry();
 
-                    instance.OnAcceptSlots(capturedSlot);
-                    BypassIntercept = false;
-                },
-                onCancel: () =>
-                {
-                    SuppressVanillaSaveSlotsFrames = 4;
-                    try
+            if (isNewGame)
+            {
+                // NUEVA PARTIDA -> Menú pre-partida inicial (dificultad, número inicial de jugadores, senda elemental)
+                CoopGameSetupUI.Show(
+                    onConfirm: () =>
                     {
-                        var isShowingProp = AccessTools.Property(typeof(SelectSaveSlots), "IsShowing");
-                        isShowingProp?.SetValue(instance, true, null);
-                    }
-                    catch { }
+                        BypassIntercept = true;
 
-                    try
-                    {
-                        var parentField = AccessTools.Field(typeof(SelectSaveSlots), "parentMainMenu");
-                        var parentMenu = parentField?.GetValue(instance) as NewMainMenu;
-                        var modeField = AccessTools.Field(typeof(SelectSaveSlots), "CurrentSlotsMode");
-                        var mode = modeField != null ? (SelectSaveSlots.SlotsModes)modeField.GetValue(instance) : 0;
-                        if (parentMenu != null)
+                        // Reiniciar progreso previo del slot
+                        Player2SlotResetHelper.ResetAllSlotData(capturedSlot);
+
+                        var currentSlotData = CoopSaveManager.GetSlotData(capturedSlot);
+                        CoopSaveManager.SyncConfigFromGame(currentSlotData);
+                        currentSlotData.HasCompletedSetup = true;
+                        CoopSaveManager.SaveSlot(capturedSlot);
+
+                        // Si algún jugador está configurado como RemoteSteam, crear el lobby de Steam como Host
+                        if (CoopGameConfig.IsCoopEnabled && (
+                            CoopGameConfig.Slots[1].Device == CoopDeviceType.RemoteSteam ||
+                            CoopGameConfig.Slots[2].Device == CoopDeviceType.RemoteSteam ||
+                            CoopGameConfig.Slots[3].Device == CoopDeviceType.RemoteSteam))
                         {
-                            instance.SetAllData(parentMenu, mode);
+                            CoopLobbyManager.Instance.CreateHostLobby((success, code) =>
+                            {
+                                if (success && Main.CoopLocal != null)
+                                {
+                                    Blasphemous.ModdingAPI.ModLog.Info($"[Host] Sala Steam creada para slot {capturedSlot} con código: {code}", Main.CoopLocal);
+                                }
+                            });
                         }
+
+                        instance.OnAcceptSlots(capturedSlot);
+                        BypassIntercept = false;
+                    },
+                    onCancel: () =>
+                    {
+                        CoopGameSetupPatches.RestoreSaveSlotsMenu(instance, capturedSlot);
                     }
-                    catch { }
-                    instance.OnSelectedSlots(capturedSlot);
-                }
-            );
+                );
+            }
+            else
+            {
+                // PARTIDA EXISTENTE -> Menú de configuración de partida ya creada
+                // (añadir/eliminar jugadores, alternar local/online con confirmación, verificar código de sala)
+                CoopMatchConfigUI.Show(
+                    slotIndex: capturedSlot,
+                    slot: targetSlot,
+                    onPlay: () =>
+                    {
+                        BypassIntercept = true;
+
+                        var currentSlotData = CoopSaveManager.GetSlotData(capturedSlot);
+                        CoopSaveManager.SyncConfigFromGame(currentSlotData);
+                        currentSlotData.HasCompletedSetup = true;
+                        CoopSaveManager.SaveSlot(capturedSlot);
+
+                        if (CoopGameConfig.IsCoopEnabled && (
+                            CoopGameConfig.Slots[1].Device == CoopDeviceType.RemoteSteam ||
+                            CoopGameConfig.Slots[2].Device == CoopDeviceType.RemoteSteam ||
+                            CoopGameConfig.Slots[3].Device == CoopDeviceType.RemoteSteam))
+                        {
+                            if (CoopLobbyManager.State != LobbyConnectionState.Hosting)
+                            {
+                                CoopLobbyManager.Instance.CreateHostLobby((success, code) =>
+                                {
+                                    if (success && Main.CoopLocal != null)
+                                    {
+                                        Blasphemous.ModdingAPI.ModLog.Info($"[Host] Sala Steam creada para slot {capturedSlot} con código: {code}", Main.CoopLocal);
+                                    }
+                                });
+                            }
+                        }
+
+                        instance.OnAcceptSlots(capturedSlot);
+                        BypassIntercept = false;
+                    },
+                    onCancel: () =>
+                    {
+                        CoopGameSetupPatches.RestoreSaveSlotsMenu(instance, capturedSlot);
+                    }
+                );
+            }
             return false;
         }
         return true;
@@ -105,15 +174,20 @@ internal static class SelectSaveSlots_OnAcceptSlots_CoopSetup_Patch
 }
 
 /// <summary>
-/// Bloquea el Update vanilla de SelectSaveSlots mientras la interfaz de configuración cooperativa está abierta,
-/// evitando que inputs de fondo (Escape, Ataque, etc.) borren partidas o cierren el menú.
+/// Bloquea el Update vanilla de SelectSaveSlots mientras cualquier interfaz cooperativa está abierta,
+/// evitando que inputs de fondo (WASD, Flechas, Escape, etc.) interactúen con el menú de ranuras.
 /// </summary>
 [HarmonyPatch(typeof(SelectSaveSlots), "Update")]
 internal static class SelectSaveSlots_BlockUpdate_WhenCoopSetupOpen_Patch
 {
-    private static bool Prefix()
+    private static bool Prefix(SelectSaveSlots __instance)
     {
-        if (CoopGameSetupUI.IsOpen)
+        if (__instance != null && __instance.GetComponent<CoopSaveSlotHintGUI>() == null)
+        {
+            __instance.gameObject.AddComponent<CoopSaveSlotHintGUI>();
+        }
+
+        if (CoopGameSetupPatches.IsAnyCoopModalOpen)
         {
             return false;
         }
@@ -129,14 +203,15 @@ internal static class SelectSaveSlots_BlockUpdate_WhenCoopSetupOpen_Patch
 }
 
 /// <summary>
-/// Carga la configuración del slot correspondiente cada vez que el usuario resalta una ranura en el menú.
+/// Carga la configuración del slot correspondiente cada vez que el usuario resalta una ranura en el menú,
+/// bloqueándose mientras cualquier modal esté abierto.
 /// </summary>
 [HarmonyPatch(typeof(SelectSaveSlots), nameof(SelectSaveSlots.OnSelectedSlots))]
 internal static class SelectSaveSlots_OnSelectedSlots_LoadConfig_Patch
 {
     private static bool Prefix()
     {
-        if (CoopGameSetupUI.IsOpen || SelectSaveSlots_OnAcceptSlots_CoopSetup_Patch.SuppressVanillaSaveSlotsFrames > 0)
+        if (CoopGameSetupPatches.IsAnyCoopModalOpen || SelectSaveSlots_OnAcceptSlots_CoopSetup_Patch.SuppressVanillaSaveSlotsFrames > 0)
         {
             return false;
         }
@@ -145,7 +220,7 @@ internal static class SelectSaveSlots_OnSelectedSlots_LoadConfig_Patch
 
     private static void Postfix(int idxSlot)
     {
-        if (CoopGameSetupUI.IsOpen || SelectSaveSlots_OnAcceptSlots_CoopSetup_Patch.SuppressVanillaSaveSlotsFrames > 0)
+        if (CoopGameSetupPatches.IsAnyCoopModalOpen || SelectSaveSlots_OnAcceptSlots_CoopSetup_Patch.SuppressVanillaSaveSlotsFrames > 0)
         {
             return;
         }
@@ -160,18 +235,18 @@ internal static class SelectSaveSlots_OnSelectedSlots_LoadConfig_Patch
 }
 
 /// <summary>
-/// Permite pulsar la tecla 'C' o F4 en la pantalla de selección de slots para abrir
-/// la configuración de cooperativo en cualquier momento.
+/// Permite pulsar la tecla 'U' (o 'J' / botón Y de mando) en la pantalla de selección de slots
+/// para abrir la interfaz modal de unirse a una partida online.
 /// </summary>
 [HarmonyPatch(typeof(SelectSaveSlots), "Update")]
 internal static class SelectSaveSlots_Update_CoopSetup_Shortcut_Patch
 {
     private static void Postfix(SelectSaveSlots __instance)
     {
-        if (!__instance.IsShowing || __instance.IsConfirming || CoopGameSetupUI.IsOpen || CoopJoinLobbyUI.IsOpen) return;
+        if (!__instance.IsShowing || __instance.IsConfirming || CoopGameSetupPatches.IsAnyCoopModalOpen) return;
 
-        // Tecla J: Unirse a Partida Online (Join Lobby)
-        if (Input.GetKeyDown(KeyCode.J))
+        // Tecla U o J (o botón Y/Triángulo en mando): Unirse a Partida Online (Join Lobby)
+        if (Input.GetKeyDown(KeyCode.U) || Input.GetKeyDown(KeyCode.J) || Input.GetKeyDown(KeyCode.JoystickButton3))
         {
             CoopJoinLobbyUI.Show(
                 onJoined: () =>
@@ -184,55 +259,7 @@ internal static class SelectSaveSlots_Update_CoopSetup_Shortcut_Patch
                 },
                 onBack: () =>
                 {
-                    SelectSaveSlots_OnAcceptSlots_CoopSetup_Patch.SuppressVanillaSaveSlotsFrames = 3;
-                }
-            );
-            return;
-        }
-
-        // Tecla C / F4: Configurar partida Coop (Host)
-        if (Input.GetKeyDown(KeyCode.C) || Input.GetKeyDown(KeyCode.F4))
-        {
-            int curSlot = __instance.SelectedSlot;
-            CoopSaveManager.TargetSetupSlot = curSlot;
-            if (curSlot >= 0)
-            {
-                var slotData = CoopSaveManager.GetSlotData(curSlot);
-                CoopSaveManager.ApplyConfigToGame(slotData);
-            }
-
-            CoopGameSetupUI.Show(
-                onConfirm: () =>
-                {
-                    if (curSlot >= 0)
-                    {
-                        var slotData = CoopSaveManager.GetSlotData(curSlot);
-                        CoopSaveManager.SyncConfigFromGame(slotData);
-                        slotData.HasCompletedSetup = true;
-                        CoopSaveManager.SaveSlot(curSlot);
-                    }
-
-                    // Si algún jugador está configurado como RemoteSteam, crear el lobby de Steam como Host
-                    if (CoopGameConfig.Slots[1].Device == CoopDeviceType.RemoteSteam ||
-                        CoopGameConfig.Slots[2].Device == CoopDeviceType.RemoteSteam ||
-                        CoopGameConfig.Slots[3].Device == CoopDeviceType.RemoteSteam)
-                    {
-                        CoopLobbyManager.Instance.CreateHostLobby((success, code) =>
-                        {
-                            if (success && Main.CoopLocal != null)
-                            {
-                                Blasphemous.ModdingAPI.ModLog.Info($"[Host] Sala Steam creada con código: {code}", Main.CoopLocal);
-                            }
-                        });
-                    }
-
-                    SelectSaveSlots_OnAcceptSlots_CoopSetup_Patch.SuppressVanillaSaveSlotsFrames = 3;
-                    if (curSlot >= 0) __instance.OnSelectedSlots(curSlot);
-                },
-                onCancel: () =>
-                {
-                    SelectSaveSlots_OnAcceptSlots_CoopSetup_Patch.SuppressVanillaSaveSlotsFrames = 3;
-                    if (curSlot >= 0) __instance.OnSelectedSlots(curSlot);
+                    SelectSaveSlots_OnAcceptSlots_CoopSetup_Patch.SuppressVanillaSaveSlotsFrames = 5;
                 }
             );
         }
@@ -240,39 +267,114 @@ internal static class SelectSaveSlots_Update_CoopSetup_Shortcut_Patch
 }
 
 /// <summary>
-/// Muestra un banner explicativo en la parte inferior de la pantalla de selección de slots
-/// para que el usuario conozca los atajos para crear o unirse a partidas.
+/// Bloquea la navegación, foco y selección de los botones vanilla de ranura (EventsButton)
+/// mientras cualquier modal cooperativo está abierto, garantizando que WASD no mueva el selector de ranuras de fondo.
 /// </summary>
-[HarmonyPatch(typeof(SelectSaveSlots), "OnGUI")]
-internal static class SelectSaveSlots_OnGUI_CoopHint_Patch
+[HarmonyPatch(typeof(EventsButton), nameof(EventsButton.OnSelect))]
+internal static class EventsButton_OnSelect_BlockWhenCoopModalOpen_Patch
 {
-    private static GUIStyle hintStyle;
-
-    private static void Postfix(SelectSaveSlots __instance)
+    private static bool Prefix()
     {
-        if (!__instance.IsShowing || CoopGameSetupUI.IsOpen || CoopJoinLobbyUI.IsOpen) return;
-
-        if (hintStyle == null)
+        if (CoopGameSetupPatches.IsAnyCoopModalOpen)
         {
-            hintStyle = new GUIStyle(GUI.skin.label)
+            return false;
+        }
+        return true;
+    }
+}
+
+[HarmonyPatch(typeof(EventsButton), nameof(EventsButton.OnSubmit))]
+internal static class EventsButton_OnSubmit_BlockWhenCoopModalOpen_Patch
+{
+    private static bool Prefix()
+    {
+        if (CoopGameSetupPatches.IsAnyCoopModalOpen)
+        {
+            return false;
+        }
+        return true;
+    }
+}
+
+[HarmonyPatch(typeof(EventsButton), nameof(EventsButton.OnPointerClick))]
+internal static class EventsButton_OnPointerClick_BlockWhenCoopModalOpen_Patch
+{
+    private static bool Prefix()
+    {
+        if (CoopGameSetupPatches.IsAnyCoopModalOpen)
+        {
+            return false;
+        }
+        return true;
+    }
+}
+
+/// <summary>
+/// Componente auxiliar para mostrar el botón de Unirse a Partida Online con la tipografía auténtica del juego
+/// en la pantalla de selección de ranuras de guardado.
+/// </summary>
+internal class CoopSaveSlotHintGUI : MonoBehaviour
+{
+    private SelectSaveSlots slotsMenu;
+    private GUIStyle buttonStyle;
+
+    private void Awake()
+    {
+        slotsMenu = GetComponent<SelectSaveSlots>();
+    }
+
+    private void OnGUI()
+    {
+        if (slotsMenu == null || !slotsMenu.IsShowing || CoopGameSetupPatches.IsAnyCoopModalOpen) return;
+
+        Font gameFont = CoopGameSetupUI.GetGameFont();
+
+        if (buttonStyle == null || buttonStyle.font != gameFont)
+        {
+            buttonStyle = new GUIStyle(GUI.skin.button)
             {
                 alignment = TextAnchor.MiddleCenter,
-                fontSize = 16,
-                fontStyle = FontStyle.Bold
+                fontSize = 18,
+                font = gameFont
             };
-            hintStyle.normal.textColor = new Color(1f, 0.88f, 0.45f, 0.95f);
+            buttonStyle.normal.textColor = new Color(1f, 0.90f, 0.45f, 1f);
+            buttonStyle.hover.textColor = new Color(1f, 1f, 0.75f, 1f);
         }
 
-        string hint = "[C / F4] Crear/Configurar Partida Co-op   |   [J] Unirse a Partida Online (Join)";
-        float w = 720f;
-        float h = 32f;
+        string hint = "[ U ]  UNIRSE A PARTIDA ONLINE (JOIN)";
+        float w = 540f;
+        float h = 36f;
         float x = (Screen.width - w) * 0.5f;
-        float y = Screen.height - 45f;
+        float y = Screen.height - 48f;
 
-        GUI.color = new Color(0.04f, 0.04f, 0.06f, 0.78f);
-        GUI.DrawTexture(new Rect(x - 12f, y - 4f, w + 24f, h + 8f), Texture2D.whiteTexture);
+        // Fondo oscuro estilizado con marco dorado tenue
+        GUI.color = new Color(0.04f, 0.04f, 0.06f, 0.88f);
+        GUI.DrawTexture(new Rect(x - 8f, y - 4f, w + 16f, h + 8f), Texture2D.whiteTexture);
+        GUI.color = new Color(0.65f, 0.52f, 0.25f, 0.85f);
+        DrawBorder(new Rect(x - 8f, y - 4f, w + 16f, h + 8f), 2);
         GUI.color = Color.white;
-        GUI.Label(new Rect(x, y, w, h), hint, hintStyle);
+
+        if (GUI.Button(new Rect(x, y, w, h), hint, buttonStyle))
+        {
+            CoopJoinLobbyUI.Show(
+                onJoined: () =>
+                {
+                    SelectSaveSlots_OnAcceptSlots_CoopSetup_Patch.SuppressVanillaSaveSlotsFrames = 5;
+                },
+                onBack: () =>
+                {
+                    SelectSaveSlots_OnAcceptSlots_CoopSetup_Patch.SuppressVanillaSaveSlotsFrames = 5;
+                }
+            );
+        }
+    }
+
+    private static void DrawBorder(Rect r, int thickness)
+    {
+        GUI.DrawTexture(new Rect(r.x, r.y, r.width, thickness), Texture2D.whiteTexture);
+        GUI.DrawTexture(new Rect(r.x, r.y + r.height - thickness, r.width, thickness), Texture2D.whiteTexture);
+        GUI.DrawTexture(new Rect(r.x, r.y, thickness, r.height), Texture2D.whiteTexture);
+        GUI.DrawTexture(new Rect(r.x + r.width - thickness, r.y, thickness, r.height), Texture2D.whiteTexture);
     }
 }
 
@@ -309,10 +411,19 @@ internal static class SelectSaveSlots_OnConfirmationDelete_CoopCleanup_Patch
 {
     private static void Prefix(SelectSaveSlots __instance)
     {
-        if (!__instance.IsConfirmingUpgrade)
+        if (__instance == null) return;
+
+        try
         {
-            int slot = __instance.SelectedSlot;
-            Player2SlotResetHelper.ResetAllSlotData(slot);
+            int slotIdx = __instance.SelectedSlot;
+            if (slotIdx >= 0)
+            {
+                Player2SlotResetHelper.ResetAllSlotData(slotIdx);
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[CoopLocal] Error en OnConfirmationDelete: {ex.Message}");
         }
     }
 }

@@ -317,8 +317,8 @@ internal static class UIController_MenuNavigation_P2_Patch
 
             // Permitir que P1 recupere la vista del menú si presiona su propio botón de inventario mientras está abierto en un guest
             bool p1SwitchPressed = (Player2Input.ActiveKeyboardPlayerIndex != 0)
-                ? (Player2Pad.P1Pad != null ? Player2Pad.GetStartDown(Player2Pad.P1Pad) : false)
-                : (Input.GetKeyDown(KeyCode.I) || Input.GetKeyDown(KeyCode.Escape));
+                ? (Player2Pad.P1Pad != null ? (Player2Pad.GetMenuDown(Player2Pad.P1Pad, 0) || Player2Pad.GetStartDown(Player2Pad.P1Pad)) : false)
+                : (Input.GetKeyDown(KeyCode.I) || Input.GetKeyDown(KeyCode.Tab) || Input.GetKeyDown(KeyCode.Escape));
 
             if (p1SwitchPressed && Time.frameCount != Player2MenuView.LastMenuToggleFrame)
             {

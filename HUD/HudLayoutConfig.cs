@@ -31,27 +31,27 @@ public class CoopHudLayoutConfig
     public bool isCustomSaved = false;
 
     // --- Configuración P1 (Izquierda superior) ---
-    public HudElementPosition p1_health = new HudElementPosition(-62.06955f, -22.6314621f, 0.9200001f);
-    public HudElementPosition p1_fervour = new HudElementPosition(36.0f, -25.0f, 0.6800003f);
+    public HudElementPosition p1_health = new HudElementPosition(-61.56955f, -22.6314621f, 0.9200001f);
+    public HudElementPosition p1_fervour = new HudElementPosition(36.0f, -24.75f, 0.6800003f);
     public HudElementPosition p1_health_deco = new HudElementPosition(124.0f, 42.0f, 1.0f);
     public HudElementPosition p1_coins = new HudElementPosition(92.0f, -32.0f, 0.5500003f);
 
     // --- Configuración P2 (Derecha inferior) ---
-    public HudElementPosition p2_health = new HudElementPosition(-24.0f, -74.5f, 0.65f);
-    public HudElementPosition p2_fervour = new HudElementPosition(-75.0f, -298.0f, 0.65f);
-    public HudElementPosition p2_health_deco = new HudElementPosition(-23.0f, -313.0f, 1.0f);
+    public HudElementPosition p2_health = new HudElementPosition(-113.0f, -305.0f, 0.65f);
+    public HudElementPosition p2_fervour = new HudElementPosition(-66.0f, -297.75f, 0.65f);
+    public HudElementPosition p2_health_deco = new HudElementPosition(124.0f, 42.0f, 1.0f);
     public HudElementPosition p2_coins = new HudElementPosition(-11.0f, -331.0f, 0.5900003f);
 
     // --- Configuración P3 (Izquierda inferior) ---
-    public HudElementPosition p3_health = new HudElementPosition(-42.0f, -303.25f, 0.65f);
-    public HudElementPosition p3_fervour = new HudElementPosition(2.0f, -296.0f, 0.65f);
-    public HudElementPosition p3_health_deco = new HudElementPosition(123.0f, 42.0f, 1.0f);
+    public HudElementPosition p3_health = new HudElementPosition(-45.0f, -303.25f, 0.65f);
+    public HudElementPosition p3_fervour = new HudElementPosition(2.0f, -295.75f, 0.65f);
+    public HudElementPosition p3_health_deco = new HudElementPosition(124.0f, 42.0f, 1.0f);
     public HudElementPosition p3_coins = new HudElementPosition(81.0f, -330.0f, 0.5900003f);
 
     // --- Configuración P4 (Derecha superior) ---
-    public HudElementPosition p4_health = new HudElementPosition(-113.25f, -8.25f, 0.65f);
-    public HudElementPosition p4_fervour = new HudElementPosition(-69.0f, -1.0f, 0.65f);
-    public HudElementPosition p4_health_deco = new HudElementPosition(123.0f, 42.0f, 1.0f);
+    public HudElementPosition p4_health = new HudElementPosition(-113.25f, -8.0f, 0.65f);
+    public HudElementPosition p4_fervour = new HudElementPosition(-69.0f, -1.25f, 0.63f);
+    public HudElementPosition p4_health_deco = new HudElementPosition(124.0f, 42.0f, 1.0f);
     public HudElementPosition p4_coins = new HudElementPosition(-7.0f, -30.0f, 0.5300003f);
 
     // --- Configuración 2 Jugadores (Comportamiento original preservado) ---
@@ -110,24 +110,28 @@ public class CoopHudLayoutConfig
 
     public void ValidateDefaults()
     {
-        if (p1_health == null) p1_health = new HudElementPosition(-62.06955f, -22.6314621f, 0.9200001f);
-        if (p1_fervour == null) p1_fervour = new HudElementPosition(36.0f, -25.0f, 0.6800003f);
+        if (p1_health == null) p1_health = new HudElementPosition(-61.56955f, -22.6314621f, 0.9200001f);
+        if (p1_fervour == null) p1_fervour = new HudElementPosition(36.0f, -24.75f, 0.6800003f);
         if (p1_health_deco == null) p1_health_deco = new HudElementPosition(124.0f, 42.0f, 1.0f);
         if (p1_coins == null) p1_coins = new HudElementPosition(92.0f, -32.0f, 0.5500003f);
 
-        if (p2_health == null) p2_health = new HudElementPosition(-24.0f, -74.5f, 0.65f);
-        if (p2_fervour == null) p2_fervour = new HudElementPosition(-75.0f, -298.0f, 0.65f);
-        if (p2_health_deco == null) p2_health_deco = new HudElementPosition(-23.0f, -313.0f, 1.0f);
+        if (p2_health == null) p2_health = new HudElementPosition(-113.0f, -305.0f, 0.65f);
+        if (p2_health.y > -150f && p2_fervour != null && p2_fervour.y < -200f)
+        {
+            p2_health.y = -305.0f;
+        }
+        if (p2_fervour == null) p2_fervour = new HudElementPosition(-66.0f, -297.75f, 0.65f);
+        if (p2_health_deco == null) p2_health_deco = new HudElementPosition(124.0f, 42.0f, 1.0f);
         if (p2_coins == null) p2_coins = new HudElementPosition(-11.0f, -331.0f, 0.5900003f);
 
-        if (p3_health == null) p3_health = new HudElementPosition(-42.0f, -303.25f, 0.65f);
-        if (p3_fervour == null) p3_fervour = new HudElementPosition(2.0f, -296.0f, 0.65f);
-        if (p3_health_deco == null) p3_health_deco = new HudElementPosition(123.0f, 42.0f, 1.0f);
+        if (p3_health == null) p3_health = new HudElementPosition(-45.0f, -303.25f, 0.65f);
+        if (p3_fervour == null) p3_fervour = new HudElementPosition(2.0f, -295.75f, 0.65f);
+        if (p3_health_deco == null) p3_health_deco = new HudElementPosition(124.0f, 42.0f, 1.0f);
         if (p3_coins == null) p3_coins = new HudElementPosition(81.0f, -330.0f, 0.5900003f);
 
-        if (p4_health == null) p4_health = new HudElementPosition(-113.25f, -8.25f, 0.65f);
-        if (p4_fervour == null) p4_fervour = new HudElementPosition(-69.0f, -1.0f, 0.65f);
-        if (p4_health_deco == null) p4_health_deco = new HudElementPosition(123.0f, 42.0f, 1.0f);
+        if (p4_health == null) p4_health = new HudElementPosition(-113.25f, -8.0f, 0.65f);
+        if (p4_fervour == null) p4_fervour = new HudElementPosition(-69.0f, -1.25f, 0.63f);
+        if (p4_health_deco == null) p4_health_deco = new HudElementPosition(124.0f, 42.0f, 1.0f);
         if (p4_coins == null) p4_coins = new HudElementPosition(-7.0f, -30.0f, 0.5300003f);
 
         if (p2_health_2p == null) p2_health_2p = new HudElementPosition(-119.0f, -20.0f, 0.65f);

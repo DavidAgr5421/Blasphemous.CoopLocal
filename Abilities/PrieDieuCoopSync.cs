@@ -1,26 +1,100 @@
+using System;
+using System.Collections.Generic;
 using Framework.FrameworkCore;
 using Framework.Managers;
 using Gameplay.GameControllers.Entities;
 using Gameplay.GameControllers.Penitent;
+using Gameplay.UI;
 using HarmonyLib;
 using Tools.Level;
 using Tools.Level.Interactables;
 using UnityEngine;
+using Blasphemous.CoopLocal.MultiPlayer;
 
 namespace Blasphemous.CoopLocal;
 
-// Synchronizes Prie-Dieu (and Altar) interaction between P1 and P2:
-// When either player activates a Prie-Dieu, P1 is placed in his normal kneeling position,
-// while P2 is positioned slightly to the right (X + 1.2f), facing left towards P1.
-// Both players play the Prie-Dieu kneeling/standing animations simultaneously in full sync.
+// Synchronizes Prie-Dieu (and Altar) interaction between all players (P1..P4):
+// When any player activates a Prie-Dieu, P1 is placed in his normal kneeling position,
+// while P2, P3, and P4 are teleported to distinct kneeling spots around the shrine.
+// All players play the Prie-Dieu kneeling/standing animations simultaneously in full sync.
+// Any player (P2..P4) or pressing Escape will trigger standing up from the Prie-Dieu.
 internal static class PrieDieuCoopSync
 {
-    private static GameObject p2KneelVisual;
-    private static Animator p2KneelAnimator;
-    private static SpriteRenderer p2KneelSpriteRenderer;
+    internal class GuestKneelVisual
+    {
+        public int SlotIndex;
+        public Penitent Penitent;
+        public GameObject VisualObject;
+        public Animator Animator;
+        public SpriteRenderer SpriteRenderer;
+        public Vector3 TargetPos;
+        public EntityOrientation Orientation;
+        public bool FlipX;
+    }
+
+    private static readonly Dictionary<int, GuestKneelVisual> guestVisuals = new Dictionary<int, GuestKneelVisual>();
+
+    public static bool IsKneeling { get; private set; }
+
+    private struct PlacementInfo
+    {
+        public Vector3 TargetPos;
+        public EntityOrientation Orientation;
+        public bool FlipX;
+    }
+
+    private static PlacementInfo GetPlacementForSlot(int slot, Vector3 basePos)
+    {
+        switch (slot)
+        {
+            case 1: // P2: derecha inmediata, mirando hacia la izquierda
+                return new PlacementInfo
+                {
+                    TargetPos = basePos + new Vector3(1.2f, 0f, 0f),
+                    Orientation = EntityOrientation.Left,
+                    FlipX = true
+                };
+            case 2: // P3: izquierda inmediata, mirando hacia la derecha
+                return new PlacementInfo
+                {
+                    TargetPos = basePos + new Vector3(-1.2f, 0f, 0f),
+                    Orientation = EntityOrientation.Right,
+                    FlipX = false
+                };
+            case 3: // P4: derecha secundaria, mirando hacia la izquierda
+                return new PlacementInfo
+                {
+                    TargetPos = basePos + new Vector3(2.4f, 0f, 0f),
+                    Orientation = EntityOrientation.Left,
+                    FlipX = true
+                };
+            default:
+                return new PlacementInfo
+                {
+                    TargetPos = basePos + new Vector3(1.2f + (slot * 1.1f), 0f, 0f),
+                    Orientation = EntityOrientation.Left,
+                    FlipX = true
+                };
+        }
+    }
+
+    private static void ClearGuestVisuals()
+    {
+        foreach (var kvp in guestVisuals)
+        {
+            if (kvp.Value?.VisualObject != null)
+            {
+                UnityEngine.Object.Destroy(kvp.Value.VisualObject);
+            }
+        }
+        guestVisuals.Clear();
+    }
 
     internal static void OnPrieDieuStart(Interactable interactable, Animator interactorAnimator)
     {
+        if (IsKneeling) return;
+        IsKneeling = true;
+
         if (Player1DeathState.IsPendingRevive())
         {
             Penitent p1 = Core.Logic.Penitent;
@@ -51,170 +125,212 @@ internal static class PrieDieuCoopSync
         foreach (var extra in CoopLocal.GetAllExtraPlayers())
         {
             if (extra == null) continue;
-            if (extra.Status.Dead)
+            if (extra.Status != null && extra.Status.Dead)
             {
                 extra.Status.Dead = false;
-                extra.Stats.Life.SetToCurrentMax();
+                extra.Stats?.Life?.SetToCurrentMax();
             }
             int slot = CoopPlayerRegistry.GetPlayerIndex(extra);
             Player2StatsSync.HealAtPrieDieu(extra, healFervour: true, slotIndex: slot);
         }
 
-        Penitent p2 = CoopLocal.Player2;
-        if (p2 == null || interactorAnimator == null)
+        ClearGuestVisuals();
+
+        if (interactorAnimator == null) return;
+        Vector3 basePos = interactorAnimator.transform.position;
+
+        foreach (var guest in CoopLocal.GetAllExtraPlayers())
         {
-            return;
-        }
+            if (guest == null) continue;
+            int slot = CoopPlayerRegistry.GetPlayerIndex(guest);
+            if (slot <= 0) continue;
 
-        Vector3 targetPos = interactorAnimator.transform.position + new Vector3(1.2f, 0f, 0f);
-        p2.transform.position = targetPos;
-        p2.SetOrientation(EntityOrientation.Left);
-        p2.PlatformCharacterController.PlatformCharacterPhysics.Velocity = Vector3.zero;
+            PlacementInfo placement = GetPlacementForSlot(slot, basePos);
 
-        PlayerLogicBlocker.SetBlocked(p2, true);
-        p2.SpriteRenderer.enabled = false;
-        if (p2.DamageArea != null)
-        {
-            p2.DamageArea.enabled = false;
-        }
-
-        if (p2KneelVisual != null)
-        {
-            UnityEngine.Object.Destroy(p2KneelVisual);
-            p2KneelVisual = null;
-        }
-
-        try
-        {
-            p2KneelVisual = UnityEngine.Object.Instantiate(interactorAnimator.gameObject);
-            p2KneelVisual.name = "P2_PrieDieu_KneelVisual";
-            p2KneelVisual.transform.position = targetPos;
-            p2KneelVisual.transform.localScale = interactorAnimator.transform.localScale;
-
-            foreach (MonoBehaviour mb in p2KneelVisual.GetComponentsInChildren<MonoBehaviour>())
+            guest.transform.position = placement.TargetPos;
+            guest.SetOrientation(placement.Orientation);
+            if (guest.PlatformCharacterController != null && guest.PlatformCharacterController.PlatformCharacterPhysics != null)
             {
-                if (mb != null)
-                {
-                    UnityEngine.Object.Destroy(mb);
-                }
-            }
-            foreach (Collider2D col in p2KneelVisual.GetComponentsInChildren<Collider2D>())
-            {
-                if (col != null)
-                {
-                    UnityEngine.Object.Destroy(col);
-                }
+                guest.PlatformCharacterController.PlatformCharacterPhysics.Velocity = Vector3.zero;
             }
 
-            p2KneelAnimator = p2KneelVisual.GetComponent<Animator>();
-            p2KneelSpriteRenderer = p2KneelVisual.GetComponentInChildren<SpriteRenderer>();
-            if (p2KneelSpriteRenderer != null)
+            PlayerLogicBlocker.SetBlocked(guest, true);
+            if (guest.SpriteRenderer != null)
             {
-                p2KneelSpriteRenderer.flipX = true; // Looking left towards P1
-                p2KneelSpriteRenderer.enabled = true;
-
-                // Aplicar la skin oscura (Verdadera Apostasía) de P2 al sprite del reclinatorio
-                p2KneelSpriteRenderer.material = new Material(p2KneelSpriteRenderer.material);
-                Texture2D p2Tex = ColorPaletteSwapper_ForcePlayer2TrueApostasy_Patch.GetPlayer2PaletteTexture();
-                if (p2Tex == null && p2.SpriteRenderer != null && p2.SpriteRenderer.material != null)
-                {
-                    p2Tex = p2.SpriteRenderer.material.GetTexture("_PaletteTex") as Texture2D;
-                }
-                if (p2Tex != null)
-                {
-                    p2KneelSpriteRenderer.material.SetTexture("_PaletteTex", p2Tex);
-                }
+                guest.SpriteRenderer.enabled = false;
+            }
+            if (guest.DamageArea != null)
+            {
+                guest.DamageArea.enabled = false;
             }
 
-            DashParryDebugLog.Log($"[PrieDieuCoopSync] P2 kneel visual created at {targetPos} facing left");
-        }
-        catch (System.Exception ex)
-        {
-            DashParryDebugLog.Log($"[PrieDieuCoopSync] Error instantiating P2 kneel visual: {ex.Message}");
+            try
+            {
+                GameObject visual = UnityEngine.Object.Instantiate(interactorAnimator.gameObject);
+                visual.name = $"P{slot + 1}_PrieDieu_KneelVisual";
+                visual.transform.position = placement.TargetPos;
+                visual.transform.localScale = interactorAnimator.transform.localScale;
+
+                foreach (MonoBehaviour mb in visual.GetComponentsInChildren<MonoBehaviour>())
+                {
+                    if (mb != null) UnityEngine.Object.Destroy(mb);
+                }
+                foreach (Collider2D col in visual.GetComponentsInChildren<Collider2D>())
+                {
+                    if (col != null) UnityEngine.Object.Destroy(col);
+                }
+
+                Animator anim = visual.GetComponent<Animator>();
+                SpriteRenderer sr = visual.GetComponentInChildren<SpriteRenderer>();
+                if (sr != null)
+                {
+                    sr.flipX = placement.FlipX;
+                    sr.enabled = true;
+
+                    sr.material = new Material(sr.material);
+                    Texture2D pTex = ColorPaletteSwapper_ForcePlayer2TrueApostasy_Patch.GetPlayerPaletteTexture(slot);
+                    if (pTex == null && guest.SpriteRenderer != null && guest.SpriteRenderer.material != null)
+                    {
+                        pTex = guest.SpriteRenderer.material.GetTexture("_PaletteTex") as Texture2D;
+                    }
+                    if (pTex != null)
+                    {
+                        sr.material.SetTexture("_PaletteTex", pTex);
+                    }
+                }
+
+                guestVisuals[slot] = new GuestKneelVisual
+                {
+                    SlotIndex = slot,
+                    Penitent = guest,
+                    VisualObject = visual,
+                    Animator = anim,
+                    SpriteRenderer = sr,
+                    TargetPos = placement.TargetPos,
+                    Orientation = placement.Orientation,
+                    FlipX = placement.FlipX
+                };
+
+                DashParryDebugLog.Log($"[PrieDieuCoopSync] P{slot + 1} kneel visual created at {placement.TargetPos} facing {placement.Orientation}");
+            }
+            catch (Exception ex)
+            {
+                DashParryDebugLog.Log($"[PrieDieuCoopSync] Error instantiating P{slot + 1} kneel visual: {ex.Message}");
+            }
         }
     }
 
     internal static void OnPlayerReposition(Interactable interactable, Animator interactorAnimator)
     {
-        Penitent p2 = CoopLocal.Player2;
-        if (p2 == null || interactorAnimator == null)
+        if (interactorAnimator == null) return;
+        Vector3 basePos = interactorAnimator.transform.position;
+
+        foreach (var kvp in guestVisuals)
         {
-            return;
-        }
+            GuestKneelVisual visual = kvp.Value;
+            if (visual == null) continue;
 
-        Vector3 targetPos = interactorAnimator.transform.position + new Vector3(1.2f, 0f, 0f);
-        p2.transform.position = targetPos;
-        p2.SetOrientation(EntityOrientation.Left);
+            PlacementInfo placement = GetPlacementForSlot(visual.SlotIndex, basePos);
+            visual.TargetPos = placement.TargetPos;
 
-        if (p2KneelVisual != null)
-        {
-            p2KneelVisual.transform.position = targetPos;
-
-            if (p2KneelSpriteRenderer != null)
+            if (visual.Penitent != null)
             {
-                p2KneelSpriteRenderer.flipX = true;
-                p2KneelSpriteRenderer.enabled = true;
-                Texture2D p2Tex = ColorPaletteSwapper_ForcePlayer2TrueApostasy_Patch.GetPlayer2PaletteTexture();
-                if (p2Tex != null && p2KneelSpriteRenderer.material != null)
-                {
-                    p2KneelSpriteRenderer.material.SetTexture("_PaletteTex", p2Tex);
-                }
+                visual.Penitent.transform.position = visual.TargetPos;
+                visual.Penitent.SetOrientation(visual.Orientation);
             }
 
-            if (p2KneelAnimator != null)
+            if (visual.VisualObject != null)
             {
-                AnimatorStateInfo state = interactorAnimator.GetCurrentAnimatorStateInfo(0);
-                p2KneelAnimator.Play(state.fullPathHash, 0, state.normalizedTime);
-                p2KneelAnimator.speed = interactorAnimator.speed;
+                visual.VisualObject.transform.position = visual.TargetPos;
+
+                if (visual.SpriteRenderer != null)
+                {
+                    visual.SpriteRenderer.flipX = visual.FlipX;
+                    visual.SpriteRenderer.enabled = true;
+                    Texture2D pTex = ColorPaletteSwapper_ForcePlayer2TrueApostasy_Patch.GetPlayerPaletteTexture(visual.SlotIndex);
+                    if (pTex != null && visual.SpriteRenderer.material != null)
+                    {
+                        visual.SpriteRenderer.material.SetTexture("_PaletteTex", pTex);
+                    }
+                }
+
+                if (visual.Animator != null)
+                {
+                    AnimatorStateInfo state = interactorAnimator.GetCurrentAnimatorStateInfo(0);
+                    visual.Animator.Play(state.fullPathHash, 0, state.normalizedTime);
+                    visual.Animator.speed = interactorAnimator.speed;
+                }
             }
         }
     }
 
     internal static void OnPrieDieuEnd(Interactable interactable, Animator interactorAnimator)
     {
+        IsKneeling = false;
+
+        Vector3 basePos = interactorAnimator != null ? interactorAnimator.transform.position : Vector3.zero;
+
         foreach (var extra in CoopLocal.GetAllExtraPlayers())
         {
             if (extra == null) continue;
-            extra.SpriteRenderer.enabled = true;
-            if (extra.DamageArea != null)
-            {
-                extra.DamageArea.enabled = true;
-            }
+            if (extra.SpriteRenderer != null) extra.SpriteRenderer.enabled = true;
+            if (extra.DamageArea != null) extra.DamageArea.enabled = true;
             PlayerLogicBlocker.SetBlocked(extra, false);
+
+            int slot = CoopPlayerRegistry.GetPlayerIndex(extra);
+            PlacementInfo placement = GetPlacementForSlot(slot, basePos);
             if (interactorAnimator != null)
             {
-                extra.transform.position = interactorAnimator.transform.position + new Vector3(1.2f, 0f, 0f);
+                extra.transform.position = placement.TargetPos;
             }
-            extra.SetOrientation(EntityOrientation.Left);
+            extra.SetOrientation(placement.Orientation);
         }
 
-        if (p2KneelVisual != null)
-        {
-            UnityEngine.Object.Destroy(p2KneelVisual);
-            p2KneelVisual = null;
-            p2KneelAnimator = null;
-            p2KneelSpriteRenderer = null;
-            DashParryDebugLog.Log("[PrieDieuCoopSync] P2 kneel visual destroyed, P2 restored");
-        }
+        ClearGuestVisuals();
+        DashParryDebugLog.Log("[PrieDieuCoopSync] All guest kneel visuals destroyed, players restored");
     }
 
     internal static void Reset()
     {
-        if (p2KneelVisual != null)
+        IsKneeling = false;
+        ClearGuestVisuals();
+
+        foreach (var extra in CoopLocal.GetAllExtraPlayers())
         {
-            UnityEngine.Object.Destroy(p2KneelVisual);
-            p2KneelVisual = null;
-            p2KneelAnimator = null;
-            p2KneelSpriteRenderer = null;
+            if (extra == null) continue;
+            if (extra.SpriteRenderer != null) extra.SpriteRenderer.enabled = true;
+            if (extra.DamageArea != null) extra.DamageArea.enabled = true;
+            PlayerLogicBlocker.SetBlocked(extra, false);
         }
-        if (CoopLocal.Player2 != null)
+    }
+}
+
+/// <summary>
+/// Permite que cualquier jugador (P2..P4) o la tecla Escape hagan que los personajes se levanten del PrieDieu.
+/// </summary>
+[HarmonyPatch(typeof(UIController), nameof(UIController.IsStopKneelPressed))]
+internal static class UIController_IsStopKneelPressed_Coop_Patch
+{
+    private static void Postfix(ref bool __result)
+    {
+        if (__result) return;
+
+        // Si se presiona Escape en teclado físico
+        if (UnityEngine.Input.GetKeyDown(KeyCode.Escape))
         {
-            CoopLocal.Player2.SpriteRenderer.enabled = true;
-            if (CoopLocal.Player2.DamageArea != null)
+            __result = true;
+            return;
+        }
+
+        // Si los jugadores 2 a 4 presionan su botón de Escape / Pausa o Interact para levantarse
+        int maxPlayers = Mathf.Clamp(CoopGameConfig.PlayerCount, 2, 4);
+        for (int slot = 1; slot < maxPlayers; slot++)
+        {
+            if (Player2Input.GetPauseDown(slot) || Player2Input.GetInteractDown(slot))
             {
-                CoopLocal.Player2.DamageArea.enabled = true;
+                __result = true;
+                return;
             }
-            PlayerLogicBlocker.SetBlocked(CoopLocal.Player2, false);
         }
     }
 }

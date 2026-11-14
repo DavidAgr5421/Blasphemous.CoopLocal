@@ -52,6 +52,7 @@ public class CoopPlayerPauseMenu : MonoBehaviour
         CoopAction.Interact,
         CoopAction.Prayer,
         CoopAction.Pause,
+        CoopAction.Menu,
         CoopAction.Up,
         CoopAction.Down,
         CoopAction.Left,
@@ -94,23 +95,7 @@ public class CoopPlayerPauseMenu : MonoBehaviour
     {
         if (rootCanvasObj != null) return;
 
-        gameFont = Font.CreateDynamicFontFromOSFont("Trajan Pro", 18);
-        if (gameFont == null)
-        {
-            Font[] fonts = Resources.FindObjectsOfTypeAll<Font>();
-            if (fonts != null && fonts.Length > 0)
-            {
-                for (int i = 0; i < fonts.Length; i++)
-                {
-                    if (fonts[i] != null && (fonts[i].name.Contains("Trajan") || fonts[i].name.Contains("Pixel") || fonts[i].name.Contains("Blasphemous")))
-                    {
-                        gameFont = fonts[i];
-                        break;
-                    }
-                }
-                if (gameFont == null && fonts.Length > 0) gameFont = fonts[0];
-            }
-        }
+        gameFont = CoopGameSetupUI.GetGameFont();
 
         rootCanvasObj = new GameObject("CoopPauseCanvas");
         rootCanvasObj.transform.SetParent(transform, false);
@@ -221,9 +206,9 @@ public class CoopPlayerPauseMenu : MonoBehaviour
         cvRt.anchoredPosition = new Vector2(0f, -30f);
         cvRt.sizeDelta = new Vector2(840f, 410f);
 
-        // 12 filas de controles
-        float rowStartY = 165f;
-        float rowSpacing = 32f;
+        // 13 filas de controles
+        float rowStartY = 175f;
+        float rowSpacing = 28f;
         for (int i = 0; i < ConfigurableActions.Length; i++)
         {
             GameObject rowObj = new GameObject($"ControlRow_{i}");
@@ -298,6 +283,7 @@ public class CoopPlayerPauseMenu : MonoBehaviour
             Core.Audio.PlayOneShot("event:/SFX/UI/ChangeTab");
         }
 
+        CoopGameSetupUI.ApplyGameFont(rootCanvasObj);
         rootCanvasObj.SetActive(true);
         UpdateHeaderAndViews();
     }
@@ -657,6 +643,9 @@ public class CoopPlayerPauseMenu : MonoBehaviour
                 UIController.instance.HidePauseMenu();
                 UIController.instance.HideMiriamTimer();
             }
+
+            // Restaurar teclado a P1 para navegar el menú principal
+            Player2Input.ResetToMainMenuInput();
 
             if (Core.Logic != null)
             {

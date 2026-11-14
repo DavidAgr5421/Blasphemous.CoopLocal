@@ -727,11 +727,43 @@ internal static class Enemy_Execution_Patch
         }
     }
 
+    private static void Postfix(Gameplay.GameControllers.Entities.Enemy __instance, bool __result)
+    {
+        if (__result && __instance != null)
+        {
+            var statusCtrl = __instance.GetComponent<EnemyElementalStatusController>();
+            if (statusCtrl != null)
+            {
+                statusCtrl.ResetAllStatuses();
+            }
+        }
+    }
+
     private static void Finalizer(Penitent __state)
     {
         if (__state != null && Core.Logic != null)
         {
             Core.Logic.Penitent = __state;
+        }
+    }
+}
+
+// EntityExecution.InstantiateExecution patch:
+// When an enemy is stunned and an execution prompt is instantiated, immediately reset and hide
+// any active elemental statuses (poison/bleed DoT, status bars, and color tints) so they never
+// tick, pulse colors, or steal the kill.
+[HarmonyPatch(typeof(Gameplay.GameControllers.Combat.EntityExecution), nameof(Gameplay.GameControllers.Combat.EntityExecution.InstantiateExecution))]
+internal static class EntityExecution_InstantiateExecution_Patch
+{
+    private static void Postfix(Gameplay.GameControllers.Combat.EntityExecution __instance)
+    {
+        if (__instance != null && __instance.EntityOwner is Gameplay.GameControllers.Entities.Enemy enemy)
+        {
+            var statusCtrl = enemy.GetComponent<EnemyElementalStatusController>();
+            if (statusCtrl != null)
+            {
+                statusCtrl.ResetAllStatuses();
+            }
         }
     }
 }

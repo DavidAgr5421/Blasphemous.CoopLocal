@@ -564,7 +564,7 @@ internal static class PlatformCharacterInput_Update_Patch
             DashParryDebugLog.Log($"P2 ladder Up/Down action state: {verticalActionState} (frame {Time.frameCount})");
         }
 
-        if (!____penitent.IsDashing)
+        if (!____penitent.IsDashing && (____penitent.DrivePlayer == null || !____penitent.DrivePlayer.Casting))
         {
             controller.SetActionState(eControllerActions.Left, canMove && left);
             controller.SetActionState(eControllerActions.Right, canMove && right);

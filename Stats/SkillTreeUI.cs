@@ -33,6 +33,43 @@ internal static class SkillTreeUIHelper
     internal static readonly MethodInfo UpdateAllSkillsMethod = AccessTools.Method(typeof(NewInventory_LayoutSkill), "UpdateAllSKills");
     internal static readonly MethodInfo SelectSkillMethod = AccessTools.Method(typeof(NewInventory_LayoutSkill), "SelectSkill");
     internal static readonly FieldInfo DescriptionButtonUnlockField = AccessTools.Field(typeof(NewInventory_Description), "buttonUnlock");
+    internal static readonly FieldInfo LayoutDescriptionField = AccessTools.Field(typeof(NewInventory_LayoutSkill), "description");
+
+    // Diagnóstico de calibración del árbol: rects de pantalla (píxeles, origen abajo-izquierda) del panel de descripción y de nodos clave
+    internal static void LogTreeRects(NewInventory_LayoutSkill layout)
+    {
+        if (Main.CoopLocal == null || layout == null) return;
+
+        var cachedSkills = CachedSkillsField.GetValue(layout) as List<NewInventory_Skill>;
+        var desc = LayoutDescriptionField?.GetValue(layout) as NewInventory_Description;
+
+        Blasphemous.ModdingAPI.ModLog.Info($"[TreeRects] Screen={Screen.width}x{Screen.height}", Main.CoopLocal);
+        Blasphemous.ModdingAPI.ModLog.Info(FormatTreeRect("DESCRIPCION", desc != null ? desc.transform : null), Main.CoopLocal);
+
+        string[] ids = { "COMBO_1", "LUNGE_1", SwordElementalUpgrades.SkillVeneno1, SwordElementalUpgrades.SkillSangrado1, SwordElementalUpgrades.SkillElectrico1, SwordElementalUpgrades.SkillMaldicion1 };
+        foreach (string id in ids)
+        {
+            NewInventory_Skill node = cachedSkills?.Find(s => s != null && s.GetSkillId() == id);
+            Blasphemous.ModdingAPI.ModLog.Info(FormatTreeRect(id, node != null ? node.transform : null), Main.CoopLocal);
+        }
+    }
+
+    private static string FormatTreeRect(string name, Transform t)
+    {
+        RectTransform rt = t as RectTransform;
+        if (rt == null) return $"[TreeRects] {name}: no encontrado";
+
+        Vector3[] corners = new Vector3[4];
+        rt.GetWorldCorners(corners); // orden: abajo-izq, arriba-izq, arriba-der, abajo-der
+
+        Canvas canvas = rt.GetComponentInParent<Canvas>();
+        Camera cam = (canvas != null && canvas.renderMode != RenderMode.ScreenSpaceOverlay) ? canvas.worldCamera : null;
+        Vector2 bl = RectTransformUtility.WorldToScreenPoint(cam, corners[0]);
+        Vector2 tr = RectTransformUtility.WorldToScreenPoint(cam, corners[2]);
+
+        string mode = canvas != null ? canvas.renderMode.ToString() : "sin Canvas";
+        return $"[TreeRects] {name}: BL=({bl.x:F0},{bl.y:F0}) TR=({tr.x:F0},{tr.y:F0}) size={tr.x - bl.x:F0}x{tr.y - bl.y:F0} renderMode={mode}";
+    }
 
     internal static bool CanUnlockNoPointsP2(string skillId)
     {
@@ -92,6 +129,9 @@ internal static class SkillLayout_ShowLayout_P2_Patch
             SwordElementalUpgrades.EnsureSkillTreeNodesInjected(__instance);
         }
 
+        SwordElementalUpgrades.ApplyDescPanelTransform(SkillTreeUIHelper.LayoutDescriptionField?.GetValue(__instance) as NewInventory_Description);
+        SkillTreeUIHelper.LogTreeRects(__instance);
+
         var maxTier = SkillTreeUIHelper.MaxTierField?.GetValue(__instance) as Text;
         if (maxTier != null)
         {
@@ -146,10 +186,15 @@ internal static class SkillLayout_Update_P2_Patch
 {
     private static bool Prefix(NewInventory_LayoutSkill __instance)
     {
+        SwordElementalUpgrades.MarkSkillLayoutActive(__instance);
+
         if (CoopGameConfig.EnableElementalUpgrades)
         {
             SwordElementalUpgrades.HandleSkillTreeShortcuts(__instance);
         }
+
+        // Editor HUD/Árbol (F7) abierto: el menú no recibe input (P1 vanilla ni P2)
+        if (HudLayoutDebugEditor.IsOpen) return false;
 
         if (!Player2MenuView.IsSkillP2View) return true; // P1 vanilla intacto
 

@@ -421,7 +421,7 @@ public class CoopNetworkManager : MonoBehaviour
         if (Input.GetKey(KeyCode.E)) buttons |= CoopButtonFlags.Interact;
         if (Input.GetKey(KeyCode.Q)) buttons |= CoopButtonFlags.Prayer;
         if (Input.GetKey(KeyCode.Escape)) buttons |= CoopButtonFlags.Pause;
-        if (Input.GetKey(KeyCode.I)) buttons |= CoopButtonFlags.Menu;
+        if (Input.GetKey(KeyCode.I) || Input.GetKey(KeyCode.Tab)) buttons |= CoopButtonFlags.Menu;
 
         // Comprobación opcional de mando Rewired si está conectado
         var pad = Player2Pad.GetPadForSlot(0) ?? Player2Pad.Pad;
@@ -439,6 +439,7 @@ public class CoopNetworkManager : MonoBehaviour
             if (Player2Pad.GetHealDown(pad)) buttons |= CoopButtonFlags.Heal;
             if (Player2Pad.GetInteractDown(pad)) buttons |= CoopButtonFlags.Interact;
             if (Player2Pad.GetStartDown(pad)) buttons |= CoopButtonFlags.Pause;
+            if (Player2Pad.GetMenuDown(pad)) buttons |= CoopButtonFlags.Menu;
         }
 
         // 2. Empaquetar y enviar a 60Hz sin retraso (UnreliableNoDelay)
