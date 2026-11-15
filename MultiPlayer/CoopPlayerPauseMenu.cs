@@ -544,10 +544,11 @@ public class CoopPlayerPauseMenu : MonoBehaviour
         bool isKb = (dev == CoopDeviceType.Keyboard);
         var pad = Player2Pad.GetPadForSlot(ActiveSlotIndex) ?? (ActiveSlotIndex == 0 ? Player2Pad.P1Pad : null);
 
-        bool navUp = isKb ? (Input.GetKeyDown(KeyCode.W) || Input.GetKeyDown(KeyCode.UpArrow)) : (Player2Pad.GetUp(pad));
-        bool navDown = isKb ? (Input.GetKeyDown(KeyCode.S) || Input.GetKeyDown(KeyCode.DownArrow)) : (Player2Pad.GetDown(pad));
-        bool confirm = isKb ? (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.K)) : (Player2Pad.GetSelectDown(pad));
-        bool cancel = isKb ? (Input.GetKeyDown(KeyCode.Escape) || Input.GetKeyDown(KeyCode.Backspace) || (ActiveSlotIndex == 0 && Input.GetKeyDown(KeyCode.Tab))) : (Player2Pad.GetCancelDown(pad));
+        // El menú se maneja con teclado Y mando a la vez (por si uno falla), sea cual sea el dispositivo asignado al jugador.
+        bool navUp = Input.GetKeyDown(KeyCode.W) || Input.GetKeyDown(KeyCode.UpArrow) || Player2Pad.GetUp(pad);
+        bool navDown = Input.GetKeyDown(KeyCode.S) || Input.GetKeyDown(KeyCode.DownArrow) || Player2Pad.GetDown(pad);
+        bool confirm = Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.K) || Player2Pad.GetSelectDown(pad);
+        bool cancel = Input.GetKeyDown(KeyCode.Escape) || Input.GetKeyDown(KeyCode.Backspace) || (ActiveSlotIndex == 0 && Input.GetKeyDown(KeyCode.Tab)) || Player2Pad.GetCancelDown(pad);
 
         if (navUp)
         {

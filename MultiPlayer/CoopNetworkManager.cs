@@ -506,6 +506,7 @@ public class CoopNetworkManager : MonoBehaviour
         string myScene = Core.LevelManager?.currentLevel?.LevelName ?? "";
         if (!string.IsNullOrEmpty(acc.CurrentScene) && myScene != acc.CurrentScene)
         {
+            CoopMainMenuCloser.CloseIfOpen();
             Core.SpawnManager?.PrepareForCommandSpawn(acc.CurrentScene);
             Core.LevelManager?.ChangeLevel(acc.CurrentScene, false, true, true);
         }
@@ -817,6 +818,7 @@ public class CoopNetworkManager : MonoBehaviour
                 Blasphemous.ModdingAPI.ModLog.Info($"[CoopNetwork] Recibido cambio de escena del Host: '{sceneName}', cargando...", Main.CoopLocal);
             }
             CoopJoinLobbyUI.Hide();
+            CoopMainMenuCloser.CloseIfOpen();
             Core.SpawnManager?.PrepareForCommandSpawn(sceneName);
             Core.LevelManager?.ChangeLevel(sceneName, false, true, true);
         }
