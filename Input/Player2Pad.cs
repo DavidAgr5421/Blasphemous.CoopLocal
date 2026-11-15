@@ -100,6 +100,15 @@ internal static class Player2Pad
         return null;
     }
 
+    /// <summary>Mando físico n-ésimo (0 = primero conectado), o null. Lo usan los jugadores locales de un cliente online.</summary>
+    internal static Rewired.Joystick GetJoystickByIndex(int index)
+    {
+        if (!Rewired.ReInput.isReady || Rewired.ReInput.controllers == null) return null;
+        var joysticks = Rewired.ReInput.controllers.Joysticks;
+        if (joysticks == null || index < 0 || index >= joysticks.Count) return null;
+        return joysticks[index];
+    }
+
     internal static Rewired.Joystick Pad
     {
         get

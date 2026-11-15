@@ -512,7 +512,7 @@ internal static class Player2Input
             ApplyKeyboardPlayer(initialKb);
         }
 
-        if (Input.GetKeyDown(ToggleKey))
+        if (Input.GetKeyDown(ToggleKey) && !Blasphemous.CoopLocal.MultiPlayer.CoopNetworkManager.IsOnlineClient)
         {
             CycleKeyboardPlayer();
         }

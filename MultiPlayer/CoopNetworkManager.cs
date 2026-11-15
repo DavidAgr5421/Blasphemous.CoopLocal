@@ -30,17 +30,39 @@ public class CoopNetworkManager : MonoBehaviour
     public const int CHANNEL_INPUT    = 1; // Transmisión de Inputs de Clientes (60Hz)
     public const int CHANNEL_STATE    = 2; // Replicación de Estado del Mundo (30Hz)
 
-    public static int LocalAssignedSlot { get; set; } = 1;
+    /// <summary>Puestos del anfitrión que controla ESTE cliente (uno por jugador local; 1 a 3).</summary>
+    public static int[] LocalAssignedSlots = new int[] { 1 };
+    /// <summary>Primer puesto asignado a este cliente (jugador principal / el que sigue la cámara y el HUD).</summary>
+    public static int LocalAssignedSlot
+    {
+        get { return LocalAssignedSlots != null && LocalAssignedSlots.Length > 0 ? LocalAssignedSlots[0] : 1; }
+        set { LocalAssignedSlots = new int[] { value }; }
+    }
+    public static bool IsLocalSlot(int slot)
+    {
+        if (LocalAssignedSlots == null) return false;
+        for (int i = 0; i < LocalAssignedSlots.Length; i++) if (LocalAssignedSlots[i] == slot) return true;
+        return false;
+    }
     public static bool IsOnlineClient => CoopLobbyManager.State == LobbyConnectionState.Connected && !CoopLobbyManager.IsHost;
     public static bool IsOnlineHost => CoopLobbyManager.State == LobbyConnectionState.Hosting;
 
     // --- Sesiones de Clientes Conectados (Solo Anfitrión) ---
+    /// <summary>Un cliente conectado. Puede controlar varios puestos (<see cref="Slots"/>), uno por jugador local suyo.</summary>
     public class RemoteClientSession
     {
         public CSteamID SteamId;
-        public int SlotIndex;
+        public List<int> Slots = new List<int>();
         public float LastPacketTime;
+        /// <summary>Primer puesto del cliente (compatibilidad con código que asume un puesto por cliente).</summary>
+        public int SlotIndex { get { return Slots.Count > 0 ? Slots[0] : -1; } }
+    }
+
+    /// <summary>Estado de entrada de UN puesto remoto (cada jugador de un cliente tiene el suyo).</summary>
+    public class RemoteSlotInput
+    {
         public ushort LastSequence;
+        public float LastPacketTime;
         public CoopButtonFlags PrevButtons;
         public CoopButtonFlags CurrentButtons;
         public CoopButtonFlags ButtonsDown;
@@ -54,6 +76,7 @@ public class CoopNetworkManager : MonoBehaviour
 
     private static readonly Dictionary<ulong, RemoteClientSession> connectedClients = new Dictionary<ulong, RemoteClientSession>();
     private static readonly RemoteClientSession[] slotClients = new RemoteClientSession[4];
+    private static readonly RemoteSlotInput[] slotInputs = new RemoteSlotInput[4];
 
     // Buffer reusable para recibir paquetes de Steam
     private readonly byte[] receiveBuffer = new byte[4096];
@@ -115,6 +138,7 @@ public class CoopNetworkManager : MonoBehaviour
             }
 
             EnemySyncWorld.ClientSafetyTick();
+            if (Input.GetKeyDown(KeyCode.F9)) CycleLocalOnlineDevices();
             StreamLocalClientInput();
 
             if (Time.time >= nextClientPingTime)
@@ -300,18 +324,41 @@ public class CoopNetworkManager : MonoBehaviour
 
         HandshakeRequestData req = new HandshakeRequestData
         {
-            ProtocolVersion = CoopNetworkProtocol.CURRENT_PROTOCOL_VERSION,
-            PlayerName = CoopGameConfig.Slots[1].Name,
-            ColorIndex = CoopGameConfig.Slots[1].ColorIndex,
-            SkinId = CoopGameConfig.Slots[1].SkinId
+            ProtocolVersion = CoopNetworkProtocol.CURRENT_PROTOCOL_VERSION
         };
+
+        // Un jugador por cada jugador local de este PC (configurados en el menú de unirse). Sin configuración: uno solo.
+        IList<OnlineLocalPlayer> locals = OnlineLocalPlayers.All;
+        if (locals.Count == 0)
+        {
+            req.Players.Add(new HandshakePlayer
+            {
+                Name = CoopGameConfig.Slots[1].Name,
+                ColorIndex = CoopGameConfig.Slots[1].ColorIndex,
+                SkinId = CoopGameConfig.Slots[1].SkinId,
+                Device = (byte)OnlineLocalDevice.Auto
+            });
+        }
+        else
+        {
+            for (int i = 0; i < locals.Count; i++)
+            {
+                req.Players.Add(new HandshakePlayer
+                {
+                    Name = locals[i].Name,
+                    ColorIndex = locals[i].ColorIndex,
+                    SkinId = locals[i].SkinId,
+                    Device = (byte)locals[i].Device
+                });
+            }
+        }
 
         byte[] packet = CoopNetworkProtocol.SerializeHandshakeRequest(req);
         SendPacket(CoopLobbyManager.HostSteamId, packet, CHANNEL_RELIABLE, EP2PSend.k_EP2PSendReliable);
 
         if (Main.CoopLocal != null)
         {
-            Blasphemous.ModdingAPI.ModLog.Info($"[CoopNetwork] Enviada solicitud de Handshake al anfitrión {CoopLobbyManager.HostSteamId}", Main.CoopLocal);
+            Blasphemous.ModdingAPI.ModLog.Info($"[CoopNetwork] Enviada solicitud de Handshake al anfitrión {CoopLobbyManager.HostSteamId} ({req.Players.Count} jugador(es) locales)", Main.CoopLocal);
         }
     }
 
@@ -326,77 +373,84 @@ public class CoopNetworkManager : MonoBehaviour
             SendPacket(sender, reject, CHANNEL_RELIABLE, EP2PSend.k_EP2PSendReliable);
             return;
         }
+        if (req.Players.Count == 0) req.Players.Add(new HandshakePlayer());
 
-        // 2. Buscar una ranura disponible para el invitado
-        int targetSlot = -1;
-
-        // Primero buscar si ya tenía una ranura asignada
-        if (connectedClients.TryGetValue(sender.m_SteamID, out RemoteClientSession existing))
+        // 2. Puestos para el cliente: si ya estaba conectado conserva los suyos; si no, se reparten (primero los que el
+        //    anfitrión reservó como online, luego los sin asignar). Si no hay sitio para todos sus jugadores recibe los que haya.
+        RemoteClientSession session;
+        List<int> slots;
+        bool reconnect = connectedClients.TryGetValue(sender.m_SteamID, out session);
+        if (reconnect)
         {
-            targetSlot = existing.SlotIndex;
+            slots = new List<int>(session.Slots);
         }
         else
         {
-            // Buscar una ranura configurada como RemoteSteam disponible, o una vacía P2..P4
+            bool[] reservedFree = new bool[4];
+            bool[] otherFree = new bool[4];
             for (int i = 1; i < 4; i++)
             {
-                if (CoopGameConfig.Slots[i].Device == CoopDeviceType.RemoteSteam && !CoopGameConfig.Slots[i].IsOnlineConnected)
-                {
-                    targetSlot = i;
-                    break;
-                }
+                bool free = slotClients[i] == null && !CoopGameConfig.Slots[i].IsOnlineConnected;
+                reservedFree[i] = free && CoopGameConfig.Slots[i].Device == CoopDeviceType.RemoteSteam;
+                otherFree[i] = free && CoopGameConfig.Slots[i].Device == CoopDeviceType.Unassigned;
             }
-
-            if (targetSlot == -1)
-            {
-                // Si ninguna estaba pre-configurada como RemoteSteam, tomar la primera no conectada
-                for (int i = 1; i < 4; i++)
-                {
-                    if (slotClients[i] == null && !CoopGameConfig.Slots[i].IsOnlineConnected)
-                    {
-                        targetSlot = i;
-                        break;
-                    }
-                }
-            }
+            slots = CoopSlotAllocator.Allocate(req.Players.Count, reservedFree, otherFree);
         }
 
-        if (targetSlot == -1)
+        if (slots.Count == 0)
         {
             byte[] reject = CoopNetworkProtocol.SerializeHandshakeReject("La partida está llena o no tiene ranuras cooperativas disponibles.");
             SendPacket(sender, reject, CHANNEL_RELIABLE, EP2PSend.k_EP2PSendReliable);
             return;
         }
 
-        // 3. Asignar y configurar la ranura
-        CoopGameConfig.Slots[targetSlot].Name = string.IsNullOrEmpty(req.PlayerName) ? $"Jugador {targetSlot + 1}" : req.PlayerName;
-        // El color del texto lo decide el host si ya configuró este puesto como online; nombre y skin los decide el jugador online.
-        if (CoopGameConfig.Slots[targetSlot].Device != CoopDeviceType.RemoteSteam) CoopGameConfig.Slots[targetSlot].ColorIndex = req.ColorIndex;
-        CoopGameConfig.Slots[targetSlot].SkinId = string.IsNullOrEmpty(req.SkinId) ? "PENITENT" : req.SkinId;
-        CoopGameConfig.Slots[targetSlot].Device = CoopDeviceType.RemoteSteam;
-        CoopGameConfig.Slots[targetSlot].IsOnlineConnected = true;
+        // 3. Asignar y configurar cada puesto con los datos de su jugador
+        if (!reconnect) session = new RemoteClientSession { SteamId = sender };
+        session.Slots = slots;
+        session.LastPacketTime = Time.time;
 
-        RemoteClientSession session = new RemoteClientSession
+        int maxSlot = 0;
+        for (int k = 0; k < slots.Count; k++)
         {
-            SteamId = sender,
-            SlotIndex = targetSlot,
-            LastPacketTime = Time.time
-        };
+            int slot = slots[k];
+            HandshakePlayer pl = req.Players[Math.Min(k, req.Players.Count - 1)];
+            PlayerSlotConfig cfg = CoopGameConfig.Slots[slot];
+
+            // El color del texto lo decide el host si ya configuró este puesto como online; nombre y skin los decide el jugador online.
+            bool presetByHost = cfg.Device == CoopDeviceType.RemoteSteam;
+            cfg.Name = string.IsNullOrEmpty(pl.Name) ? $"Jugador {slot + 1}" : pl.Name;
+            if (!presetByHost) cfg.ColorIndex = pl.ColorIndex;
+            cfg.SkinId = string.IsNullOrEmpty(pl.SkinId) ? "PENITENT" : pl.SkinId;
+            cfg.Device = CoopDeviceType.RemoteSteam;
+            cfg.IsOnlineConnected = true;
+
+            slotClients[slot] = session;
+            slotInputs[slot] = new RemoteSlotInput { LastPacketTime = Time.time };
+            if (slot > maxSlot) maxSlot = slot;
+        }
         connectedClients[sender.m_SteamID] = session;
-        slotClients[targetSlot] = session;
 
-        // 4. Instanciar dinámicamente al Penitente del jugador en el mundo del Anfitrión.
-        //    Si el anfitrión aún está en los menús (configurando la partida) NO se instancia nada: el invitado queda registrado
-        //    y se crea con el resto de jugadores cuando empiece la partida (SpawnAllGuestPlayers), momento en que
-        //    BroadcastSceneChange lo lleva a la escena. Antes se instanciaba en pleno menú y dejaba el HUD/estado corrupto.
+        // Los puestos online deben contar dentro de la partida (al cambiar de escena se instancian según PlayerCount)
+        CoopGameConfig.IsCoopEnabled = true;
+        CoopGameConfig.PlayerCount = Mathf.Max(CoopGameConfig.PlayerCount, maxSlot + 1);
+
+        // 4. Instanciar dinámicamente a los Penitentes en el mundo del Anfitrión.
+        //    Si el anfitrión aún está en los menús (configurando la partida) NO se instancia nada: los invitados quedan registrados
+        //    y se crean con el resto de jugadores cuando empiece la partida (SpawnAllGuestPlayers), momento en que
+        //    BroadcastSceneChange los lleva a la escena.
         bool hostInGame = IsHostInGameplay();
-        if (hostInGame) CoopLocal.SpawnGuestPlayerDynamically(targetSlot);
+        if (hostInGame)
+        {
+            for (int k = 0; k < slots.Count; k++) CoopLocal.SpawnGuestPlayerDynamically(slots[k]);
+        }
 
-        // 5. Responder HandshakeAccept con la ranura asignada y la escena actual (vacía si el anfitrión sigue en menús)
+        // 5. Responder HandshakeAccept con los puestos asignados y la escena actual (vacía si el anfitrión sigue en menús)
         string currentScene = hostInGame ? (Core.LevelManager?.currentLevel?.LevelName ?? "") : "";
+        byte[] assigned = new byte[slots.Count];
+        for (int k = 0; k < slots.Count; k++) assigned[k] = (byte)slots[k];
         HandshakeAcceptData acc = new HandshakeAcceptData
         {
-            AssignedSlot = (byte)targetSlot,
+            AssignedSlots = assigned,
             CurrentScene = currentScene,
             HostPlayerName = CoopGameConfig.Slots[0].Name,
             HostColorIndex = CoopGameConfig.Slots[0].ColorIndex,
@@ -409,7 +463,7 @@ public class CoopNetworkManager : MonoBehaviour
 
         if (Main.CoopLocal != null)
         {
-            Blasphemous.ModdingAPI.ModLog.Info($"[CoopNetwork] Cliente {sender} aceptado en Ranura {targetSlot + 1} ({req.PlayerName}) en escena '{currentScene}'", Main.CoopLocal);
+            Blasphemous.ModdingAPI.ModLog.Info($"[CoopNetwork] Cliente {sender} aceptado con {slots.Count} jugador(es) en puestos [{string.Join(",", slots.ConvertAll(x => (x + 1).ToString()).ToArray())}] en escena '{currentScene}' (pidió {req.Players.Count})", Main.CoopLocal);
         }
     }
 
@@ -428,12 +482,24 @@ public class CoopNetworkManager : MonoBehaviour
     private void HandleHandshakeAccept(CSteamID sender, byte[] data)
     {
         HandshakeAcceptData acc = CoopNetworkProtocol.DeserializeHandshakeAccept(data);
-        LocalAssignedSlot = acc.AssignedSlot;
+        int requested = Math.Max(1, OnlineLocalPlayers.Count);
+
+        int[] slots = new int[acc.AssignedSlots.Length];
+        for (int i = 0; i < slots.Length; i++) slots[i] = acc.AssignedSlots[i];
+        LocalAssignedSlots = slots.Length > 0 ? slots : new int[] { 1 };
         lastClientReceivedTime = Time.time;
+
+        // Si el anfitrión no tenía sitio para todos los jugadores locales, se conservan solo los aceptados
+        if (OnlineLocalPlayers.Count > 0)
+        {
+            OnlineLocalPlayers.TrimTo(LocalAssignedSlots.Length);
+            for (int i = 0; i < OnlineLocalPlayers.Count && i < LocalAssignedSlots.Length; i++)
+                OnlineLocalPlayers.All[i].Slot = LocalAssignedSlots[i];
+        }
 
         if (Main.CoopLocal != null)
         {
-            Blasphemous.ModdingAPI.ModLog.Info($"[CoopNetwork] ¡Handshake Aceptado! Asignado a Ranura P{LocalAssignedSlot + 1}. Escena anfitrión: '{acc.CurrentScene}'", Main.CoopLocal);
+            Blasphemous.ModdingAPI.ModLog.Info($"[CoopNetwork] ¡Handshake Aceptado! Puestos asignados: {LocalAssignedSlots.Length} de {requested} (primero: P{LocalAssignedSlot + 1}). Escena anfitrión: '{acc.CurrentScene}'", Main.CoopLocal);
         }
 
         // Cargar la escena del anfitrión si el cliente no está en ella
@@ -469,17 +535,22 @@ public class CoopNetworkManager : MonoBehaviour
     {
         if (connectedClients.TryGetValue(sender.m_SteamID, out RemoteClientSession session))
         {
-            int slot = session.SlotIndex;
             connectedClients.Remove(sender.m_SteamID);
-            if (slot >= 0 && slot < 4) slotClients[slot] = null;
-
-            CoopLocal.DespawnGuestPlayerDynamically(slot);
-            if (slot >= 0 && slot < 4) CoopGameConfig.Slots[slot].IsOnlineConnected = false;
+            List<int> slots = new List<int>(session.Slots);
+            for (int i = 0; i < slots.Count; i++)
+            {
+                int slot = slots[i];
+                if (slot < 0 || slot >= 4) continue;
+                slotClients[slot] = null;
+                slotInputs[slot] = null;
+                CoopLocal.DespawnGuestPlayerDynamically(slot);
+                CoopGameConfig.Slots[slot].IsOnlineConnected = false;
+            }
             SteamNetworking.CloseP2PSessionWithUser(sender);
 
             if (Main.CoopLocal != null)
             {
-                Blasphemous.ModdingAPI.ModLog.Info($"[CoopNetwork] Jugador en Ranura {slot + 1} se ha desconectado limpiamente.", Main.CoopLocal);
+                Blasphemous.ModdingAPI.ModLog.Info($"[CoopNetwork] Cliente {sender} desconectado limpiamente ({slots.Count} puesto(s) liberados).", Main.CoopLocal);
             }
         }
     }
@@ -522,30 +593,60 @@ public class CoopNetworkManager : MonoBehaviour
     {
         if (CoopLobbyManager.HostSteamId == CSteamID.Nil) return;
 
-        // 1. Leer teclado o mando local del cliente
+        IList<OnlineLocalPlayer> locals = OnlineLocalPlayers.All;
+        if (locals.Count == 0)
+        {
+            // Sin configuración de jugadores locales: un solo jugador con teclado + mando (comportamiento clásico)
+            SendLocalInput(LocalAssignedSlot, OnlineLocalDevice.Auto);
+            return;
+        }
+
+        for (int k = 0; k < locals.Count; k++)
+        {
+            int slot = locals[k].Slot >= 0 ? locals[k].Slot : (k < LocalAssignedSlots.Length ? LocalAssignedSlots[k] : -1);
+            if (slot < 0) continue;
+            SendLocalInput(slot, locals[k].Device);
+        }
+    }
+
+    /// <summary>Lee el dispositivo de UN jugador local y envía su input al anfitrión para su puesto.</summary>
+    private void SendLocalInput(int slot, OnlineLocalDevice device)
+    {
         CoopButtonFlags buttons = CoopButtonFlags.None;
         float ax = 0f;
         float ay = 0f;
 
-        // Comprobación de teclado
-        if (Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.LeftArrow)) { buttons |= CoopButtonFlags.Left; ax -= 1f; }
-        if (Input.GetKey(KeyCode.D) || Input.GetKey(KeyCode.RightArrow)) { buttons |= CoopButtonFlags.Right; ax += 1f; }
-        if (Input.GetKey(KeyCode.W) || Input.GetKey(KeyCode.UpArrow)) { buttons |= CoopButtonFlags.Up; ay += 1f; }
-        if (Input.GetKey(KeyCode.S) || Input.GetKey(KeyCode.DownArrow)) { buttons |= CoopButtonFlags.Down; ay -= 1f; }
+        bool useKeyboard = device == OnlineLocalDevice.Auto || device == OnlineLocalDevice.Keyboard;
+        Rewired.Joystick pad = null;
+        if (device == OnlineLocalDevice.Auto)
+        {
+            pad = Player2Pad.GetPadForSlot(0) ?? Player2Pad.Pad;
+        }
+        else
+        {
+            int padIdx = OnlineLocalPlayers.PadIndexOf(device);
+            if (padIdx >= 0) pad = Player2Pad.GetJoystickByIndex(padIdx);
+        }
 
-        if (Input.GetKey(KeyCode.Space)) buttons |= CoopButtonFlags.Jump;
-        if (Input.GetKey(KeyCode.K)) buttons |= CoopButtonFlags.Attack;
-        if (Input.GetKey(KeyCode.LeftShift)) buttons |= CoopButtonFlags.Dash;
-        if (Input.GetKey(KeyCode.J)) buttons |= CoopButtonFlags.Parry;
-        if (Input.GetKey(KeyCode.R)) buttons |= CoopButtonFlags.Heal;
-        if (Input.GetKey(KeyCode.E)) buttons |= CoopButtonFlags.Interact;
-        if (Input.GetKey(KeyCode.Q)) buttons |= CoopButtonFlags.Prayer;
-        if (Input.GetKey(KeyCode.Escape)) buttons |= CoopButtonFlags.Pause;
-        if (Input.GetKey(KeyCode.I) || Input.GetKey(KeyCode.Tab)) buttons |= CoopButtonFlags.Menu;
-        if (Input.GetKey(CoopControlsConfig.GetBindings(0).KeyRange)) buttons |= CoopButtonFlags.Range;
+        if (useKeyboard)
+        {
+            if (Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.LeftArrow)) { buttons |= CoopButtonFlags.Left; ax -= 1f; }
+            if (Input.GetKey(KeyCode.D) || Input.GetKey(KeyCode.RightArrow)) { buttons |= CoopButtonFlags.Right; ax += 1f; }
+            if (Input.GetKey(KeyCode.W) || Input.GetKey(KeyCode.UpArrow)) { buttons |= CoopButtonFlags.Up; ay += 1f; }
+            if (Input.GetKey(KeyCode.S) || Input.GetKey(KeyCode.DownArrow)) { buttons |= CoopButtonFlags.Down; ay -= 1f; }
 
-        // Comprobación opcional de mando Rewired si está conectado
-        var pad = Player2Pad.GetPadForSlot(0) ?? Player2Pad.Pad;
+            if (Input.GetKey(KeyCode.Space)) buttons |= CoopButtonFlags.Jump;
+            if (Input.GetKey(KeyCode.K)) buttons |= CoopButtonFlags.Attack;
+            if (Input.GetKey(KeyCode.LeftShift)) buttons |= CoopButtonFlags.Dash;
+            if (Input.GetKey(KeyCode.J)) buttons |= CoopButtonFlags.Parry;
+            if (Input.GetKey(KeyCode.R)) buttons |= CoopButtonFlags.Heal;
+            if (Input.GetKey(KeyCode.E)) buttons |= CoopButtonFlags.Interact;
+            if (Input.GetKey(KeyCode.Q)) buttons |= CoopButtonFlags.Prayer;
+            if (Input.GetKey(KeyCode.Escape)) buttons |= CoopButtonFlags.Pause;
+            if (Input.GetKey(KeyCode.I) || Input.GetKey(KeyCode.Tab)) buttons |= CoopButtonFlags.Menu;
+            if (Input.GetKey(CoopControlsConfig.GetBindings(0).KeyRange)) buttons |= CoopButtonFlags.Range;
+        }
+
         if (pad != null)
         {
             float padX = pad.GetAxis(Player2Pad.AxisLeftStickX);
@@ -564,10 +665,10 @@ public class CoopNetworkManager : MonoBehaviour
             if (Player2Pad.GetRangeHeld(pad, 0)) buttons |= CoopButtonFlags.Range;
         }
 
-        // 2. Empaquetar y enviar a 60Hz sin retraso (UnreliableNoDelay)
+        // Empaquetar y enviar a 60Hz sin retraso (UnreliableNoDelay); un paquete por puesto
         PlayerInputData inputData = new PlayerInputData
         {
-            SlotIndex = (byte)LocalAssignedSlot,
+            SlotIndex = (byte)slot,
             Sequence = ++localInputSequence,
             Buttons = buttons,
             AxisX = (short)Mathf.Clamp((int)(ax * 1000f), -1000, 1000),
@@ -578,20 +679,37 @@ public class CoopNetworkManager : MonoBehaviour
         SendPacket(CoopLobbyManager.HostSteamId, packet, CHANNEL_INPUT, EP2PSend.k_EP2PSendUnreliableNoDelay);
     }
 
+    /// <summary>F9 en un cliente online: intercambia teclado/mando solo entre SUS jugadores locales.</summary>
+    private void CycleLocalOnlineDevices()
+    {
+        int holder;
+        if (!OnlineLocalPlayers.CycleKeyboard(out holder)) return;
+        OnlineLocalPlayer p = OnlineLocalPlayers.All[holder];
+        Player2ModeIndicator.ShowPlayer(p.Slot >= 0 ? p.Slot : holder, p.Name);
+        Core.Audio?.PlayOneShot("event:/SFX/UI/ChangeTab");
+    }
+
     private void HandlePlayerInput(CSteamID sender, byte[] data)
     {
         if (!connectedClients.TryGetValue(sender.m_SteamID, out RemoteClientSession session)) return;
 
         PlayerInputData input = CoopNetworkProtocol.DeserializePlayerInput(data);
 
+        // El puesto del paquete debe pertenecer a este cliente (un cliente no puede manejar puestos ajenos)
+        int slot = input.SlotIndex;
+        if (slot < 1 || slot > 3 || !session.Slots.Contains(slot)) return;
+        RemoteSlotInput si = slotInputs[slot];
+        if (si == null) { si = new RemoteSlotInput(); slotInputs[slot] = si; }
+
         // Aceptar solo secuencias recientes para evitar desorden de paquetes UDP
-        if (input.Sequence >= session.LastSequence || (session.LastSequence - input.Sequence > 30000))
+        if (input.Sequence >= si.LastSequence || (si.LastSequence - input.Sequence > 30000))
         {
-            session.LastSequence = input.Sequence;
-            session.PendingDown |= input.Buttons & ~session.CurrentButtons;
-            session.CurrentButtons = input.Buttons;
-            session.AxisX = input.AxisX / 1000f;
-            session.AxisY = input.AxisY / 1000f;
+            si.LastSequence = input.Sequence;
+            si.PendingDown |= input.Buttons & ~si.CurrentButtons;
+            si.CurrentButtons = input.Buttons;
+            si.AxisX = input.AxisX / 1000f;
+            si.AxisY = input.AxisY / 1000f;
+            si.LastPacketTime = Time.time;
             session.LastPacketTime = Time.time;
         }
     }
@@ -602,23 +720,22 @@ public class CoopNetworkManager : MonoBehaviour
     {
         for (int i = 1; i < 4; i++)
         {
-            RemoteClientSession session = slotClients[i];
-            if (session != null)
+            RemoteSlotInput si = slotInputs[i];
+            if (slotClients[i] == null || si == null) continue;
+
+            // El cliente transmite siempre (60 Hz): si no llega nada en 0.5 s el ultimo estado esta obsoleto y un boton
+            // "mantenido" (p. ej. Arriba) se quedaria pulsado para siempre. Se libera todo.
+            if (Time.time - si.LastPacketTime > StaleInputSeconds)
             {
-                // El cliente transmite siempre (60 Hz): si no llega nada en 0.5 s el ultimo estado esta obsoleto y un boton
-                // "mantenido" (p. ej. Arriba) se quedaria pulsado para siempre. Se libera todo.
-                if (Time.time - session.LastPacketTime > StaleInputSeconds)
-                {
-                    session.CurrentButtons = CoopButtonFlags.None;
-                    session.AxisX = 0f;
-                    session.AxisY = 0f;
-                    session.PendingDown = CoopButtonFlags.None;
-                }
-                session.ButtonsDown = (session.CurrentButtons & ~session.PrevButtons) | session.PendingDown;
-                session.PendingDown = CoopButtonFlags.None;
-                session.ButtonsUp = ~session.CurrentButtons & session.PrevButtons;
-                session.PrevButtons = session.CurrentButtons;
+                si.CurrentButtons = CoopButtonFlags.None;
+                si.AxisX = 0f;
+                si.AxisY = 0f;
+                si.PendingDown = CoopButtonFlags.None;
             }
+            si.ButtonsDown = (si.CurrentButtons & ~si.PrevButtons) | si.PendingDown;
+            si.PendingDown = CoopButtonFlags.None;
+            si.ButtonsUp = ~si.CurrentButtons & si.PrevButtons;
+            si.PrevButtons = si.CurrentButtons;
         }
     }
 
@@ -626,46 +743,46 @@ public class CoopNetworkManager : MonoBehaviour
     // CONSULTA DE INPUT REMOTO (Para Player2Input en el Host)
     // =========================================================================
 
+    private static RemoteSlotInput RemoteInput(int slot)
+    {
+        if (slot < 0 || slot >= 4) return null;
+        return slotClients[slot] != null ? slotInputs[slot] : null;
+    }
+
     public static bool GetRemoteButton(int slot, CoopButtonFlags button)
     {
-        if (slot < 0 || slot >= 4) return false;
-        RemoteClientSession session = slotClients[slot];
-        return session != null && (session.CurrentButtons & button) != 0;
+        RemoteSlotInput si = RemoteInput(slot);
+        return si != null && (si.CurrentButtons & button) != 0;
     }
 
     public static bool GetRemoteButtonDown(int slot, CoopButtonFlags button)
     {
-        if (slot < 0 || slot >= 4) return false;
-        RemoteClientSession session = slotClients[slot];
-        return session != null && (session.ButtonsDown & button) != 0;
+        RemoteSlotInput si = RemoteInput(slot);
+        return si != null && (si.ButtonsDown & button) != 0;
     }
 
     public static bool GetRemoteButtonUp(int slot, CoopButtonFlags button)
     {
-        if (slot < 0 || slot >= 4) return false;
-        RemoteClientSession session = slotClients[slot];
-        return session != null && (session.ButtonsUp & button) != 0;
+        RemoteSlotInput si = RemoteInput(slot);
+        return si != null && (si.ButtonsUp & button) != 0;
     }
 
     public static float GetRemoteAxisX(int slot)
     {
-        if (slot < 0 || slot >= 4) return 0f;
-        RemoteClientSession session = slotClients[slot];
-        return session != null ? session.AxisX : 0f;
+        RemoteSlotInput si = RemoteInput(slot);
+        return si != null ? si.AxisX : 0f;
     }
 
     public static float GetRemoteAxisY(int slot)
     {
-        if (slot < 0 || slot >= 4) return 0f;
-        RemoteClientSession session = slotClients[slot];
-        return session != null ? session.AxisY : 0f;
+        RemoteSlotInput si = RemoteInput(slot);
+        return si != null ? si.AxisY : 0f;
     }
 
     public static bool HasRemoteInput(int slot)
     {
-        if (slot < 0 || slot >= 4) return false;
-        RemoteClientSession session = slotClients[slot];
-        return session != null && (session.CurrentButtons != CoopButtonFlags.None || Mathf.Abs(session.AxisX) > 0.2f || Mathf.Abs(session.AxisY) > 0.2f);
+        RemoteSlotInput si = RemoteInput(slot);
+        return si != null && (si.CurrentButtons != CoopButtonFlags.None || Mathf.Abs(si.AxisX) > 0.2f || Mathf.Abs(si.AxisY) > 0.2f);
     }
 
     // =========================================================================
@@ -787,9 +904,11 @@ public class CoopNetworkManager : MonoBehaviour
             {
                 try
                 {
-                    int slot = session.SlotIndex;
-                    CoopLocal.DespawnGuestPlayerDynamically(slot);
-                    if (slot >= 0 && slot < 4) CoopGameConfig.Slots[slot].IsOnlineConnected = false;
+                    foreach (int slot in session.Slots)
+                    {
+                        CoopLocal.DespawnGuestPlayerDynamically(slot);
+                        if (slot >= 0 && slot < 4) CoopGameConfig.Slots[slot].IsOnlineConnected = false;
+                    }
                     if (SteamManager.Initialized)
                     {
                         SteamNetworking.CloseP2PSessionWithUser(session.SteamId);
@@ -805,6 +924,7 @@ public class CoopNetworkManager : MonoBehaviour
             }
             connectedClients.Clear();
             Array.Clear(slotClients, 0, slotClients.Length);
+            Array.Clear(slotInputs, 0, slotInputs.Length);
         }
         else if (IsOnlineClient)
         {
@@ -819,7 +939,8 @@ public class CoopNetworkManager : MonoBehaviour
                     Blasphemous.ModdingAPI.ModLog.Error($"[CoopNetwork] Error limpiando títeres de cliente: {ex.Message}", Main.CoopLocal);
                 }
             }
-            LocalAssignedSlot = 1;
+            LocalAssignedSlots = new int[] { 1 };
+            OnlineLocalPlayers.Clear();
             if (_instance != null)
             {
                 _instance.localInputSequence = 0;
@@ -845,6 +966,7 @@ public class CoopNetworkManager : MonoBehaviour
             }
             connectedClients.Clear();
             Array.Clear(slotClients, 0, slotClients.Length);
+            Array.Clear(slotInputs, 0, slotInputs.Length);
         }
         else if (IsOnlineClient && CoopLobbyManager.HostSteamId != CSteamID.Nil)
         {

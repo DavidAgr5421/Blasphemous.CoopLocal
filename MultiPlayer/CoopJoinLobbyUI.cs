@@ -44,7 +44,12 @@ public class CoopJoinLobbyUI : MonoBehaviour
     private Image connectButtonBg;
 
     // Estado del modal
-    private int selectedRowIndex = 0; // 0=RoomCode, 1=PlayerName, 2=Color, 3=Skin, 4=ConnectBtn, 5=CancelBtn
+    private int selectedRowIndex = 0; // 0=RoomCode, 1=PlayerName, 2=Color, 3=Skin, 4=Jugadores en este PC, 5=Dispositivos, 6=Conectar
+    private const int RowPlayers = 4, RowDevices = 5, ConnectRow = 6, RowCount = 7;
+    private Text playerCountValueText;
+    private Text deviceValueText;
+    private int localCount = 1;        // jugadores locales que entran con este PC (1-3)
+    private int devicePresetIdx = 0;   // combinación de dispositivos (ver OnlineLocalPlayers.Presets)
     private string currentRoomCode = "";
     private string currentPlayerName = "Invitado";
     private int currentColorIndex = 1;
@@ -169,22 +174,28 @@ public class CoopJoinLobbyUI : MonoBehaviour
         headerSubtitleText.text = "Introduce el Código de Sala proporcionado por el Anfitrión para entrar en su mundo";
 
         // Fila 0: Código de Sala
-        roomCodeValueText = CreateConfigRow(panelObj.transform, 0, 150f, "CÓDIGO DE SALA:", "[ HAZ CLICK O ESCRIBE AQUÍ ]");
+        roomCodeValueText = CreateConfigRow(panelObj.transform, 0, 165f, "CÓDIGO DE SALA:", "[ HAZ CLICK O ESCRIBE AQUÍ ]");
 
         // Fila 1: Nombre de Jugador
-        playerNameValueText = CreateConfigRow(panelObj.transform, 1, 80f, "TU NOMBRE:", currentPlayerName);
+        playerNameValueText = CreateConfigRow(panelObj.transform, 1, 107f, "TU NOMBRE:", currentPlayerName);
 
         // Fila 2: Color de Texto
-        playerColorValueText = CreateConfigRow(panelObj.transform, 2, 10f, "COLOR DE TEXTO:", "◄ Verde ►");
+        playerColorValueText = CreateConfigRow(panelObj.transform, 2, 49f, "COLOR DE TEXTO:", "◄ Verde ►");
 
         // Fila 3: Aspecto / Skin
-        playerSkinValueText = CreateConfigRow(panelObj.transform, 3, -60f, "ASPECTO / SKIN:", "◄ Por Defecto ►");
+        playerSkinValueText = CreateConfigRow(panelObj.transform, 3, -9f, "ASPECTO / SKIN:", "◄ Por Defecto ►");
+
+        // Fila 4: cuántos jugadores locales entran con este PC
+        playerCountValueText = CreateConfigRow(panelObj.transform, 4, -67f, "JUGADORES EN ESTE PC:", "◄ 1 ►");
+
+        // Fila 5: dispositivo de cada jugador local (teclado / mandos)
+        deviceValueText = CreateConfigRow(panelObj.transform, 5, -125f, "DISPOSITIVOS:", "◄ Teclado + Mando ►");
 
         // Mini preview de Skin
         GameObject prevObj = CreateUiElement("SkinPreview", panelObj.transform);
 
         RectTransform prRt = prevObj.GetComponent<RectTransform>();
-        prRt.anchoredPosition = new Vector2(250f, -60f);
+        prRt.anchoredPosition = new Vector2(250f, -9f);
         prRt.sizeDelta = new Vector2(50f, 50f);
         skinPreviewImage = prevObj.AddComponent<Image>();
         skinPreviewImage.preserveAspect = true;
@@ -193,7 +204,7 @@ public class CoopJoinLobbyUI : MonoBehaviour
         GameObject stObj = CreateUiElement("StatusFeedback", panelObj.transform);
 
         RectTransform stRt = stObj.GetComponent<RectTransform>();
-        stRt.anchoredPosition = new Vector2(0f, -145f);
+        stRt.anchoredPosition = new Vector2(0f, -172f);
         stRt.sizeDelta = new Vector2(760f, 40f);
         statusFeedbackText = stObj.AddComponent<Text>();
         statusFeedbackText.font = gameFont;
@@ -206,7 +217,7 @@ public class CoopJoinLobbyUI : MonoBehaviour
         GameObject connBtnObj = CreateUiElement("ConnectButton", panelObj.transform);
 
         RectTransform cbRt = connBtnObj.GetComponent<RectTransform>();
-        cbRt.anchoredPosition = new Vector2(0f, -210f);
+        cbRt.anchoredPosition = new Vector2(0f, -225f);
         cbRt.sizeDelta = new Vector2(480f, 48f);
         connectButtonBg = connBtnObj.AddComponent<Image>();
         connectButtonBg.color = new Color(0.12f, 0.28f, 0.16f, 0.95f);
@@ -230,14 +241,14 @@ public class CoopJoinLobbyUI : MonoBehaviour
         GameObject lgdObj = CreateUiElement("Legend", panelObj.transform);
 
         RectTransform lgdRt = lgdObj.GetComponent<RectTransform>();
-        lgdRt.anchoredPosition = new Vector2(0f, -275f);
+        lgdRt.anchoredPosition = new Vector2(0f, -281f);
         lgdRt.sizeDelta = new Vector2(800f, 30f);
         Text lgdText = lgdObj.AddComponent<Text>();
         lgdText.font = gameFont;
         lgdText.fontSize = 14;
         lgdText.alignment = TextAnchor.MiddleCenter;
         lgdText.color = new Color(0.65f, 0.65f, 0.65f, 1f);
-        lgdText.text = "[Arriba/Abajo] Seleccionar   |   [Ctrl+V] Pegar Código   |   [Esc] Cancelar";
+        lgdText.text = "[Arriba/Abajo] Seleccionar   |   [Izq/Der] Cambiar   |   [Enter] Editar / Conectar   |   [Ctrl+V] Pegar   |   [Esc] Cancelar";
 
         rootCanvasObj.SetActive(false);
     }
@@ -286,6 +297,8 @@ public class CoopJoinLobbyUI : MonoBehaviour
         selectedRowIndex = 0;
         isEditingName = false;
         isEditingCode = false;
+        localCount = 1;
+        devicePresetIdx = 0;
         inputCooldown = 0.25f;
 
         // Cargar nombre por defecto desde Steam si está disponible
@@ -453,7 +466,7 @@ public class CoopJoinLobbyUI : MonoBehaviour
 
         if (up && !isEditingName)
         {
-            selectedRowIndex = (selectedRowIndex - 1 + 5) % 5;
+            selectedRowIndex = (selectedRowIndex - 1 + RowCount) % RowCount;
             Framework.Managers.Core.Audio?.PlayOneShot("event:/SFX/UI/ChangeTab");
             UpdateDisplay();
             return;
@@ -461,7 +474,7 @@ public class CoopJoinLobbyUI : MonoBehaviour
 
         if (down && !isEditingName)
         {
-            selectedRowIndex = (selectedRowIndex + 1) % 5;
+            selectedRowIndex = (selectedRowIndex + 1) % RowCount;
             Framework.Managers.Core.Audio?.PlayOneShot("event:/SFX/UI/ChangeTab");
             UpdateDisplay();
             return;
@@ -471,11 +484,15 @@ public class CoopJoinLobbyUI : MonoBehaviour
         {
             if (selectedRowIndex == 2) CycleColor(-1);
             else if (selectedRowIndex == 3) CycleSkin(-1);
+            else if (selectedRowIndex == RowPlayers) CyclePlayerCount(-1);
+            else if (selectedRowIndex == RowDevices) CycleDevices(-1);
         }
         else if (right)
         {
             if (selectedRowIndex == 2) CycleColor(1);
             else if (selectedRowIndex == 3) CycleSkin(1);
+            else if (selectedRowIndex == RowPlayers) CyclePlayerCount(1);
+            else if (selectedRowIndex == RowDevices) CycleDevices(1);
         }
 
         if (enter)
@@ -487,7 +504,9 @@ public class CoopJoinLobbyUI : MonoBehaviour
                 Framework.Managers.Core.Audio?.PlayOneShot("event:/SFX/UI/ButtonPress");
                 UpdateDisplay();
             }
-            else if (selectedRowIndex == 4)
+            else if (selectedRowIndex == RowPlayers) CyclePlayerCount(1);
+            else if (selectedRowIndex == RowDevices) CycleDevices(1);
+            else if (selectedRowIndex == ConnectRow)
             {
                 StartConnectionProcess();
             }
@@ -504,6 +523,31 @@ public class CoopJoinLobbyUI : MonoBehaviour
         currentColorIndex = (currentColorIndex + dir + CoopGameConfig.Palette.Length) % CoopGameConfig.Palette.Length;
         Framework.Managers.Core.Audio?.PlayOneShot("event:/SFX/UI/ChangeTab");
         UpdateDisplay();
+    }
+
+    private void CyclePlayerCount(int dir)
+    {
+        localCount = Mathf.Clamp(localCount + dir, 1, OnlineLocalPlayers.Max);
+        devicePresetIdx = 0;
+        Framework.Managers.Core.Audio?.PlayOneShot("event:/SFX/UI/ChangeTab");
+        UpdateDisplay();
+    }
+
+    private void CycleDevices(int dir)
+    {
+        int n = OnlineLocalPlayers.Presets(localCount).Length;
+        devicePresetIdx = (devicePresetIdx + dir + n) % n;
+        Framework.Managers.Core.Audio?.PlayOneShot("event:/SFX/UI/ChangeTab");
+        UpdateDisplay();
+    }
+
+    private string DevicePresetLabel()
+    {
+        OnlineLocalDevice[] preset = OnlineLocalPlayers.Presets(localCount)[Mathf.Clamp(devicePresetIdx, 0, OnlineLocalPlayers.Presets(localCount).Length - 1)];
+        if (preset.Length == 1) return OnlineLocalPlayers.DeviceName(preset[0]);
+        string label = "";
+        for (int i = 0; i < preset.Length; i++) label += (i > 0 ? "  |  " : "") + "J" + (i + 1) + ": " + OnlineLocalPlayers.DeviceName(preset[i]);
+        return label;
     }
 
     private void CycleSkin(int dir)
@@ -561,6 +605,10 @@ public class CoopJoinLobbyUI : MonoBehaviour
                 CoopGameConfig.Slots[1].ColorIndex = currentColorIndex;
                 CoopGameConfig.Slots[1].SkinId = CoopGameConfig.AvailableSkins[currentSkinIndex].Id;
 
+                // Jugadores locales de este PC (el anfitrión asigna un puesto a cada uno)
+                OnlineLocalDevice[] preset = OnlineLocalPlayers.Presets(localCount)[Mathf.Clamp(devicePresetIdx, 0, OnlineLocalPlayers.Presets(localCount).Length - 1)];
+                OnlineLocalPlayers.Configure(currentPlayerName, currentColorIndex, CoopGameConfig.AvailableSkins[currentSkinIndex].Id, preset, CoopGameConfig.Palette.Length);
+
                 // Iniciar handshake P2P con el anfitrión
                 CoopNetworkManager.Instance.SendHandshakeRequest();
 
@@ -605,7 +653,17 @@ public class CoopJoinLobbyUI : MonoBehaviour
         playerSkinValueText.color = isSel3 ? new Color(1f, 0.90f, 0.40f, 1f) : Color.white;
 
         // 4. Botón Conectar
-        bool isSel4 = (selectedRowIndex == 4);
+        // 4. Jugadores locales y 5. dispositivos
+        bool isSelP = (selectedRowIndex == RowPlayers);
+        playerCountValueText.text = isSelP ? $"◄  {localCount}  ►" : localCount.ToString();
+        playerCountValueText.color = isSelP ? new Color(1f, 0.90f, 0.40f, 1f) : Color.white;
+        bool isSelD = (selectedRowIndex == RowDevices);
+        string devLabel = DevicePresetLabel();
+        deviceValueText.text = isSelD ? $"◄  {devLabel}  ►" : devLabel;
+        deviceValueText.color = isSelD ? new Color(1f, 0.90f, 0.40f, 1f) : Color.white;
+
+        // 6. Botón Conectar
+        bool isSel4 = (selectedRowIndex == ConnectRow);
         connectButtonBg.color = isSel4 ? new Color(0.20f, 0.55f, 0.28f, 1f) : new Color(0.12f, 0.28f, 0.16f, 0.95f);
         connectButtonText.color = isSel4 ? Color.yellow : Color.white;
     }

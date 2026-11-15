@@ -16,5 +16,7 @@
     <Compile Include="..\Diagnostics\SwallowedExceptions.cs" Link="Linked\SwallowedExceptions.cs" />
     <Compile Include="..\Diagnostics\BufferedLogWriter.cs" Link="Linked\BufferedLogWriter.cs" />
     <Compile Include="..\Input\FrameEdge.cs" Link="Linked\FrameEdge.cs" />
+    <Compile Include="..\MultiPlayer\CoopHandshake.cs" Link="Linked\CoopHandshake.cs" />
+    <Compile Include="..\MultiPlayer\OnlineLocalPlayers.cs" Link="Linked\OnlineLocalPlayers.cs" />
   </ItemGroup>
 </Project>

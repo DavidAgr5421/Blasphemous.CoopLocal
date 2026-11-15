@@ -45,23 +45,6 @@ public enum CoopButtonFlags : ushort
     Range   = 1 << 13
 }
 
-public class HandshakeRequestData
-{
-    public byte ProtocolVersion = 2;
-    public string PlayerName = "";
-    public int ColorIndex = 1;
-    public string SkinId = "";
-}
-
-public class HandshakeAcceptData
-{
-    public byte AssignedSlot = 1;
-    public string CurrentScene = "";
-    public string HostPlayerName = "";
-    public int HostColorIndex = 0;
-    public string HostSkinId = "";
-}
-
 public struct PlayerInputData
 {
     public byte SlotIndex;
@@ -184,68 +167,28 @@ public class BossEventData
 /// </summary>
 public static class CoopNetworkProtocol
 {
-    public const byte CURRENT_PROTOCOL_VERSION = 2;
+    public const byte CURRENT_PROTOCOL_VERSION = CoopHandshakeCodec.ProtocolVersion;
 
     // --- Serializadores ---
 
     public static byte[] SerializeHandshakeRequest(HandshakeRequestData req)
     {
-        using (MemoryStream ms = new MemoryStream())
-        using (BinaryWriter writer = new BinaryWriter(ms, Encoding.UTF8))
-        {
-            writer.Write((byte)CoopPacketType.HandshakeRequest);
-            writer.Write(req.ProtocolVersion);
-            writer.Write(req.PlayerName ?? "");
-            writer.Write(req.ColorIndex);
-            writer.Write(req.SkinId ?? "");
-            return ms.ToArray();
-        }
+        return CoopHandshakeCodec.SerializeRequest(req);
     }
 
     public static HandshakeRequestData DeserializeHandshakeRequest(byte[] data)
     {
-        using (MemoryStream ms = new MemoryStream(data))
-        using (BinaryReader reader = new BinaryReader(ms, Encoding.UTF8))
-        {
-            reader.ReadByte(); // packet type
-            HandshakeRequestData req = new HandshakeRequestData();
-            req.ProtocolVersion = reader.ReadByte();
-            req.PlayerName = reader.ReadString();
-            req.ColorIndex = reader.ReadInt32();
-            req.SkinId = reader.ReadString();
-            return req;
-        }
+        return CoopHandshakeCodec.DeserializeRequest(data);
     }
 
     public static byte[] SerializeHandshakeAccept(HandshakeAcceptData acc)
     {
-        using (MemoryStream ms = new MemoryStream())
-        using (BinaryWriter writer = new BinaryWriter(ms, Encoding.UTF8))
-        {
-            writer.Write((byte)CoopPacketType.HandshakeAccept);
-            writer.Write(acc.AssignedSlot);
-            writer.Write(acc.CurrentScene ?? "");
-            writer.Write(acc.HostPlayerName ?? "");
-            writer.Write(acc.HostColorIndex);
-            writer.Write(acc.HostSkinId ?? "");
-            return ms.ToArray();
-        }
+        return CoopHandshakeCodec.SerializeAccept(acc);
     }
 
     public static HandshakeAcceptData DeserializeHandshakeAccept(byte[] data)
     {
-        using (MemoryStream ms = new MemoryStream(data))
-        using (BinaryReader reader = new BinaryReader(ms, Encoding.UTF8))
-        {
-            reader.ReadByte(); // packet type
-            HandshakeAcceptData acc = new HandshakeAcceptData();
-            acc.AssignedSlot = reader.ReadByte();
-            acc.CurrentScene = reader.ReadString();
-            acc.HostPlayerName = reader.ReadString();
-            acc.HostColorIndex = reader.ReadInt32();
-            acc.HostSkinId = reader.ReadString();
-            return acc;
-        }
+        return CoopHandshakeCodec.DeserializeAccept(data);
     }
 
     public static byte[] SerializeHandshakeReject(string reason)

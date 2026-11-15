@@ -209,29 +209,24 @@ public class CoopClientWorldSync : MonoBehaviour
         {
             proCamera = UnityEngine.Object.FindObjectOfType<ProCamera2D>();
         }
+        if (proCamera == null) return;
 
-        if (proCamera != null)
+        // Enfocar la cámara del cliente en los títeres de TODOS sus jugadores locales (uno o varios)
+        bool cleared = false;
+        int[] mine = CoopNetworkManager.LocalAssignedSlots;
+        for (int m = 0; m < mine.Length; m++)
         {
-            int mySlot = CoopNetworkManager.LocalAssignedSlot;
-            if (puppets.TryGetValue(mySlot, out PlayerPuppet myPuppet) && myPuppet.Root != null)
-            {
-                // Enfocar la cámara del cliente en su propio títere asignado
-                bool hasTarget = false;
-                foreach (var target in proCamera.CameraTargets)
-                {
-                    if (target.TargetTransform == myPuppet.Root.transform)
-                    {
-                        hasTarget = true;
-                        break;
-                    }
-                }
+            if (!puppets.TryGetValue(mine[m], out PlayerPuppet myPuppet) || myPuppet.Root == null) continue;
 
-                if (!hasTarget)
-                {
-                    proCamera.CameraTargets.Clear();
-                    proCamera.AddCameraTarget(myPuppet.Root.transform, 1f, 1f, 0f);
-                }
+            bool hasTarget = false;
+            foreach (var target in proCamera.CameraTargets)
+            {
+                if (target.TargetTransform == myPuppet.Root.transform) { hasTarget = true; break; }
             }
+            if (hasTarget) continue;
+
+            if (!cleared) { proCamera.CameraTargets.Clear(); cleared = true; }
+            proCamera.AddCameraTarget(myPuppet.Root.transform, 1f, 1f, 0f);
         }
     }
 
