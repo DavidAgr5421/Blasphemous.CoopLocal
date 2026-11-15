@@ -1183,6 +1183,7 @@ public class CoopMatchConfigUI : MonoBehaviour
 
     private void StartEditingName(int playerIdx)
     {
+        if (CoopGameConfig.IsRemoteSlot(playerIdx)) return;   // lo decide el jugador online
         isEditingName = true;
         nameBuffer = CoopGameConfig.Slots[playerIdx].Name;
         Framework.Managers.Core.Audio?.PlayOneShot("event:/SFX/UI/ButtonPress");
@@ -1237,6 +1238,7 @@ public class CoopMatchConfigUI : MonoBehaviour
 
     private void CycleSkin(int playerIdx, int dir)
     {
+        if (CoopGameConfig.IsRemoteSlot(playerIdx)) return;   // lo decide el jugador online
         var skins = CoopGameConfig.AvailableSkins;
         int curIdx = 0;
         for (int i = 0; i < skins.Length; i++)
@@ -1352,7 +1354,7 @@ public class CoopMatchConfigUI : MonoBehaviour
                 }
                 else
                 {
-                    card.nameValueText.text = isSelRow1 ? $"[ {slot.Name} ]" : slot.Name;
+                    card.nameValueText.text = CoopGameConfig.IsRemoteSlot(i) ? slot.Name + "  (lo decide el jugador online)" : (isSelRow1 ? $"[ {slot.Name} ]" : slot.Name);
                     card.nameValueText.color = isSelRow1 ? Color.yellow : Color.white;
                 }
 
@@ -1364,7 +1366,7 @@ public class CoopMatchConfigUI : MonoBehaviour
                 // Fila 3: Skin
                 bool isSelRow3 = (isCardSelected && selectedRowIdx == 3);
                 string skinName = GetSkinDisplayName(slot.SkinId);
-                card.skinValueText.text = isSelRow3 ? $"◄ {skinName} ►" : skinName;
+                card.skinValueText.text = CoopGameConfig.IsRemoteSlot(i) ? skinName + "  (online)" : (isSelRow3 ? $"◄ {skinName} ►" : skinName);
                 card.skinValueText.color = isSelRow3 ? Color.yellow : Color.white;
 
                 // Fila 4: Botón Eliminar

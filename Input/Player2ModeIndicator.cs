@@ -56,36 +56,42 @@ internal static class Player2ModeIndicator
 
     private static TMPro.TextMeshProUGUI label;
 
+    private const float DisplaySeconds = 5f;
+    private static float visibleUntil;
+
     internal static void SetMenuOverlayHidden(bool hidden)
     {
-        if (!CoopSettings.Keyboard) hidden = true;
         if (label != null)
         {
-            label.gameObject.SetActive(!hidden);
+            label.gameObject.SetActive(!hidden && Time.unscaledTime < visibleUntil);
         }
     }
 
+    /// <summary>Aviso discreto (arriba a la derecha) de qué jugador tiene el teclado; desaparece solo a los 5 s.</summary>
     internal static void ShowPlayer(int playerIndex, string playerName)
     {
-        if (!CoopSettings.Keyboard) { if (label != null) label.gameObject.SetActive(false); return; }
         EnsureCreated();
         if (label != null)
         {
+            visibleUntil = Time.unscaledTime + DisplaySeconds;
             label.gameObject.SetActive(true);
-            int total = CoopGameConfig.IsCoopEnabled ? Mathf.Clamp(CoopGameConfig.PlayerCount, 2, 4) : 1;
-            label.text = $"[F9] Teclado: P{playerIndex + 1} ({playerName}) [Partida: {total}P]";
+            label.text = $"Teclado: P{playerIndex + 1} ({playerName})";
             label.color = CoopPlayerRegistry.GetLabelColor(playerIndex);
         }
     }
 
     internal static void Show(Player2InputMode mode)
     {
-        EnsureCreated();
-        if (label != null)
+        int kbIdx = Player2Input.ActiveKeyboardPlayerIndex;
+        ShowPlayer(kbIdx, CoopPlayerRegistry.GetDisplayName(kbIdx));
+    }
+
+    private sealed class Fader : MonoBehaviour
+    {
+        private void Update()
         {
-            int kbIdx = Player2Input.ActiveKeyboardPlayerIndex;
-            string pName = CoopPlayerRegistry.GetDisplayName(kbIdx);
-            ShowPlayer(kbIdx, pName);
+            if (label != null && label.gameObject.activeSelf && Time.unscaledTime >= visibleUntil)
+                label.gameObject.SetActive(false);
         }
     }
 
@@ -123,5 +129,8 @@ internal static class Player2ModeIndicator
         label.alignment = TMPro.TextAlignmentOptions.TopRight;
         label.color = Color.white;
         label.text = "";
+        label.fontSize = 20;
+        canvasObject.AddComponent<Fader>();
+        textObject.SetActive(false);
     }
 }

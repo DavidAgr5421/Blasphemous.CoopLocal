@@ -23,14 +23,12 @@ internal static class CoopSettings
     internal static bool DebugMode { get; private set; }
     /// <summary>Editores de interfaz: F4 (tamaño de texto), F7 (HUD), F11 (posición/escala de menús).</summary>
     private static bool UiEditors => DebugMode && uiEditors;
-    /// <summary>F9: cambiar qué jugador usa el teclado (y su texto en pantalla).</summary>
-    private static bool KeyboardChanger => DebugMode && keyboardChanger;
     /// <summary>F10: cambiar el objetivo de la cámara (y su texto en pantalla).</summary>
     private static bool CameraChanger => DebugMode && cameraChanger;
     /// <summary>Herramientas de administración: F2 selector de jefes, F5 dummy, F6 fervor, F8 menú debug, F10+2/3/4 conectar/desconectar jugadores.</summary>
     private static bool AdminTools => DebugMode && adminTools;
 
-    private static bool uiEditors, keyboardChanger, cameraChanger, adminTools;
+    private static bool uiEditors, cameraChanger, adminTools;
     private static bool loaded;
 
     internal static void EnsureLoaded()
@@ -47,13 +45,12 @@ internal static class CoopSettings
             if (path != null) Parse(File.ReadAllLines(path));
         }
         catch (Exception e) { Log("Error leyendo " + FileName + ": " + e.Message); }
-        Log("Debug=" + DebugMode + " UiEditors=" + UiEditors + " KeyboardChanger=" + KeyboardChanger
+        Log("Debug=" + DebugMode + " UiEditors=" + UiEditors
             + " CameraChanger=" + CameraChanger + " AdminTools=" + AdminTools);
     }
 
     // Los getters pueden usarse antes de Awake: aseguran la carga.
     internal static bool Ui { get { EnsureLoaded(); return UiEditors; } }
-    internal static bool Keyboard { get { EnsureLoaded(); return KeyboardChanger; } }
     internal static bool Camera { get { EnsureLoaded(); return CameraChanger; } }
     internal static bool Admin { get { EnsureLoaded(); return AdminTools; } }
 
@@ -112,9 +109,6 @@ internal static class CoopSettings
             "# Editores de interfaz: F4 tamano de texto, F7 HUD, F11 posicion/escala de menus",
             "UiEditors = true",
             "",
-            "# F9: cambiar que jugador usa el teclado (muestra un texto en pantalla)",
-            "KeyboardChanger = true",
-            "",
             "# F10: cambiar el objetivo de la camara (muestra un texto en pantalla)",
             "CameraChanger = true",
             "",
@@ -142,7 +136,6 @@ internal static class CoopSettings
             if (!TryBool(val, out b)) continue;
             if (key.Equals("DebugMode", StringComparison.OrdinalIgnoreCase)) DebugMode = b;
             else if (key.Equals("UiEditors", StringComparison.OrdinalIgnoreCase)) uiEditors = b;
-            else if (key.Equals("KeyboardChanger", StringComparison.OrdinalIgnoreCase)) keyboardChanger = b;
             else if (key.Equals("CameraChanger", StringComparison.OrdinalIgnoreCase)) cameraChanger = b;
             else if (key.Equals("AdminTools", StringComparison.OrdinalIgnoreCase)) adminTools = b;
         }

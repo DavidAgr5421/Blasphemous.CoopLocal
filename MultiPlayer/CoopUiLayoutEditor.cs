@@ -23,7 +23,17 @@ public class CoopUiLayoutEditor : MonoBehaviour
     public static bool IsOpen { get; private set; }
 
     // Pega aquí las líneas copiadas con el botón "Copiar": clave \t dx \t dy \t escala
-    private static readonly string[] BakedDefaults = { };
+    private static readonly string[] BakedDefaults =
+    {
+        "JoinLobbyCanvas/Panel/Row_3/Value	16	-1	1",
+        "JoinLobbyCanvas/Panel/Row_0/Label	-46	0	1",
+        "JoinLobbyCanvas/Panel/Row_1/Label	-43	-1	1",
+        "JoinLobbyCanvas/Panel/Row_2/Label	-26	-2	1",
+        "CoopMatchConfigCanvas/MainPanel/RoomCodeBanner/CopyTip	-229	-4	1",
+        "JoinLobbyCanvas/Panel/Row_3/Label	-25	0	1",
+        "CoopMatchConfigCanvas/MainPanel/RoomCodeBanner/Value	88	-9	1.25",
+        "CoopMatchConfigCanvas/MainPanel/RoomCodeBanner/Label	-129	1	1",
+    };
 
     private class Ov { public float dx, dy, scale = 1f; public bool IsIdentity => Mathf.Abs(dx) < 0.01f && Mathf.Abs(dy) < 0.01f && Mathf.Abs(scale - 1f) < 0.0005f; }
 

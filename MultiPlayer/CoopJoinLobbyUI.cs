@@ -51,6 +51,7 @@ public class CoopJoinLobbyUI : MonoBehaviour
     private int currentSkinIndex = 0;
 
     private bool isEditingName = false;
+    private bool isEditingCode = false;   // el código de sala solo se edita tras pulsar Enter (las flechas/WASD no escriben)
     private float inputCooldown = 0f;
     private float cursorBlinkTimer = 0f;
     private bool cursorVisible = true;
@@ -284,6 +285,7 @@ public class CoopJoinLobbyUI : MonoBehaviour
         IsOpen = true;
         selectedRowIndex = 0;
         isEditingName = false;
+        isEditingCode = false;
         inputCooldown = 0.25f;
 
         // Cargar nombre por defecto desde Steam si está disponible
@@ -303,10 +305,20 @@ public class CoopJoinLobbyUI : MonoBehaviour
         Framework.Managers.Core.Audio?.PlayOneShot("event:/SFX/UI/ChangeTab");
     }
 
+    /// <summary>El anfitrión aceptó la conexión pero aún está configurando la partida: se muestra el estado de espera.</summary>
+    internal static void ShowWaitingForHost()
+    {
+        if (_instance == null || !IsOpen) return;
+        _instance.statusFeedbackText.color = new Color(0.35f, 1f, 0.45f, 1f);
+        _instance.statusFeedbackText.text = "✔ Conectado. Esperando a que el anfitrión inicie la partida...";
+        _instance.inputCooldown = 0.5f;
+    }
+
     private void Close()
     {
         IsOpen = false;
         isEditingName = false;
+        isEditingCode = false;
         if (rootCanvasObj != null)
         {
             rootCanvasObj.SetActive(false);
@@ -346,9 +358,10 @@ public class CoopJoinLobbyUI : MonoBehaviour
         // Cancelar con Escape
         if (Input.GetKeyDown(KeyCode.Escape))
         {
-            if (isEditingName)
+            if (isEditingName || isEditingCode)
             {
                 isEditingName = false;
+                isEditingCode = false;
                 UpdateDisplay();
             }
             else
@@ -359,13 +372,15 @@ public class CoopJoinLobbyUI : MonoBehaviour
         }
 
         // Procesar edición de texto en Fila 0 (Room Code) o Fila 1 (Nombre)
-        if (selectedRowIndex == 0)
+        if (selectedRowIndex == 0 && isEditingCode)
         {
             HandleRoomCodeTyping();
+            return;   // mientras se edita, ninguna tecla navega por el menú
         }
-        else if (selectedRowIndex == 1 && isEditingName)
+        if (selectedRowIndex == 1 && isEditingName)
         {
             HandlePlayerNameTyping();
+            return;
         }
 
         // Navegación con teclado / mando
@@ -385,9 +400,11 @@ public class CoopJoinLobbyUI : MonoBehaviour
                     UpdateDisplay();
                 }
             }
-            else if (c == '\n' || c == '\r') // Enter
+            else if (c == '\n' || c == '\r') // Enter: termina la edición (la conexión solo arranca con el botón Conectar)
             {
-                StartConnectionProcess();
+                isEditingCode = false;
+                Framework.Managers.Core.Audio?.PlayOneShot("event:/SFX/UI/ButtonPress");
+                UpdateDisplay();
                 return;
             }
             else if (char.IsLetterOrDigit(c) && currentRoomCode.Length < 8)
@@ -432,6 +449,7 @@ public class CoopJoinLobbyUI : MonoBehaviour
         bool left = Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.A);
         bool right = Input.GetKeyDown(KeyCode.RightArrow) || Input.GetKeyDown(KeyCode.D);
         bool enter = Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter);
+        if (isEditingCode) return;
 
         if (up && !isEditingName)
         {
@@ -462,7 +480,14 @@ public class CoopJoinLobbyUI : MonoBehaviour
 
         if (enter)
         {
-            if (selectedRowIndex == 0 || selectedRowIndex == 4)
+            if (selectedRowIndex == 0)
+            {
+                isEditingCode = true;
+                cursorVisible = true;
+                Framework.Managers.Core.Audio?.PlayOneShot("event:/SFX/UI/ButtonPress");
+                UpdateDisplay();
+            }
+            else if (selectedRowIndex == 4)
             {
                 StartConnectionProcess();
             }
@@ -554,10 +579,10 @@ public class CoopJoinLobbyUI : MonoBehaviour
     {
         // 0. Código de Sala
         bool isSel0 = (selectedRowIndex == 0);
-        string codeCursor = (isSel0 && cursorVisible) ? "|" : "";
+        string codeCursor = (isEditingCode && cursorVisible) ? "|" : "";
         string displayCode = string.IsNullOrEmpty(currentRoomCode)
-            ? (isSel0 ? $"[ Escribe el código...{codeCursor} ]" : "[ Click o selecciona para escribir ]")
-            : $"[  {currentRoomCode}{codeCursor}  ]";
+            ? (isEditingCode ? $"[ Escribe el código...{codeCursor} ]" : (isSel0 ? "[ Pulsa Enter para escribir ]" : "[ Sin código ]"))
+            : (isEditingCode ? $"[  {currentRoomCode}{codeCursor}  ] (Enter = listo)" : $"[  {currentRoomCode}  ]");
         roomCodeValueText.text = displayCode;
         roomCodeValueText.color = isSel0 ? new Color(1f, 0.95f, 0.35f, 1f) : new Color(0.85f, 0.85f, 0.85f, 1f);
 
@@ -587,7 +612,7 @@ public class CoopJoinLobbyUI : MonoBehaviour
 
     private void UpdateCursorVisuals()
     {
-        if (selectedRowIndex == 0 || isEditingName)
+        if (isEditingCode || isEditingName)
         {
             UpdateDisplay();
         }

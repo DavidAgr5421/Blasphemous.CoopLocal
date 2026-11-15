@@ -370,7 +370,8 @@ public class CoopNetworkManager : MonoBehaviour
 
         // 3. Asignar y configurar la ranura
         CoopGameConfig.Slots[targetSlot].Name = string.IsNullOrEmpty(req.PlayerName) ? $"Jugador {targetSlot + 1}" : req.PlayerName;
-        CoopGameConfig.Slots[targetSlot].ColorIndex = req.ColorIndex;
+        // El color del texto lo decide el host si ya configuró este puesto como online; nombre y skin los decide el jugador online.
+        if (CoopGameConfig.Slots[targetSlot].Device != CoopDeviceType.RemoteSteam) CoopGameConfig.Slots[targetSlot].ColorIndex = req.ColorIndex;
         CoopGameConfig.Slots[targetSlot].SkinId = string.IsNullOrEmpty(req.SkinId) ? "PENITENT" : req.SkinId;
         CoopGameConfig.Slots[targetSlot].Device = CoopDeviceType.RemoteSteam;
         CoopGameConfig.Slots[targetSlot].IsOnlineConnected = true;
@@ -384,11 +385,15 @@ public class CoopNetworkManager : MonoBehaviour
         connectedClients[sender.m_SteamID] = session;
         slotClients[targetSlot] = session;
 
-        // 4. Instanciar dinámicamente al Penitente del jugador en el mundo del Anfitrión
-        CoopLocal.SpawnGuestPlayerDynamically(targetSlot);
+        // 4. Instanciar dinámicamente al Penitente del jugador en el mundo del Anfitrión.
+        //    Si el anfitrión aún está en los menús (configurando la partida) NO se instancia nada: el invitado queda registrado
+        //    y se crea con el resto de jugadores cuando empiece la partida (SpawnAllGuestPlayers), momento en que
+        //    BroadcastSceneChange lo lleva a la escena. Antes se instanciaba en pleno menú y dejaba el HUD/estado corrupto.
+        bool hostInGame = IsHostInGameplay();
+        if (hostInGame) CoopLocal.SpawnGuestPlayerDynamically(targetSlot);
 
-        // 5. Responder HandshakeAccept con la ranura asignada y la escena actual
-        string currentScene = Core.LevelManager?.currentLevel?.LevelName ?? "";
+        // 5. Responder HandshakeAccept con la ranura asignada y la escena actual (vacía si el anfitrión sigue en menús)
+        string currentScene = hostInGame ? (Core.LevelManager?.currentLevel?.LevelName ?? "") : "";
         HandshakeAcceptData acc = new HandshakeAcceptData
         {
             AssignedSlot = (byte)targetSlot,
@@ -408,6 +413,18 @@ public class CoopNetworkManager : MonoBehaviour
         }
     }
 
+    /// <summary>true si el anfitrión ya está dentro de una partida (hay Penitente P1 y no está en el menú principal).</summary>
+    internal static bool IsHostInGameplay()
+    {
+        try
+        {
+            if (Core.Logic == null || Core.Logic.Penitent == null) return false;
+            if (Core.GameModeManager != null && Core.GameModeManager.IsCurrentMode(GameModeManager.GAME_MODES.MENU)) return false;
+            return Core.LevelManager != null && Core.LevelManager.currentLevel != null;
+        }
+        catch { return false; }
+    }
+
     private void HandleHandshakeAccept(CSteamID sender, byte[] data)
     {
         HandshakeAcceptData acc = CoopNetworkProtocol.DeserializeHandshakeAccept(data);
@@ -425,6 +442,13 @@ public class CoopNetworkManager : MonoBehaviour
         {
             Core.SpawnManager?.PrepareForCommandSpawn(acc.CurrentScene);
             Core.LevelManager?.ChangeLevel(acc.CurrentScene, false, true, true);
+        }
+
+        // Si el anfitrión aún no empezó la partida, el invitado espera con el modal abierto (se cierra al llegar el cambio de escena)
+        if (string.IsNullOrEmpty(acc.CurrentScene))
+        {
+            CoopJoinLobbyUI.ShowWaitingForHost();
+            return;
         }
 
         // Cerrar la interfaz modal de unión
@@ -675,6 +699,7 @@ public class CoopNetworkManager : MonoBehaviour
             {
                 Blasphemous.ModdingAPI.ModLog.Info($"[CoopNetwork] Recibido cambio de escena del Host: '{sceneName}', cargando...", Main.CoopLocal);
             }
+            CoopJoinLobbyUI.Hide();
             Core.SpawnManager?.PrepareForCommandSpawn(sceneName);
             Core.LevelManager?.ChangeLevel(sceneName, false, true, true);
         }

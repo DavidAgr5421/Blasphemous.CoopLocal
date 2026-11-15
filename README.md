@@ -2,7 +2,7 @@
 
 Mod cooperativo para **Blasphemous** (el primero) que permite jugar de **2 a 4 jugadores**, en local (varios mandos / teclado) o **en línea por Steam**. Inspirado en el mod multijugador de BrandenEK.
 
-> Versión actual: **v1.0.0** · Plataforma: Windows y Linux / Steam Deck · BepInEx y el Modding API se instalan automáticamente.
+> Versión actual: **v1.0.1** · Plataforma: Windows y Linux / Steam Deck · BepInEx y el Modding API se instalan automáticamente.
 
 ---
 
@@ -12,7 +12,7 @@ No necesitas instalar BepInEx ni nada más antes: **el instalador descarga e ins
 
 1. Descarga desde la [página de Releases](https://github.com/DavidAgr5421/Blasphemous.CoopLocal/releases):
    - **`BlasphemousCoopLocal_Setup.exe`** (Windows, recomendado): doble clic, elige la carpeta del juego (se detecta sola) e instala.
-   - o **`BlasphemousCoopLocal-1.0.0.zip`** (sin setup): descomprime y ejecuta `install.bat` (Windows) o `./install.sh` (Linux / Steam Deck).
+   - o **`BlasphemousCoopLocal-1.0.1.zip`** (sin setup): descomprime y ejecuta `install.bat` (Windows) o `./install.sh` (Linux / Steam Deck).
 2. Inicia el juego.
 
 Todos los jugadores de una partida en línea deben tener **la misma versión** del mod. Instalación manual y detalles: [installer/INSTALL.md](installer/INSTALL.md).
@@ -46,8 +46,11 @@ Todos los jugadores de una partida en línea deben tener **la misma versión** d
 ## Cómo se juega
 
 1. Desde el menú principal (selección de ranura) abre la **configuración de partida** y elige el número de jugadores y el dispositivo (teclado / mando) de cada uno.
-2. Para jugar en línea: el anfitrión crea la partida; los demás pulsan **U** (o el botón de la pantalla) para **Unirse a partida online**.
-3. Pausa individual: cada jugador abre su propio menú de pausa con su botón de pausa para cambiar controles.
+2. Para jugar en línea: el anfitrión marca puestos como **Online** (o abre la sala en plena partida, ver abajo); los demás pulsan **U** (o el botón de la pantalla) para **Unirse a partida online**. En ese menú: **Enter** sobre "Código de sala" para escribirlo (Enter otra vez para terminar), y luego **Conectar**. También puedes pegar con Ctrl+V.
+3. Los puestos online deciden su **nombre y skin** (el anfitrión solo elige el color de su texto).
+4. Pausa individual: cada jugador (P2-P4) abre su propio menú de pausa con su botón de pausa para cambiar controles.
+5. **Menú del anfitrión (P1):** `Tab` en teclado, o `Start + Back` en mando. Permite **abrir/cerrar la sala online** en plena partida, **copiar el código de sala** y reasignar controles.
+6. **F9 — cambiar teclado/mando:** intercambia el teclado y el mando entre los jugadores **locales** de esa PC (los puestos online no cuentan; con un solo jugador local no hace nada). Muestra un aviso arriba a la derecha que desaparece a los 5 s.
 
 ### Controles por defecto de los jugadores invitados (teclado)
 
@@ -71,7 +74,6 @@ Al primer arranque se crea **`Modding/config/CoopLocal.cfg`** (texto plano, `Cla
 |---|---|---|
 | `DebugMode` | `false` | Interruptor maestro de las herramientas de depuración. Apagado = no hay teclas ni textos de depuración. |
 | `UiEditors` | `true` | Editores de interfaz: F4 (tamaño de texto), F7 (HUD), F11 (posición/escala de menús). |
-| `KeyboardChanger` | `true` | F9: cambia qué jugador usa el teclado (y su texto en pantalla). |
 | `CameraChanger` | `true` | F10: cambia el objetivo de la cámara (y su texto en pantalla). |
 | `AdminTools` | `true` | F2 jefes, F5 dummy, F6 fervor máximo, F8 menú debug, F10+2/3/4 conectar/desconectar jugadores. |
 
@@ -99,7 +101,7 @@ Requisitos: .NET SDK, Blasphemous con el Modding instalado (el `.csproj` referen
 
 ```bash
 dotnet build Blasphemous.CoopLocal.csproj -c Release
-powershell -ExecutionPolicy Bypass -File installer/make-release.ps1 -Version 1.0.0   # genera dist/*.zip
+powershell -ExecutionPolicy Bypass -File installer/make-release.ps1 -Version 1.0.1   # genera dist/*.zip
 ```
 
 Notas de arquitectura y decisiones: carpeta [Modding/](Modding/).

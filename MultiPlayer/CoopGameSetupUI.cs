@@ -2234,6 +2234,7 @@ internal sealed class CoopGameSetupUI : MonoBehaviour
 
             case MenuZone.PlayerCards:
 
+                if (CoopGameConfig.IsRemoteSlot(selectedPlayerIndex) && (selectedConfigRow == 0 || selectedConfigRow == 3)) { PlayToggleSound(); break; } // nombre y skin los decide el jugador online
                 switch (selectedConfigRow)
 
                 {
@@ -3624,7 +3625,7 @@ internal sealed class CoopGameSetupUI : MonoBehaviour
 
     private void CycleSuggestedName(int playerIndex, int dir)
 
-    {
+    { if (CoopGameConfig.IsRemoteSlot(playerIndex)) return;
 
         string[] suggestions = CoopGameConfig.SuggestedNames[playerIndex % CoopGameConfig.SuggestedNames.Length];
 
@@ -3668,7 +3669,7 @@ internal sealed class CoopGameSetupUI : MonoBehaviour
 
     private void CycleSkin(int playerIndex, int dir)
 
-    {
+    { if (CoopGameConfig.IsRemoteSlot(playerIndex)) return;
 
         string curSkin = CoopGameConfig.Slots[playerIndex].SkinId;
 
@@ -3888,7 +3889,7 @@ internal sealed class CoopGameSetupUI : MonoBehaviour
 
                                 vTxt.color = Color.white;
 
-                                vTxt.text = prefix + CoopGameConfig.Slots[p].Name;
+                                vTxt.text = prefix + CoopGameConfig.Slots[p].Name + (CoopGameConfig.IsRemoteSlot(p) ? "  (lo decide el jugador online)" : "");
 
                             }
 
@@ -3942,7 +3943,7 @@ internal sealed class CoopGameSetupUI : MonoBehaviour
 
                             vTxt.color = new Color(1f, 0.88f, 0.45f, 1f);
 
-                            vTxt.text = prefix + $"◈ {sName}";
+                            vTxt.text = prefix + $"◈ {sName}" + (CoopGameConfig.IsRemoteSlot(p) ? "  (online)" : "");
 
 
 

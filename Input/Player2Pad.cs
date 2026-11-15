@@ -342,6 +342,13 @@ internal static class Player2Pad
     internal static bool ParryDown => GetParryDown(Pad);
     internal static bool HealDown => GetHealDown(Pad);
     internal static bool InteractDown => GetInteractDown(Pad);
+    /// <summary>Menú de sala del anfitrión (P1) con mando: Start + Back a la vez (no choca con la pausa vanilla de Start).</summary>
+    internal static bool GetHostMenuDown(Rewired.Joystick pad)
+    {
+        if (pad == null) return false;
+        return (ButtonDown(pad, "Start", "Options", "Menu Button") && ButtonHeld(pad, "Back", "Select", "Share", "View"))
+            || (ButtonDown(pad, "Back", "Select", "Share", "View") && ButtonHeld(pad, "Start", "Options", "Menu Button"));
+    }
     internal static bool GetStartDown(Rewired.Joystick pad) => ButtonDown(pad, "Start", "Options", "Menu Button");
     internal static bool GetMenuDown(Rewired.Joystick pad, int slotIndex = -1)
     {

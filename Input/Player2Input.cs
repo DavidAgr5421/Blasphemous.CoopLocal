@@ -122,35 +122,33 @@ internal static class Player2Input
 
     internal static Player2InputMode Mode { get; set; } = Player2InputMode.Gamepad;
 
+    /// <summary>
+    /// F9: intercambia teclado y mando SOLO entre los jugadores locales de esta PC (los puestos online no cuentan).
+    /// Con un único jugador local no hace nada (se controla como en vanilla).
+    /// </summary>
     internal static void CycleKeyboardPlayer()
     {
         int activeCount = CoopGameConfig.IsCoopEnabled ? Mathf.Clamp(CoopGameConfig.PlayerCount, 2, 4) : 1;
-        if (activeCount <= 1)
-        {
-            ApplyKeyboardPlayer(0);
-            return;
-        }
+        if (activeCount <= 1) return;
 
-        // Use the slot that really owns the keyboard as the starting point and skip online slots.
-        int start = ActiveKeyboardPlayerIndex;
+        var local = new List<int>();
         for (int i = 0; i < activeCount; i++)
         {
-            if (CoopGameConfig.Slots[i].Device == CoopDeviceType.Keyboard) { start = i; break; }
+            if (CoopGameConfig.Slots[i].Device != CoopDeviceType.RemoteSteam) local.Add(i);
         }
-        int next = start;
-        for (int step = 1; step <= activeCount; step++)
+        if (local.Count <= 1) return;
+
+        // El punto de partida es el puesto local que realmente tiene el teclado.
+        int pos = local.IndexOf(ActiveKeyboardPlayerIndex);
+        for (int k = 0; k < local.Count; k++)
         {
-            int candidate = (start + step) % activeCount;
-            if (CoopGameConfig.Slots[candidate].Device != CoopDeviceType.RemoteSteam)
-            {
-                next = candidate;
-                break;
-            }
+            if (CoopGameConfig.Slots[local[k]].Device == CoopDeviceType.Keyboard) { pos = k; break; }
         }
-        ApplyKeyboardPlayer(next);
+        if (pos < 0) pos = 0;
+        ApplyKeyboardPlayer(local[(pos + 1) % local.Count], announce: true);
     }
 
-    internal static void ApplyKeyboardPlayer(int playerIndex)
+    internal static void ApplyKeyboardPlayer(int playerIndex, bool announce = false)
     {
         int activeCount = CoopGameConfig.IsCoopEnabled ? Mathf.Clamp(CoopGameConfig.PlayerCount, 2, 4) : 1;
         if (playerIndex >= activeCount)
@@ -218,7 +216,7 @@ internal static class Player2Input
             pName = CoopPlayerRegistry.GetDisplayName(ActiveKeyboardPlayerIndex);
         }
 
-        Player2ModeIndicator.ShowPlayer(ActiveKeyboardPlayerIndex, pName);
+        if (announce) Player2ModeIndicator.ShowPlayer(ActiveKeyboardPlayerIndex, pName);
 
         Framework.Managers.Core.Audio?.PlayOneShot("event:/SFX/UI/ChangeTab");
         LogModeAndControllers($"F9 -> Teclado asignado a P{ActiveKeyboardPlayerIndex + 1} ({pName})");
@@ -514,7 +512,7 @@ internal static class Player2Input
             ApplyKeyboardPlayer(initialKb);
         }
 
-        if (Input.GetKeyDown(ToggleKey) && CoopSettings.Keyboard)
+        if (Input.GetKeyDown(ToggleKey))
         {
             CycleKeyboardPlayer();
         }
@@ -547,6 +545,13 @@ internal static class Player2Input
         // Menú de Pausa / Opciones / Configuración de Controles independiente para cada jugador
         if (!PrieDieuCoopSync.IsKneeling && !CoopGameSetupUI.IsOpen && !HudLayoutDebugEditor.IsOpen && !CoopDebugMenu.IsOpen && !Combat.BossDebugTeleportManager.IsMenuOpen && !(Gameplay.UI.UIController.instance != null && Gameplay.UI.UIController.instance.IsShowingMenu))
         {
+            // Menú de sala del anfitrión (P1): Tab en teclado, Start+Back en mando. Permite abrir/cerrar la sala online y copiar el código.
+            if (!CoopPlayerPauseMenu.IsOpen && Framework.Managers.Core.Logic != null && Framework.Managers.Core.Logic.Penitent != null
+                && (Input.GetKeyDown(KeyCode.Tab) || Player2Pad.GetHostMenuDown(Player2Pad.P1Pad)))
+            {
+                CoopPlayerPauseMenu.OpenMenu(0);
+            }
+
             if (!CoopPlayerPauseMenu.IsOpen && CoopGameConfig.IsCoopEnabled)
             {
                 int maxPlayers = Mathf.Clamp(CoopGameConfig.PlayerCount, 2, 4);

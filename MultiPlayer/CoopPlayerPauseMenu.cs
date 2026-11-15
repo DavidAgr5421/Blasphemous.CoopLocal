@@ -24,13 +24,32 @@ public class CoopPlayerPauseMenu : MonoBehaviour
     private GameObject mainViewObj;
     private List<Text> mainOptionTexts = new List<Text>();
     private int selectedMainIndex = 0;
-    private readonly string[] MainOptions = new string[]
+    // Opciones del menú. P2-P4: 4 opciones. P1 (anfitrión): añade gestión de la sala online.
+    private static readonly string[] GuestOptionIds = { "resume", "controls", "reset", "exit" };
+    private static readonly string[] HostOptionIds = { "resume", "online", "copy", "controls", "reset", "exit" };
+    private const int MaxOptions = 6;
+
+    private string[] CurrentOptionIds() { return ActiveSlotIndex == 0 ? HostOptionIds : GuestOptionIds; }
+
+    private string OptionLabel(string id)
     {
-        "Reanudar Partida",
-        "Ver y Configurar Controles",
-        "Restablecer Controles por Defecto",
-        "Salir al Menú Principal"
-    };
+        switch (id)
+        {
+            case "resume": return "Reanudar Partida";
+            case "controls": return "Ver y Configurar Controles";
+            case "reset": return "Restablecer Controles por Defecto";
+            case "exit": return "Salir al Menú Principal";
+            case "online":
+                return Blasphemous.CoopLocal.MultiPlayer.CoopLobbyManager.IsHost
+                    ? "Sala online: ABIERTA  (Enter para cerrarla)"
+                    : "Sala online: CERRADA  (Enter para abrirla)";
+            case "copy":
+                return string.IsNullOrEmpty(Blasphemous.CoopLocal.MultiPlayer.CoopLobbyManager.ActiveRoomCode)
+                    ? "Copiar código de sala  (abre la sala primero)"
+                    : "Copiar código de sala  [" + Blasphemous.CoopLocal.MultiPlayer.CoopLobbyManager.ActiveRoomCode + "]";
+        }
+        return id;
+    }
 
     // Vista de Configuración de Controles
     private GameObject controlsViewObj;
@@ -182,12 +201,12 @@ public class CoopPlayerPauseMenu : MonoBehaviour
         mvRt.anchoredPosition = new Vector2(0f, -20f);
         mvRt.sizeDelta = new Vector2(800f, 380f);
 
-        for (int i = 0; i < MainOptions.Length; i++)
+        for (int i = 0; i < MaxOptions; i++)
         {
             GameObject optObj = new GameObject($"Option_{i}");
             optObj.transform.SetParent(mainViewObj.transform, false);
             RectTransform optRt = optObj.AddComponent<RectTransform>();
-            optRt.anchoredPosition = new Vector2(0f, 120f - (i * 70f));
+            optRt.anchoredPosition = new Vector2(0f, 125f - (i * 58f));
             optRt.sizeDelta = new Vector2(700f, 50f);
 
             Text optText = optObj.AddComponent<Text>();
@@ -336,10 +355,16 @@ public class CoopPlayerPauseMenu : MonoBehaviour
 
         if (!isInControlsView)
         {
-            for (int i = 0; i < MainOptions.Length; i++)
+            string[] ids = CurrentOptionIds();
+            if (selectedMainIndex >= ids.Length) selectedMainIndex = 0;
+            for (int i = 0; i < mainOptionTexts.Count; i++)
             {
+                bool used = i < ids.Length;
+                if (mainOptionTexts[i].gameObject.activeSelf != used) mainOptionTexts[i].gameObject.SetActive(used);
+                if (!used) continue;
                 bool isSel = (i == selectedMainIndex);
-                mainOptionTexts[i].text = isSel ? $"►  {MainOptions[i]}  ◄" : MainOptions[i];
+                string label = OptionLabel(ids[i]);
+                mainOptionTexts[i].text = isSel ? $"►  {label}  ◄" : label;
                 mainOptionTexts[i].color = isSel ? new Color(1f, 0.90f, 0.40f, 1f) : new Color(0.75f, 0.75f, 0.75f, 1f);
             }
             legendText.text = "[Arriba/Abajo] Navegar   |   [A / Enter] Seleccionar   |   [B / Esc] Cerrar";
@@ -517,18 +542,18 @@ public class CoopPlayerPauseMenu : MonoBehaviour
     {
         CoopDeviceType dev = CoopGameConfig.Slots[ActiveSlotIndex].Device;
         bool isKb = (dev == CoopDeviceType.Keyboard);
-        var pad = Player2Pad.GetPadForSlot(ActiveSlotIndex);
+        var pad = Player2Pad.GetPadForSlot(ActiveSlotIndex) ?? (ActiveSlotIndex == 0 ? Player2Pad.P1Pad : null);
 
         bool navUp = isKb ? (Input.GetKeyDown(KeyCode.W) || Input.GetKeyDown(KeyCode.UpArrow)) : (Player2Pad.GetUp(pad));
         bool navDown = isKb ? (Input.GetKeyDown(KeyCode.S) || Input.GetKeyDown(KeyCode.DownArrow)) : (Player2Pad.GetDown(pad));
         bool confirm = isKb ? (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.K)) : (Player2Pad.GetSelectDown(pad));
-        bool cancel = isKb ? (Input.GetKeyDown(KeyCode.Escape) || Input.GetKeyDown(KeyCode.Backspace)) : (Player2Pad.GetCancelDown(pad));
+        bool cancel = isKb ? (Input.GetKeyDown(KeyCode.Escape) || Input.GetKeyDown(KeyCode.Backspace) || (ActiveSlotIndex == 0 && Input.GetKeyDown(KeyCode.Tab))) : (Player2Pad.GetCancelDown(pad));
 
         if (navUp)
         {
             if (!isInControlsView)
             {
-                selectedMainIndex = (selectedMainIndex - 1 + MainOptions.Length) % MainOptions.Length;
+                selectedMainIndex = (selectedMainIndex - 1 + CurrentOptionIds().Length) % CurrentOptionIds().Length;
             }
             else
             {
@@ -544,7 +569,7 @@ public class CoopPlayerPauseMenu : MonoBehaviour
         {
             if (!isInControlsView)
             {
-                selectedMainIndex = (selectedMainIndex + 1) % MainOptions.Length;
+                selectedMainIndex = (selectedMainIndex + 1) % CurrentOptionIds().Length;
             }
             else
             {
@@ -599,29 +624,84 @@ public class CoopPlayerPauseMenu : MonoBehaviour
 
     private void ExecuteMainOption(int index)
     {
-        switch (index)
+        string[] ids = CurrentOptionIds();
+        if (index < 0 || index >= ids.Length) return;
+        switch (ids[index])
         {
-            case 0: // Reanudar Partida
+            case "resume":
                 Hide();
                 break;
 
-            case 1: // Ver y Configurar Controles
+            case "online":
+                ToggleOnlineRoom();
+                UpdateHeaderAndViews();
+                break;
+
+            case "copy":
+                string code = Blasphemous.CoopLocal.MultiPlayer.CoopLobbyManager.ActiveRoomCode;
+                if (!string.IsNullOrEmpty(code))
+                {
+                    GUIUtility.systemCopyBuffer = code;
+                    if (Core.Audio != null) Core.Audio.PlayOneShot("event:/SFX/UI/EquipItem");
+                    if (UIController.instance != null) UIController.instance.ShowPopUp("Código copiado: " + code, string.Empty, 2f, blockPlayer: false);
+                }
+                else if (Core.Audio != null) Core.Audio.PlayOneShot("event:/SFX/UI/ChangeTab");
+                break;
+
+            case "controls":
                 isInControlsView = true;
                 selectedControlIndex = 0;
                 if (Core.Audio != null) Core.Audio.PlayOneShot("event:/SFX/UI/ChangeTab");
                 UpdateHeaderAndViews();
                 break;
 
-            case 2: // Restablecer Controles por Defecto
+            case "reset":
                 CoopControlsConfig.ResetBindingsToDefault(ActiveSlotIndex);
                 if (Core.Audio != null) Core.Audio.PlayOneShot("event:/SFX/UI/UnequipItem");
                 UpdateHeaderAndViews();
                 break;
 
-            case 3: // Salir al Menú Principal
+            case "exit":
                 ExitToMainMenu();
                 break;
         }
+    }
+
+    /// <summary>Abre o cierra la sala online en plena partida (solo el anfitrión). Al abrirla se reserva un puesto online libre.</summary>
+    private void ToggleOnlineRoom()
+    {
+        var lobby = Blasphemous.CoopLocal.MultiPlayer.CoopLobbyManager.Instance;
+        if (Blasphemous.CoopLocal.MultiPlayer.CoopLobbyManager.IsHost)
+        {
+            lobby.LeaveLobby();
+            if (Core.Audio != null) Core.Audio.PlayOneShot("event:/SFX/UI/UnequipItem");
+            return;
+        }
+
+        // Garantiza al menos un puesto online libre (si no hay ninguno, usa el primer puesto sin asignar)
+        bool hasRemote = false;
+        for (int i = 1; i < 4; i++) if (CoopGameConfig.Slots[i].Device == CoopDeviceType.RemoteSteam) hasRemote = true;
+        if (!hasRemote)
+        {
+            for (int i = 1; i < 4; i++)
+            {
+                if (CoopGameConfig.Slots[i].Device == CoopDeviceType.Unassigned || CoopPlayerRegistry.GetSlot(i)?.Instance == null)
+                {
+                    CoopGameConfig.AssignDevice(i, CoopDeviceType.RemoteSteam);
+                    CoopGameConfig.IsCoopEnabled = true;
+                    CoopGameConfig.PlayerCount = Mathf.Max(CoopGameConfig.PlayerCount, i + 1);
+                    break;
+                }
+            }
+        }
+
+        lobby.CreateHostLobby((success, code) =>
+        {
+            if (Core.Audio != null) Core.Audio.PlayOneShot(success ? "event:/SFX/UI/EquipItem" : "event:/SFX/UI/ChangeTab");
+            if (UIController.instance != null)
+                UIController.instance.ShowPopUp(success ? ("Sala abierta. Código: " + code) : "No se pudo abrir la sala", string.Empty, 3f, blockPlayer: false);
+            if (IsOpen) UpdateHeaderAndViews();
+        });
     }
 
     private void ExitToMainMenu()

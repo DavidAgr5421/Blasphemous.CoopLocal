@@ -62,13 +62,13 @@ internal static class CoopGameConfig
 
     // Configuración visual del árbol elemental (posición y escala calibradas para 3 columnas: Veneno | Vanilla | Sangrado | Electricidad)
     public const float DefaultTreeOffsetX = -0.02349901f;
-    public const float DefaultTreeOffsetY = -1.0f;
-    public const float DefaultTreeScale = 1.01f;
+    public const float DefaultTreeOffsetY = -15.0f;
+    public const float DefaultTreeScale = 0.9f;
     public const float DefaultSkillTextScale = 1.0f; // Escala del texto de descripciones ({ aumenta, } disminuye)
-    public const float DefaultElementalBranchSpacing = 170.0f; // Distancia horizontal entre rama Veneno y Sangrado (calibrado)
-    public const float DefaultElementalNodeVerticalSpacing = 60.0f; // Distancia vertical entre niveles I, II y III
-    public const float DefaultElectricoColumnOffset = 35.0f; // Desplazamiento horizontal de la columna Electricidad a la derecha de Sangrado
-    public const float DefaultMaldicionColumnOffset = 32.0f; // Desplazamiento horizontal de la columna Maldición a la izquierda de Veneno
+    public const float DefaultElementalBranchSpacing = 204.0f; // Distancia horizontal entre rama Veneno y Sangrado (calibrado)
+    public const float DefaultElementalNodeVerticalSpacing = 84.0f; // Distancia vertical entre niveles I, II y III
+    public const float DefaultElectricoColumnOffset = 32.0f; // Desplazamiento horizontal de la columna Electricidad a la derecha de Sangrado
+    public const float DefaultMaldicionColumnOffset = 30.0f; // Desplazamiento horizontal de la columna Maldición a la izquierda de Veneno
     public const float DefaultDescPanelOffsetX = 6.0f; // Desplazamiento del panel de descripción del menú de habilidades (relativo a su posición base)
     public const float DefaultDescPanelOffsetY = 4.0f;
     public const float DefaultDescPanelScale = 0.96f;
@@ -261,6 +261,9 @@ internal static class CoopGameConfig
     /// <summary>
     /// Asigna un dispositivo a un jugador garantizando que el Teclado solo lo posea uno solo.
     /// </summary>
+    /// <summary>true si la ranura la controla un jugador online: él decide su nombre y skin (el host solo decide el color).</summary>
+    public static bool IsRemoteSlot(int i) { return i > 0 && i < 4 && Slots[i].Device == CoopDeviceType.RemoteSteam; }
+
     public static void AssignDevice(int playerIndex, CoopDeviceType device)
     {
         if (playerIndex < 0 || playerIndex >= Slots.Length) return;
