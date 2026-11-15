@@ -18,6 +18,7 @@ public class CoopInputEdgePump : MonoBehaviour
 
     private void Update()
     {
+        Player2Input.HostMenuHotkey();
         if (!CoopGameConfig.IsCoopEnabled) return;
         for (int slot = 0; slot < 4; slot++) Player2Input.GetUpDown(slot);
     }

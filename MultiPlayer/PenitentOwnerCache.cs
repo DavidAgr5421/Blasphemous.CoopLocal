@@ -24,7 +24,7 @@ internal static class PenitentOwnerCache
             if (ReferenceEquals(cached, null)) return null;   // negativo cacheado
             if (cached != null) return cached;                 // vivo
         }
-        Penitent found = PenitentOwnerCache.Of(animator);
+        Penitent found = animator.GetComponentInParent<Penitent>();
         if (cache.Count >= PruneThreshold) Prune();
         cache[id] = found;
         return found;

@@ -478,7 +478,7 @@ internal static class Player2Input
         {
             KeyCode k = CoopControlsConfig.GetBindings(slotIndex).KeyMenu;
             if (k != KeyCode.None && Input.GetKeyDown(k)) return true;
-            if (Input.GetKeyDown(Player2Keys.Menu) || Input.GetKeyDown(KeyCode.Tab) || Input.GetKeyDown(KeyCode.M)) return true;
+            if (Input.GetKeyDown(Player2Keys.Menu) || Input.GetKeyDown(KeyCode.M)) return true;
             return false;
         }
         var pad = Player2Pad.GetPadForSlot(slotIndex);
@@ -488,6 +488,18 @@ internal static class Player2Input
     internal static bool MenuDown => GetMenuDown(1);
 
     private static bool everTicked;
+
+    /// <summary>Menú de sala del anfitrión (P1): Tab en teclado, Start+Back en mando. Se evalúa cada fotograma desde CoopInputEdgePump
+    /// (Tick() solo corre si existe un invitado, y el anfitrión en solitario también necesita abrir la sala).</summary>
+    internal static void HostMenuHotkey()
+    {
+        if (CoopPlayerPauseMenu.IsOpen || PrieDieuCoopSync.IsKneeling || CoopGameSetupUI.IsOpen || HudLayoutDebugEditor.IsOpen
+            || CoopDebugMenu.IsOpen || Combat.BossDebugTeleportManager.IsMenuOpen || CoopJoinLobbyUI.IsOpen) return;
+        if (Gameplay.UI.UIController.instance != null && Gameplay.UI.UIController.instance.IsShowingMenu) return;
+        if (Framework.Managers.Core.Logic == null || Framework.Managers.Core.Logic.Penitent == null) return;
+        if (Input.GetKeyDown(KeyCode.Tab) || Player2Pad.GetHostMenuDown(Player2Pad.P1Pad))
+            CoopPlayerPauseMenu.OpenMenu(0);
+    }
 
     // Checked every frame from PlatformCharacterInput_Update_Patch (already runs every frame for
     // P2, so this rides along for free instead of needing its own separate Update hook).
@@ -545,13 +557,6 @@ internal static class Player2Input
         // Menú de Pausa / Opciones / Configuración de Controles independiente para cada jugador
         if (!PrieDieuCoopSync.IsKneeling && !CoopGameSetupUI.IsOpen && !HudLayoutDebugEditor.IsOpen && !CoopDebugMenu.IsOpen && !Combat.BossDebugTeleportManager.IsMenuOpen && !(Gameplay.UI.UIController.instance != null && Gameplay.UI.UIController.instance.IsShowingMenu))
         {
-            // Menú de sala del anfitrión (P1): Tab en teclado, Start+Back en mando. Permite abrir/cerrar la sala online y copiar el código.
-            if (!CoopPlayerPauseMenu.IsOpen && Framework.Managers.Core.Logic != null && Framework.Managers.Core.Logic.Penitent != null
-                && (Input.GetKeyDown(KeyCode.Tab) || Player2Pad.GetHostMenuDown(Player2Pad.P1Pad)))
-            {
-                CoopPlayerPauseMenu.OpenMenu(0);
-            }
-
             if (!CoopPlayerPauseMenu.IsOpen && CoopGameConfig.IsCoopEnabled)
             {
                 int maxPlayers = Mathf.Clamp(CoopGameConfig.PlayerCount, 2, 4);
