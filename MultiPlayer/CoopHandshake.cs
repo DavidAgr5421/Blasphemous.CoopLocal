@@ -41,7 +41,7 @@ public class HandshakeAcceptData
 public static class CoopHandshakeCodec
 {
     /// <summary>v3: el handshake describe/asigna varios jugadores por cliente.</summary>
-    public const byte ProtocolVersion = 3;
+    public const byte ProtocolVersion = 5;
     public const int MaxPlayersPerClient = 3;
 
     // Mismos valores que CoopPacketType.HandshakeRequest / HandshakeAccept (CoopNetworkProtocol.cs).

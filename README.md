@@ -2,7 +2,7 @@
 
 Mod cooperativo para **Blasphemous** (el primero) que permite jugar de **2 a 4 jugadores**, en local (varios mandos / teclado) o **en línea por Steam**. Inspirado en el mod multijugador de BrandenEK.
 
-> Versión actual: **v1.0.0** · Plataforma: Windows y Linux / Steam Deck · BepInEx y el Modding API se instalan automáticamente.
+> Versión actual: **v1.0.1** · Plataforma: Windows y Linux / Steam Deck · BepInEx y el Modding API se instalan automáticamente.
 
 ---
 
@@ -12,7 +12,7 @@ No necesitas instalar BepInEx ni nada más antes: **el instalador descarga e ins
 
 1. Descarga desde la [página de Releases](https://github.com/DavidAgr5421/Blasphemous.CoopLocal/releases):
    - **`BlasphemousCoopLocal_Setup.exe`** (Windows, recomendado): doble clic, elige la carpeta del juego (se detecta sola) e instala.
-   - o **`BlasphemousCoopLocal-1.0.0.zip`** (sin setup): descomprime y ejecuta `install.bat` (Windows) o `./install.sh` (Linux / Steam Deck).
+   - o **`BlasphemousCoopLocal-1.0.1.zip`** (sin setup): descomprime y ejecuta `install.bat` (Windows) o `./install.sh` (Linux / Steam Deck).
 2. Inicia el juego.
 
 Todos los jugadores de una partida en línea deben tener **la misma versión** del mod. Instalación manual y detalles: [installer/INSTALL.md](installer/INSTALL.md).
@@ -102,7 +102,7 @@ Requisitos: .NET SDK, Blasphemous con el Modding instalado (el `.csproj` referen
 
 ```bash
 dotnet build Blasphemous.CoopLocal.csproj -c Release
-powershell -ExecutionPolicy Bypass -File installer/make-release.ps1 -Version 1.0.0   # genera dist/*.zip
+powershell -ExecutionPolicy Bypass -File installer/make-release.ps1 -Version 1.0.1   # genera dist/*.zip
 ```
 
 Notas de arquitectura y decisiones: carpeta [Modding/](Modding/).

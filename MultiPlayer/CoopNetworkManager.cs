@@ -123,7 +123,7 @@ public class CoopNetworkManager : MonoBehaviour
                 BroadcastWorldState();
             }
 
-            if (connectedClients.Count > 0) { EnemySyncHost.Tick(); EnemySyncWorld.HostTick(); }
+            if (connectedClients.Count > 0) { EnemySyncHost.Tick(); EnemySyncWorld.HostTick(); CoopSceneStateSync.HostTick(); }
         }
         // 3. Lógica del Cliente: enviar inputs locales hacia el anfitrión a 60Hz
         else if (IsOnlineClient)
@@ -247,6 +247,18 @@ public class CoopNetworkManager : MonoBehaviour
                     if (IsOnlineClient) { lastClientReceivedTime = Time.time; EnemySyncWorld.ApplyBossEvent(CoopNetworkProtocol.DeserializeBossEvent(data)); }
                     break;
 
+                case CoopPacketType.SlotInfo:
+                    if (IsOnlineClient) { lastClientReceivedTime = Time.time; CoopOnlineSync.ApplySlotInfo(data); }
+                    break;
+
+                case CoopPacketType.SceneState:
+                    if (IsOnlineClient) { lastClientReceivedTime = Time.time; CoopSceneStateSync.Receive(data); }
+                    break;
+
+                case CoopPacketType.PrieDieuState:
+                    if (IsOnlineClient) { lastClientReceivedTime = Time.time; CoopOnlineSync.ReceivePrieDieus(data); }
+                    break;
+
                 case CoopPacketType.Ping:
                     // Responder Pong en canal confiable
                     SendPacket(sender, CoopNetworkProtocol.SerializeSimple(CoopPacketType.Pong), CHANNEL_RELIABLE, EP2PSend.k_EP2PSendReliable);
@@ -302,6 +314,9 @@ public class CoopNetworkManager : MonoBehaviour
     private void HandleSceneReady(CSteamID sender, byte[] data)
     {
         EnemySyncHost.HandleSceneReady(sender, data);
+        CoopOnlineSync.SendSlotInfoToAll();
+        CoopOnlineSync.SendPrieDieusTo(sender);
+        CoopSceneStateSync.SendFullTo(sender);
     }
 
     internal static IEnumerable<CSteamID> ConnectedClientIds()
@@ -462,6 +477,9 @@ public class CoopNetworkManager : MonoBehaviour
         byte[] acceptPacket = CoopNetworkProtocol.SerializeHandshakeAccept(acc);
         SendPacket(sender, acceptPacket, CHANNEL_RELIABLE, EP2PSend.k_EP2PSendReliable);
         EnemySyncWorld.SendAllFlagsTo(sender);
+        CoopOnlineSync.SendSlotInfoToAll();
+        CoopOnlineSync.SendPrieDieusTo(sender);
+        CoopSceneStateSync.SendFullTo(sender);
 
         if (Main.CoopLocal != null)
         {
@@ -799,6 +817,7 @@ public class CoopNetworkManager : MonoBehaviour
     {
         if (!IsOnlineHost || connectedClients.Count == 0) return;
 
+        CoopOnlineSync.SendSlotInfoToAll();
         byte[] packet = CoopNetworkProtocol.SerializeSceneChange(sceneName);
         foreach (var client in connectedClients.Values)
         {

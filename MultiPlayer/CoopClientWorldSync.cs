@@ -38,6 +38,7 @@ public class CoopClientWorldSync : MonoBehaviour
         public TextMesh NameTag;
         public Vector2 TargetPosition;
         public byte LastAnimIndex = 255;
+        public string AppliedSkin = "";
     }
 
     private readonly Dictionary<int, PlayerPuppet> puppets = new Dictionary<int, PlayerPuppet>();
@@ -70,6 +71,13 @@ public class CoopClientWorldSync : MonoBehaviour
             {
                 localPenitent.SpriteRenderer.enabled = false;
             }
+        }
+
+        if (Time.unscaledTime >= nextPrieRetry)
+        {
+            nextPrieRetry = Time.unscaledTime + 1f;
+            CoopOnlineSync.TryApplyPendingPrieDieus();
+            CoopSceneStateSync.TryApply();
         }
 
         // Suavizar movimiento de los títeres visuales hacia sus posiciones objetivo
@@ -131,6 +139,39 @@ public class CoopClientWorldSync : MonoBehaviour
         }
     }
 
+    private float nextPrieRetry;
+
+    /// <summary>Reaplica nombre, color y skin de cada títere (llegó información nueva del anfitrión).</summary>
+    public void RefreshPuppetCosmetics()
+    {
+        foreach (var puppet in puppets.Values) ApplyPuppetCosmetics(puppet);
+    }
+
+    private static void ApplyPuppetCosmetics(PlayerPuppet puppet)
+    {
+        if (puppet == null || puppet.Root == null) return;
+        int slot = puppet.SlotIndex;
+        if (slot < 0 || slot >= 4) return;
+        var cfg = CoopGameConfig.Slots[slot];
+
+        if (puppet.NameTag != null)
+        {
+            puppet.NameTag.color = CoopGameConfig.Palette[Mathf.Clamp(cfg.ColorIndex, 0, CoopGameConfig.Palette.Length - 1)].Color;
+            puppet.NameTag.text = string.IsNullOrEmpty(cfg.Name) ? ("P" + (slot + 1)) : cfg.Name;
+        }
+
+        string skin = cfg.SkinId ?? "";
+        if (puppet.Renderer != null && skin.Length > 0 && skin != puppet.AppliedSkin && Core.ColorPaletteManager != null)
+        {
+            Sprite palette = Core.ColorPaletteManager.GetColorPaletteById(skin);
+            if (palette != null && palette.texture != null)
+            {
+                puppet.Renderer.material.SetTexture("_PaletteTex", palette.texture);
+                puppet.AppliedSkin = skin;
+            }
+        }
+    }
+
     private PlayerPuppet GetOrCreatePuppet(int slotIndex)
     {
         if (puppets.TryGetValue(slotIndex, out PlayerPuppet puppet))
@@ -149,7 +190,8 @@ public class CoopClientWorldSync : MonoBehaviour
         SpriteRenderer sr = puppetGo.AddComponent<SpriteRenderer>();
         if (basePenitent.SpriteRenderer != null)
         {
-            sr.material = basePenitent.SpriteRenderer.material;
+            // Material propio por títere: si se compartiera el del Penitente local, todos tendrían la misma skin
+            sr.material = new Material(basePenitent.SpriteRenderer.material);
             sr.sortingLayerName = basePenitent.SpriteRenderer.sortingLayerName;
             sr.sortingOrder = basePenitent.SpriteRenderer.sortingOrder + slotIndex;
         }
@@ -193,6 +235,7 @@ public class CoopClientWorldSync : MonoBehaviour
 
         puppetGo.transform.position = basePenitent.transform.position;
         puppets[slotIndex] = puppet;
+        ApplyPuppetCosmetics(puppet);
 
         // Ocultar el penitente local vanilla de fondo para evitar duplicados en el cliente
         if (basePenitent.SpriteRenderer != null && slotIndex == 0)

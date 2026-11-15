@@ -22,6 +22,9 @@ public enum CoopPacketType : byte
     FlagChange = 36,
     GateState = 37,
     BossEvent = 38,
+    SlotInfo = 39,
+    PrieDieuState = 40,
+    SceneState = 41,
     Disconnect = 99
 }
 

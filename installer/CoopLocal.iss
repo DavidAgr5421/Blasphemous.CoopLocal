@@ -1,7 +1,7 @@
 ; Instalador grafico (setup.exe) de Blasphemous CoopLocal - Inno Setup 6 (https://jrsoftware.org/isinfo.php)
 ; Compilar: iscc installer\CoopLocal.iss   (antes ejecuta installer\make-release.ps1 para preparar dist\payload)
 #define AppName "Blasphemous CoopLocal"
-#define AppVersion "1.0.0"
+#define AppVersion "1.0.1"
 
 [Setup]
 AppId={{B7A5C3E0-6C6B-4D3B-9E57-0C00FE100001}

@@ -712,11 +712,19 @@ public class CoopPlayerPauseMenu : MonoBehaviour
         try
         {
             // Guardado integral de persistencia vanilla y cooperativo
-            if (Core.Persistence != null)
+            bool isClient = Blasphemous.CoopLocal.MultiPlayer.CoopNetworkManager.IsOnlineClient;
+            if (isClient)
             {
-                Core.Persistence.SaveGame();
+                Blasphemous.CoopLocal.MultiPlayer.CoopLobbyManager.Instance.LeaveLobby();
             }
-            CoopSaveManager.SaveCurrentSlot();
+            else
+            {
+                if (Core.Persistence != null)
+                {
+                    Core.Persistence.SaveGame();
+                }
+                CoopSaveManager.SaveCurrentSlot();
+            }
 
             if (Core.Logic != null)
             {
@@ -753,6 +761,45 @@ internal static class UIController_Update_CoopPause_Patch
         {
             return false;
         }
+
+        // Cliente online: Esc / Start abre el menú de configuración del mod para SU jugador (local, sin pausar el juego)
+        // en lugar del menú vanilla, y el anfitrión ya no lo abre en su pantalla.
+        if (Blasphemous.CoopLocal.MultiPlayer.CoopNetworkManager.IsOnlineClient)
+        {
+            int slot = ClientPausePressedSlot();
+            if (slot >= 0)
+            {
+                CoopPlayerPauseMenu.OpenMenu(slot);
+                return false;
+            }
+        }
         return true;
+    }
+
+    /// <summary>Puesto del jugador local de este cliente que acaba de pulsar su botón de pausa (Esc en teclado, Start en mando), o -1.</summary>
+    private static int ClientPausePressedSlot()
+    {
+        var locals = Blasphemous.CoopLocal.MultiPlayer.OnlineLocalPlayers.All;
+        int[] mine = Blasphemous.CoopLocal.MultiPlayer.CoopNetworkManager.LocalAssignedSlots;
+        if (locals.Count == 0)
+        {
+            bool pressed = Input.GetKeyDown(KeyCode.Escape) || Player2Pad.GetStartDown(Player2Pad.GetPadForSlot(0) ?? Player2Pad.Pad);
+            return (pressed && mine.Length > 0) ? mine[0] : -1;
+        }
+        for (int k = 0; k < locals.Count; k++)
+        {
+            var p = locals[k];
+            int slot = p.Slot >= 0 ? p.Slot : (k < mine.Length ? mine[k] : -1);
+            if (slot < 0) continue;
+            bool pressed = false;
+            if (p.Device == Blasphemous.CoopLocal.MultiPlayer.OnlineLocalDevice.Auto || p.Device == Blasphemous.CoopLocal.MultiPlayer.OnlineLocalDevice.Keyboard)
+                pressed = Input.GetKeyDown(KeyCode.Escape);
+            Rewired.Joystick pad = p.Device == Blasphemous.CoopLocal.MultiPlayer.OnlineLocalDevice.Auto
+                ? (Player2Pad.GetPadForSlot(0) ?? Player2Pad.Pad)
+                : Player2Pad.GetJoystickByIndex(Blasphemous.CoopLocal.MultiPlayer.OnlineLocalPlayers.PadIndexOf(p.Device));
+            if (!pressed && pad != null) pressed = Player2Pad.GetStartDown(pad);
+            if (pressed) return slot;
+        }
+        return -1;
     }
 }
