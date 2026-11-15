@@ -19,3 +19,17 @@ Thumbs.db
 # Temp / Scratchpad
 scratchpad/
 __pycache__/
+dist/
+
+# AI agents / assistant tooling (local only)
+.claude/
+.atl/
+.codegraph/
+.engram/
+.cursor/
+.opencode/
+.gemini/
+GEMINI.md
+CLAUDE.md
+AGENTS.md
+opencode.json

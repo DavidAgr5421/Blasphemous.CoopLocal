@@ -39,7 +39,7 @@ namespace Blasphemous.CoopLocal;
 
 // Manually finding and fixing the _penitent-falls-back-to-P1 bug one class at a time (every
 // patch above targeting an OnStateEnter with a Prefix that does
-// `animator.GetComponentInParent<Penitent>()` is this exact fix) kept turning up new instances
+// `PenitentOwnerCache.Of(animator)` is this exact fix) kept turning up new instances
 // every time a new symptom got reported - most notably AttackBehaviour (the state entered on a
 // standing attack), which turned out to be the actual cause of "P2 can't attack while P1 is
 // crouched, the attack button crouches instead": AttackBehaviour.OnStateUpdate does
@@ -78,7 +78,7 @@ internal static class IdleAnimatonBehaviour_OnStateEnter_Patch
 {
     private static void Prefix(Animator animator, ref Penitent ____penitent)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner != null)
         {
             ____penitent = owner;
@@ -91,7 +91,7 @@ internal static class IdleAnimatonBehaviour_OnStateExit_Patch
 {
     private static void Prefix(Animator animator, ref Penitent ____penitent)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner != null)
         {
             ____penitent = owner;
@@ -104,7 +104,7 @@ internal static class MoveAnimationBehaviour_OnStateEnter_Patch
 {
     private static void Prefix(Animator animator, ref Penitent ____penitent)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner != null)
         {
             ____penitent = owner;
@@ -117,7 +117,7 @@ internal static class RunStartBehaviour_OnStateEnter_Patch
 {
     private static void Prefix(Animator animator, ref Penitent ____penitent)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner != null)
         {
             ____penitent = owner;
@@ -142,7 +142,7 @@ internal static class GrabLadderBehaviour_OnStateEnter_Patch
 {
     private static void Prefix(Animator animator, ref Penitent ____penitent)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner != null)
         {
             ____penitent = owner;
@@ -155,7 +155,7 @@ internal static class LadderSlidingBehaviour_OnStateEnter_Patch
 {
     private static void Prefix(Animator animator, ref Penitent ____penitent)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner != null)
         {
             ____penitent = owner;
@@ -168,7 +168,7 @@ internal static class ReleaseBottomLadderBehaviour_OnStateEnter_Patch
 {
     private static void Prefix(Animator animator, ref Penitent ____penitent)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner != null)
         {
             ____penitent = owner;
@@ -181,7 +181,7 @@ internal static class ReleaseTopLadderBehaviour_OnStateEnter_Patch
 {
     private static void Prefix(Animator animator, ref Penitent ____penitent)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner != null)
         {
             ____penitent = owner;
@@ -194,7 +194,7 @@ internal static class LadderClimbingSubStateBehaviour_OnStateEnter_Patch
 {
     private static void Prefix(Animator animator, ref Penitent ____penitent)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner != null)
         {
             ____penitent = owner;
@@ -219,7 +219,7 @@ internal static class GrabLadderDownBehaviour_OnStateEnter_Patch
             return;
         }
 
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner == null)
         {
             return;
@@ -252,7 +252,7 @@ internal static class GrabLadderDownBehaviour_BlockerTracking_OnStateEnter_Patch
 {
     private static void Postfix(Animator animator)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         PlayerLogicBlocker.SetBlocked(owner, true);
     }
 }
@@ -262,7 +262,7 @@ internal static class GrabLadderDownBehaviour_BlockerTracking_OnStateExit_Patch
 {
     private static void Postfix(Animator animator)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         PlayerLogicBlocker.SetBlocked(owner, false);
     }
 }
@@ -283,7 +283,7 @@ internal static class LadderGoingDownBehaviour_OnStateEnter_Patch
             return;
         }
 
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner == null)
         {
             return;
@@ -307,7 +307,7 @@ internal static class LadderGoingUpBehaviour_OnStateEnter_Patch
             return;
         }
 
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner == null)
         {
             return;
@@ -400,7 +400,7 @@ internal static class FallingForwardBehaviour_OnStateEnter_Patch
             return;
         }
 
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner == null)
         {
             return;

@@ -609,11 +609,11 @@ internal static class GuardianPrayerBehaviour_GetMasterOffSetPosition_Patch
 {
     private static bool Prefix(GuardianPrayerBehaviour __instance, ref Vector3 __result)
     {
-        if (__instance.Master == null || __instance.Master != CoopLocal.Player2)
+        Penitent p2 = __instance.Master as Penitent;
+        if (p2 == null || !CoopLocal.IsGuestPlayer(p2, out _))
         {
             return true;
         }
-        Penitent p2 = CoopLocal.Player2;
         float hSpeed = p2.PlatformCharacterController.PlatformCharacterPhysics.HSpeed;
         if (Mathf.Abs(hSpeed) > __instance.ThresholdSpeed)
         {
@@ -762,7 +762,7 @@ internal static class PenitentTeleportToPriedieu_OnApplyEffect_P2_Patch
             return false;
         }
 
-        CoopLocal.Player2.Animator?.Play(__instance.TPOAnimatorState, 0, 0f);
+        caster.Animator?.Play(__instance.TPOAnimatorState, 0, 0f);
         Core.Logic.Penitent.Animator?.Play(__instance.TPOAnimatorState, 0, 0f);
         __result = true;
         return false;

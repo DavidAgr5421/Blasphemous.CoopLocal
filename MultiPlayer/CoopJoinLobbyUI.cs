@@ -299,6 +299,7 @@ public class CoopJoinLobbyUI : MonoBehaviour
 
         UpdateDisplay();
         rootCanvasObj.SetActive(true);
+        CoopUiFontScaler.NotifyMenuShown();
         Framework.Managers.Core.Audio?.PlayOneShot("event:/SFX/UI/ChangeTab");
     }
 

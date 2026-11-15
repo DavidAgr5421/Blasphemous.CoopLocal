@@ -153,7 +153,7 @@ internal static class AuraTransformBehaviour_OnStateEnter_Patch
 {
     private static bool Prefix(Animator animator, ref Penitent ____penitent, ref PrayerUse ____prayer)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner == null || !CoopLocal.IsGuestPlayer(owner, out _))
         {
             return true;
@@ -171,7 +171,7 @@ internal static class AuraTransformBehaviour_OnStateExit_Patch
 {
     private static bool Prefix(Animator animator, Penitent ____penitent)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>() ?? ____penitent;
+        Penitent owner = PenitentOwnerCache.Of(animator) ?? ____penitent;
         if (owner == null || !CoopLocal.IsGuestPlayer(owner, out _))
         {
             return true;

@@ -81,6 +81,7 @@ public class HudLayoutDebugEditor : MonoBehaviour
 
     // Capas (orden de dibujo) de los elementos HUD: se reaplican periódicamente porque los HUD se recrean al cambiar de sala/jugadores.
     private float layerApplyTimer = 0f;
+    private bool hadLayers = false;
     private bool layersDirty = true;
     private const int MinLayer = -20, MaxLayer = 20;
     private float treeRepeatTimer = 0f;
@@ -191,7 +192,7 @@ public class HudLayoutDebugEditor : MonoBehaviour
 
     private void Update()
     {
-        if (Input.GetKeyDown(KeyCode.F7))
+        if (Input.GetKeyDown(KeyCode.F7) && CoopSettings.Ui)
         {
             Toggle();
             return;
@@ -279,6 +280,11 @@ public class HudLayoutDebugEditor : MonoBehaviour
         try
         {
             var cfg = HudLayoutConfig.Current;
+            // Con todas las capas en 0 (lo habitual) no hay nada que reordenar: evita resolver 12 RectTransforms y reservar listas cada 0,5 s.
+            bool any = false;
+            if (cfg.layers != null) for (int i = 0; i < cfg.layers.Length; i++) if (cfg.layers[i] != 0) { any = true; break; }
+            if (!any && !hadLayers) return;
+            hadLayers = any;
             var groups = new Dictionary<Transform, List<KeyValuePair<int, RectTransform>>>();
             for (int i = 4; i < ElementNames.Length; i++) // P1 es el HUD vanilla: solo P2-P4
             {

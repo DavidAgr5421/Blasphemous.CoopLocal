@@ -41,7 +41,8 @@ public enum CoopButtonFlags : ushort
     Interact= 1 << 9,
     Prayer  = 1 << 10,
     Pause   = 1 << 11,
-    Menu    = 1 << 12
+    Menu    = 1 << 12,
+    Range   = 1 << 13
 }
 
 public class HandshakeRequestData

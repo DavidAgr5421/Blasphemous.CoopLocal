@@ -92,11 +92,8 @@ internal static class UpgradeCreditState
     // the matching Postfix will do the actual crediting.
     internal static bool TryBlockForPlayer2(Fsm fsm)
     {
-        Penitent p2 = CoopLocal.Player2;
-        if (p2 == null) return true;
-
         Penitent toucher = UpgradeTouchResolver.Resolve(fsm);
-        if (toucher == null || toucher != p2) return true;
+        if (toucher == null || !CoopLocal.IsGuestPlayer(toucher, out _)) return true;
 
         LastToucher[fsm] = toucher;
         return false;
@@ -107,7 +104,7 @@ internal static class UpgradeCreditState
     // ordinary P1 pickup reusing the same Fsm object never sees a stale P2 entry.
     internal static bool TryConsumeForPlayer2(Fsm fsm, out Penitent p2)
     {
-        if (LastToucher.TryGetValue(fsm, out p2) && p2 != null && p2 == CoopLocal.Player2)
+        if (LastToucher.TryGetValue(fsm, out p2) && p2 != null && CoopLocal.IsGuestPlayer(p2, out _))
         {
             LastToucher.Remove(fsm);
             return true;

@@ -64,6 +64,16 @@ internal static class MenuPurgeDisplaySync
         return currentPurge;
     }
 
+    private static NewInventoryWidget cachedWidget;
+    private static PlayerPurgePoints[] cachedCounters;
+    private static float cachedCountersExpire;
+
+    private static bool HasDestroyed(PlayerPurgePoints[] arr)
+    {
+        for (int i = 0; i < arr.Length; i++) if (arr[i] == null) return true;
+        return false;
+    }
+
     internal static void RefreshAllMenuPurgeCounters(NewInventoryWidget widget = null)
     {
         if (widget == null && UIController.instance != null)
@@ -76,7 +86,15 @@ internal static class MenuPurgeDisplaySync
         float currentPurge = GetActiveMenuPlayerPurge();
         if (currentPurge < 0f) return;
 
-        PlayerPurgePoints[] counters = widget.GetComponentsInChildren<PlayerPurgePoints>(true);
+        // Se llama cada fotograma con el inventario abierto: la jerarquía del widget no cambia, así que se reutiliza el array
+        // (se vuelve a buscar si cambia el widget, algún contador se destruyó, o cada 2 s por si se añadió alguno).
+        if (!ReferenceEquals(widget, cachedWidget) || cachedCounters == null || Time.unscaledTime >= cachedCountersExpire || HasDestroyed(cachedCounters))
+        {
+            cachedWidget = widget;
+            cachedCounters = widget.GetComponentsInChildren<PlayerPurgePoints>(true);
+            cachedCountersExpire = Time.unscaledTime + 2f;
+        }
+        PlayerPurgePoints[] counters = cachedCounters;
         if (counters == null) return;
 
         for (int i = 0; i < counters.Length; i++)

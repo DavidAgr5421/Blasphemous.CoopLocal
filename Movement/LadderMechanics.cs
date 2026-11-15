@@ -79,6 +79,7 @@ internal static class GrabLadder_OnUpdate_DebugLogger_Patch
 
     private static void Postfix(GrabLadder __instance)
     {
+        if (!DashParryDebugLog.VerboseEnabled) return; // solo registra: sin log detallado no hay nada que calcular
         Penitent owner = PenitentField.GetValue(__instance) as Penitent;
         if (owner == null || owner != CoopLocal.Player2)
         {
@@ -98,7 +99,7 @@ internal static class GrabLadder_OnUpdate_DebugLogger_Patch
         if (state != lastLoggedState)
         {
             lastLoggedState = state;
-            DashParryDebugLog.Log($"P2 GrabLadder.OnUpdate: {state} (frame {Time.frameCount})");
+            if (DashParryDebugLog.VerboseEnabled) DashParryDebugLog.LogVerbose($"P2 GrabLadder.OnUpdate: {state} (frame {Time.frameCount})");
         }
     }
 }
@@ -125,7 +126,7 @@ internal static class GrabLadder_OnUpdate_StopDriftWhileAttempting_Patch
     private static void Postfix(GrabLadder __instance)
     {
         Penitent penitent = PenitentField.GetValue(__instance) as Penitent;
-        if (penitent == null || penitent != CoopLocal.Player2)
+        if (penitent == null || !CoopLocal.IsGuestPlayer(penitent, out _))
         {
             return;
         }
@@ -177,21 +178,21 @@ internal static class AnimatorInyector_Crouch_LadderGuard_Patch
         overrodeThisCall = false;
         Penitent penitent = PenitentField.GetValue(__instance) as Penitent;
         PlatformCharacterInput input = PlayerInputField.GetValue(__instance) as PlatformCharacterInput;
-        if (penitent != CoopLocal.Player2)
+        if (penitent == null || !CoopLocal.IsGuestPlayer(penitent, out _))
         {
             return;
         }
-        if (penitent == null || input == null)
+        if (input == null)
         {
             return;
         }
 
         bool ladderish = penitent.IsGrabbingLadder || penitent.IsOnLadder || penitent.IsClimbingLadder || penitent.StepOnLadder;
         string decision = $"isJoystickDown={input.isJoystickDown} ladderish={ladderish} (IsGrabbingLadder={penitent.IsGrabbingLadder} IsOnLadder={penitent.IsOnLadder} IsClimbingLadder={penitent.IsClimbingLadder} StepOnLadder={penitent.StepOnLadder})";
-        if (decision != lastLoggedDecision)
+        if (DashParryDebugLog.VerboseEnabled && decision != lastLoggedDecision)
         {
             lastLoggedDecision = decision;
-            DashParryDebugLog.Log($"P2 Crouch() guard check: {decision} (frame {Time.frameCount})");
+            DashParryDebugLog.LogVerbose($"{DashParryDebugLog.Label(penitent)} Crouch() guard check: {decision} (frame {Time.frameCount})");
         }
 
         if (!input.isJoystickDown)
@@ -213,7 +214,7 @@ internal static class AnimatorInyector_Crouch_LadderGuard_Patch
         }
         input.isJoystickDown = false;
         overrodeThisCall = true;
-        DashParryDebugLog.Log($"P2 Crouch() guard SUPPRESSED isJoystickDown (frame {Time.frameCount})");
+        if (DashParryDebugLog.VerboseEnabled) DashParryDebugLog.LogVerbose($"{DashParryDebugLog.Label(penitent)} Crouch() guard SUPPRESSED isJoystickDown (frame {Time.frameCount})");
     }
 
     private static void Postfix(object __instance)
@@ -260,7 +261,7 @@ internal static class GrabLadder_OnUpdate_P2_Patch
 
     private static bool Prefix(GrabLadder __instance, ref Penitent ____penitent)
     {
-        if (____penitent == null || ____penitent != CoopLocal.Player2)
+        if (____penitent == null || !CoopLocal.IsGuestPlayer(____penitent, out int slot))
         {
             return true;
         }
@@ -308,12 +309,12 @@ internal static class GrabLadder_OnUpdate_P2_Patch
         var animState = penitent.Animator.GetCurrentAnimatorStateInfo(0);
         bool isTakingOff = animState.IsName("grab_ladder_to_go_down") || animState.IsName("release_ladder_to_floor_up");
 
-        bool cancelLadder = Player2Input.DashDown || (Player2Input.Down && Player2Input.JumpDown);
+        bool cancelLadder = Player2Input.GetDashDown(slot) || (Player2Input.GetDown(slot) && Player2Input.GetJumpDown(slot));
         if (cancelLadder && !isTakingOff && !Core.Input.InputBlocked && (penitent.IsClimbingLadder || penitent.PlatformCharacterController.IsClimbing))
         {
             penitent.PlatformCharacterController.ResetLadderJumpTimeThreshold();
             TakeOffLadderMethod?.Invoke(__instance, null);
-            DashParryDebugLog.Log($"P2 ladder release/take-off triggered (frame {Time.frameCount})");
+            DashParryDebugLog.Log($"{DashParryDebugLog.Label(penitent)} ladder release/take-off triggered (frame {Time.frameCount})");
         }
 
         return false;
@@ -367,7 +368,7 @@ internal static class PlatformCharacterController_DoClimbing_P2_AirGrab_Patch
     {
         PlatformCharacterController self = currentInstance;
         Penitent owner = self != null ? self.GetComponentInParent<Penitent>() : null;
-        if (owner == null || owner != CoopLocal.Player2)
+        if (owner == null || !CoopLocal.IsGuestPlayer(owner, out _))
         {
             // P1 (or anything else driven by this component) - untouched vanilla behavior.
             return player.GetAxisRaw(axisName);
@@ -382,7 +383,7 @@ internal static class PlatformCharacterController_DoClimbing_P2_AirGrab_Patch
         {
             axis -= self.VerticalSpeedScale;
         }
-        DashParryDebugLog.Log($"P2 DoClimbing() in-air axis override -> {axis} (Up={self.GetActionState(eControllerActions.Up)} Down={self.GetActionState(eControllerActions.Down)}, frame {Time.frameCount})");
+        if (DashParryDebugLog.VerboseEnabled) DashParryDebugLog.LogVerbose($"{DashParryDebugLog.Label(owner)} DoClimbing() in-air axis override -> {axis} (Up={self.GetActionState(eControllerActions.Up)} Down={self.GetActionState(eControllerActions.Down)}, frame {Time.frameCount})");
         return axis;
     }
 

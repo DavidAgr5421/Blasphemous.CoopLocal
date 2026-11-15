@@ -192,7 +192,7 @@ internal static class ParryRepostBehaviour_OnStateEnter_Patch
 
     private static void Prefix(Animator animator, ParryRepostBehaviour __instance)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner != null)
         {
             PenitentBackingField.SetValue(__instance, owner);
@@ -207,7 +207,7 @@ internal static class ParryRepostBehaviour_OnStateExit_Patch
 
     private static void Prefix(Animator animator, ParryRepostBehaviour __instance)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner != null)
         {
             PenitentBackingField.SetValue(__instance, owner);
@@ -222,7 +222,7 @@ internal static class ParrySuccessBehaviour_OnStateEnter_Patch
 
     private static void Prefix(Animator animator, ParrySuccessBehaviour __instance)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner != null)
         {
             PenitentBackingField.SetValue(__instance, owner);
@@ -237,7 +237,7 @@ internal static class ParrySuccessBehaviour_OnStateUpdate_Patch
 
     private static void Prefix(Animator animator, ParrySuccessBehaviour __instance)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner != null)
         {
             PenitentBackingField.SetValue(__instance, owner);
@@ -252,7 +252,7 @@ internal static class ParrySuccessBehaviour_OnStateExit_Patch
 
     private static void Prefix(Animator animator, ParrySuccessBehaviour __instance)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner != null)
         {
             PenitentBackingField.SetValue(__instance, owner);
@@ -432,7 +432,7 @@ internal static class GuardToIdleBehaviour_OnStateEnter_Patch
 {
     private static void Prefix(Animator animator)
     {
-        Penitent owner = animator != null ? animator.GetComponentInParent<Penitent>() : null;
+        Penitent owner = animator != null ? PenitentOwnerCache.Of(animator) : null;
         if (owner != null)
         {
             PlayerLogicBlocker.SetBlocked(owner, true);
@@ -445,7 +445,7 @@ internal static class GuardToIdleBehaviour_OnStateExit_Patch
 {
     private static void Prefix(Animator animator)
     {
-        Penitent owner = animator != null ? animator.GetComponentInParent<Penitent>() : null;
+        Penitent owner = animator != null ? PenitentOwnerCache.Of(animator) : null;
         if (owner != null)
         {
             PlayerLogicBlocker.SetBlocked(owner, false);
@@ -634,12 +634,13 @@ internal static class Enemies_Stunt_ParryBehaviour_OnStateUpdate_Patch
         }
         else
         {
-            var activePlayers = CoopPlayerRegistry.GetActivePlayers();
-            for (int i = 0; i < activePlayers.Count; i++)
+            CoopPlayerContext[] players = CoopPlayers.All;
+            for (int i = 0; i < players.Length; i++)
             {
-                if (activePlayers[i] != null && activePlayers[i].IsOnExecution)
+                Penitent candidate = players[i].Penitent;
+                if (candidate != null && candidate.IsOnExecution)
                 {
-                    executingPlayer = activePlayers[i];
+                    executingPlayer = candidate;
                     break;
                 }
             }

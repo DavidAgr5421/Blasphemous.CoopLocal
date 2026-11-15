@@ -76,8 +76,9 @@ internal static class VerticalAttack_OnUpdate_P2_TimedPress_Patch
     // ever one live P2 VerticalAttack component at a time (same assumption Round 51's
     // player2AttackHoldTimer in Movement/Movement.cs already relies on for IsAttackButtonHold),
     // so plain static fields are safe here instead of a per-instance dictionary.
-    private static float player2HoldTimer;
-    private static bool player2Held;
+    // Estado POR JUGADOR (P2/P3/P4): antes era único y compartido -> mantener ataque en un jugador activaba el ataque vertical de otro.
+    private static readonly float[] guestHoldTimer = new float[4];
+    private static readonly bool[] guestHeld = new bool[4];
 
     private static void Prefix(VerticalAttack __instance)
     {
@@ -94,21 +95,22 @@ internal static class VerticalAttack_OnUpdate_P2_TimedPress_Patch
             return player.GetButtonTimedPress(actionName, time);
         }
 
+        int slot = Mathf.Clamp(guestSlot, 0, 3);
         bool heldNow = Player2Input.GetAttackHeld(guestSlot);
         if (!heldNow)
         {
-            player2HoldTimer = 0f;
-            player2Held = false;
+            guestHoldTimer[slot] = 0f;
+            guestHeld[slot] = false;
         }
         else
         {
-            player2HoldTimer += Time.deltaTime;
-            if (player2HoldTimer >= time)
+            guestHoldTimer[slot] += Time.deltaTime;
+            if (guestHoldTimer[slot] >= time)
             {
-                player2Held = true;
+                guestHeld[slot] = true;
             }
         }
-        return player2Held;
+        return guestHeld[slot];
     }
 
     private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
@@ -267,12 +269,12 @@ internal static class RangeAttack_OnUpdate_P2_Patch
         }
 
         bool pressedKeyDown = (bool)RangeAttackP2Shared.PressedKeyDownField.GetValue(__instance);
-        if (Player2Input.GetAttackDown(guestSlot) && !pressedKeyDown)
+        if (Player2Input.GetRangeAttackDown(guestSlot) && !pressedKeyDown)
         {
             pressedKeyDown = true;
             RangeAttackP2Shared.PressedKeyDownField.SetValue(__instance, true);
         }
-        bool buttonUp = Player2Input.GetAttackUp(guestSlot);
+        bool buttonUp = Player2Input.GetRangeAttackUp(guestSlot);
 
         if (Core.Input.InputBlocked)
         {

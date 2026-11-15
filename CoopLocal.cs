@@ -154,8 +154,12 @@ public class CoopLocal : BlasMod
         HudLayoutConfig.Load();
 
         HudLayoutDebugEditor.EnsureCreated();
+        CoopSettings.EnsureLoaded();
         CoopUiFontScaler.EnsureCreated();
+        CoopUiLayoutEditor.EnsureCreated();
         CoopGuestHeartEffects.EnsureCreated();
+        PenitentOrphanGuard.EnsureCreated();
+        CoopInputEdgePump.EnsureCreated();
         Player2InventoryManager.SyncAllVanillaInventoryToCoopPlayers();
 
 
@@ -176,7 +180,7 @@ public class CoopLocal : BlasMod
 
         PermanentStatsDebugPanel.EnsureCreated();
 
-        CameraTargetModeIndicator.Show(CameraTargetDebugToggle.Mode);
+        if (CoopSettings.Camera) CameraTargetModeIndicator.Show(CameraTargetDebugToggle.Mode);
 
 
 
@@ -213,6 +217,7 @@ public class CoopLocal : BlasMod
     {
 
         SpawnManager.OnPlayerSpawn -= OnPlayerSpawn;
+        DashParryDebugLog.Flush();
 
         LevelManager.OnLevelLoaded -= OnLevelLoaded;
         LevelManager.OnBeforeLevelLoad -= OnBeforeLevelLoad_EnemySync;
@@ -644,7 +649,7 @@ public class CoopLocal : BlasMod
 
             Vector3 p2Pos = p1.transform.position + new Vector3(forward * spacing, 0f, 0f);
 
-            Player2 = SpawnSingleGuestPlayer(p1, 1, p2Pos, p1Orientation);
+            Player2 = SpawnGuestIfNeeded(Player2, p1, 1, p2Pos, p1Orientation);
 
         }
 
@@ -656,7 +661,7 @@ public class CoopLocal : BlasMod
 
             Vector3 p3Pos = p1.transform.position + new Vector3(forward * (spacing * 2f), 0f, 0f);
 
-            Player3 = SpawnSingleGuestPlayer(p1, 2, p3Pos, p1Orientation);
+            Player3 = SpawnGuestIfNeeded(Player3, p1, 2, p3Pos, p1Orientation);
 
         }
 
@@ -668,7 +673,7 @@ public class CoopLocal : BlasMod
 
             Vector3 p4Pos = p1.transform.position + new Vector3(forward * (spacing * 3f), 0f, 0f);
 
-            Player4 = SpawnSingleGuestPlayer(p1, 3, p4Pos, p1Orientation);
+            Player4 = SpawnGuestIfNeeded(Player4, p1, 3, p4Pos, p1Orientation);
 
         }
 
@@ -961,6 +966,19 @@ public class CoopLocal : BlasMod
     }
 
 
+
+    // SpawnAllGuestPlayers tambien se llama al revivir en un Prie-Dieu, cuando los invitados VIVOS ya existen: antes se
+    // instanciaba otro Penitent encima de cada uno y el anterior quedaba huerfano (sin registrar, movido por el input de P1:
+    // el "clon" de P4). Ahora un invitado vivo se conserva; uno muerto/destruido se limpia antes de crear el nuevo.
+    private static Penitent SpawnGuestIfNeeded(Penitent existing, Penitent p1, int slotIndex, Vector3 pos, EntityOrientation orientation)
+    {
+        if (existing != null)
+        {
+            if (existing.Status != null && !existing.Status.Dead) return existing;
+            CleanupSinglePlayer(existing, slotIndex);
+        }
+        return SpawnSingleGuestPlayer(p1, slotIndex, pos, orientation);
+    }
 
     private static Penitent SpawnSingleGuestPlayer(Penitent p1, int slotIndex, Vector3 spawnPosition, EntityOrientation orientation = EntityOrientation.Right)
 

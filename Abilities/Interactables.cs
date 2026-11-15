@@ -127,8 +127,11 @@ internal static class Interactable_InteractionTriggered_Patch
                 }
                 if (!p1Pressed)
                 {
-                    if (Player2Input.GetInteractDown(0) || Player2Input.GetUp(0)) p1Pressed = true;
-                    if (Input.GetKeyDown(KeyCode.W) || Input.GetKeyDown(KeyCode.UpArrow) || Input.GetKeyDown(KeyCode.E) || Input.GetKeyDown(KeyCode.U)) p1Pressed = true;
+                    if (Player2Input.GetInteractDown(0) || Player2Input.GetUpDown(0)) p1Pressed = true;
+                    // Teclas crudas: solo cuentan para P1 si el teclado es de P1. Si lo usa otro jugador (P3/P4), su W/E/U
+                    // activaba el Prie-Dieu "por P1" aunque quien pulsaba estuviera lejos.
+                    if (Player2Input.ActiveKeyboardPlayerIndex == 0
+                        && (Input.GetKeyDown(KeyCode.W) || Input.GetKeyDown(KeyCode.UpArrow) || Input.GetKeyDown(KeyCode.E) || Input.GetKeyDown(KeyCode.U))) p1Pressed = true;
                 }
 
                 if (p1Pressed)
@@ -157,7 +160,7 @@ internal static class Interactable_InteractionTriggered_Patch
 
             if (Vector2.Distance(guest.transform.position, itemPos) <= 2.8f)
             {
-                if (Player2Input.GetInteractDown(slot) || Player2Input.GetUp(slot))
+                if (Player2Input.GetInteractDown(slot) || Player2Input.GetUpDown(slot))
                 {
                     if (guest.IsJumping && !interactableWhileJumping) continue;
                     if (guest.IsGrabbingCliffLede) continue;
@@ -165,6 +168,7 @@ internal static class Interactable_InteractionTriggered_Patch
                     LastInteractingPlayer = guest;
                     SetExecutionPenitent(__instance, guest);
 
+                    DashParryDebugLog.Log($"[Interact] '{__instance.name}' activated by P{slot + 1} at distance {Vector2.Distance(guest.transform.position, itemPos):F2} (device={CoopGameConfig.Slots[slot].Device}, guestId={guest.GetInstanceID()})");
                     __result = true;
                     return;
                 }
@@ -1048,7 +1052,7 @@ internal static class Door_EnterTriggered_Coop_Patch
             int slot = CoopPlayerRegistry.GetPlayerIndex(guest);
             if (slot > 0)
             {
-                if (Player2Input.GetUp(slot) || Player2Input.GetInteractDown(slot))
+                if (Player2Input.GetUpDown(slot) || Player2Input.GetInteractDown(slot))
                 {
                     __result = true;
                     DashParryDebugLog.Log($"[DoorTrigger] Door='{__instance.name}' triggered by P{slot + 1} (autoEnter={__instance.autoEnter})");

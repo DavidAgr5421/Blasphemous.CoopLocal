@@ -48,7 +48,7 @@ internal static class FallingBehaviour_OnStateEnter_Patch
 {
     private static void Prefix(Animator animator, ref Penitent ____penitent)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner != null)
         {
             ____penitent = owner;
@@ -75,7 +75,7 @@ internal static class CrouchDownBehaviour_OnStateEnter_Patch
 {
     private static void Prefix(Animator animator, ref Penitent ____penitent)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner != null)
         {
             ____penitent = owner;
@@ -88,7 +88,7 @@ internal static class CrouchDownBehaviour_OnStateUpdate_Patch
 {
     private static void Prefix(Animator animator, ref Penitent ____penitent)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner != null)
         {
             ____penitent = owner;
@@ -101,7 +101,7 @@ internal static class CrouchDownBehaviour_OnStateExit_Patch
 {
     private static void Prefix(Animator animator, ref Penitent ____penitent)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner != null)
         {
             ____penitent = owner;
@@ -149,7 +149,7 @@ internal static class JumpOffBehaviour_OnStateEnter_Patch
 {
     private static void Prefix(Animator animator, ref Penitent ____penitent, ref Gameplay.GameControllers.Penitent.Gizmos.RootMotionDriver ____rootMotion)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner != null)
         {
             ____penitent = owner;
@@ -166,7 +166,7 @@ internal static class JumpOffBehaviour_OnStateUpdate_Patch
 {
     private static void Prefix(Animator animator, ref Penitent ____penitent, ref Gameplay.GameControllers.Penitent.Gizmos.RootMotionDriver ____rootMotion)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner != null)
         {
             ____penitent = owner;
@@ -183,7 +183,7 @@ internal static class JumpOffBehaviour_OnStateExit_Patch
 {
     private static void Prefix(Animator animator, ref Penitent ____penitent)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner != null)
         {
             ____penitent = owner;
@@ -202,7 +202,7 @@ internal static class JumpOffBehaviour_BlockerTracking_OnStateEnter_Patch
 {
     private static void Postfix(Animator animator)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         PlayerLogicBlocker.SetBlocked(owner, true);
         DashParryDebugLog.Log($"{DashParryDebugLog.Label(owner)} JUMP_OFF lock ON (frame {Time.frameCount})");
     }
@@ -213,7 +213,7 @@ internal static class JumpOffBehaviour_BlockerTracking_OnStateExit_Patch
 {
     private static void Postfix(Animator animator)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         PlayerLogicBlocker.SetBlocked(owner, false);
         DashParryDebugLog.Log($"{DashParryDebugLog.Label(owner)} JUMP_OFF lock OFF (frame {Time.frameCount})");
     }
@@ -359,8 +359,9 @@ internal static class PlatformCharacterInput_Update_Patch
         {
             return;
         }
+        if (!DashParryDebugLog.VerboseEnabled) return;
         Rewired.Player p1Rewired = p1.PlatformCharacterInput.Rewired;
-        DashParryDebugLog.Log(
+        DashParryDebugLog.LogVerbose(
             $"P2 pressed its own {label} - P1's Rewired at that instant: GetButton(6) [jump]={p1Rewired.GetButton(6)}, " +
             $"GetAxisRaw(0) [horizontal]={p1Rewired.GetAxisRaw(0):F3}, GetAxisRaw(4) [vertical]={p1Rewired.GetAxisRaw(4):F3}, " +
             $"P2 mode={Player2Input.Mode}, P1's assigned joystick count={p1Rewired.controllers.joystickCount} " +
@@ -482,7 +483,7 @@ internal static class PlatformCharacterInput_Update_Patch
             // input system at all in that combination (a real hardware/OS-level interaction, e.g.
             // key ghosting or an OS accessibility feature intercepting Shift+Numpad) rather than
             // anything this mod's own logic could be responsible for.
-            DashParryDebugLog.Log($"P2 raw Input.GetKeyDown(Dash) = True (blocked={blocked}, frame {Time.frameCount})");
+            if (DashParryDebugLog.VerboseEnabled) DashParryDebugLog.LogVerbose($"P2 raw Input.GetKeyDown(Dash) = True (blocked={blocked}, frame {Time.frameCount})");
         }
 
         // Same raw-vs-gated split as the Dash check above, now for Attack and Jump: the user
@@ -497,19 +498,19 @@ internal static class PlatformCharacterInput_Update_Patch
         // mod's gating logic would fix it.
         if (rawAttackKeyDown)
         {
-            DashParryDebugLog.Log($"P2 raw Input.GetKeyDown(Attack) = True (blocked={blocked}, frame {Time.frameCount})");
+            if (DashParryDebugLog.VerboseEnabled) DashParryDebugLog.LogVerbose($"P2 raw Input.GetKeyDown(Attack) = True (blocked={blocked}, frame {Time.frameCount})");
         }
 
         if (crouch != lastLoggedCrouch)
         {
             lastLoggedCrouch = crouch;
-            DashParryDebugLog.Log($"P2 crouch input -> {crouch} (rawDown={rawDown}, blocked={blocked}, frame {Time.frameCount})");
+            if (DashParryDebugLog.VerboseEnabled) DashParryDebugLog.LogVerbose($"P2 crouch input -> {crouch} (rawDown={rawDown}, blocked={blocked}, frame {Time.frameCount})");
             LogP1RewiredCrossTalkCheck("crouch/down", crouch);
         }
         if (rawJumpKey != lastLoggedRawJumpKey)
         {
             lastLoggedRawJumpKey = rawJumpKey;
-            DashParryDebugLog.Log($"P2 raw Input.GetKey(Jump) -> {rawJumpKey} (gated jump={jump}, blocked={blocked}, frame {Time.frameCount})");
+            if (DashParryDebugLog.VerboseEnabled) DashParryDebugLog.LogVerbose($"P2 raw Input.GetKey(Jump) -> {rawJumpKey} (gated jump={jump}, blocked={blocked}, frame {Time.frameCount})");
         }
         if (jump != lastLoggedJump)
         {
@@ -561,7 +562,7 @@ internal static class PlatformCharacterInput_Update_Patch
         if (verticalActionState != lastLoggedVerticalActionState)
         {
             lastLoggedVerticalActionState = verticalActionState;
-            DashParryDebugLog.Log($"P2 ladder Up/Down action state: {verticalActionState} (frame {Time.frameCount})");
+            if (DashParryDebugLog.VerboseEnabled) DashParryDebugLog.LogVerbose($"P2 ladder Up/Down action state: {verticalActionState} (frame {Time.frameCount})");
         }
 
         if (!____penitent.IsDashing && (____penitent.DrivePlayer == null || !____penitent.DrivePlayer.Casting))
@@ -797,6 +798,7 @@ internal static class PlatformCharacterController_Update_DropThroughDebug_Patch
 
     private static void Prefix(PlatformCharacterController __instance)
     {
+        if (!DashParryDebugLog.VerboseEnabled) return; // solo registra: sin log detallado no hay nada que calcular
         Penitent owner = __instance.GetComponent<Penitent>();
         if (owner == null || owner != CoopLocal.Player2)
         {

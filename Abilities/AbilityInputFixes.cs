@@ -142,7 +142,7 @@ internal static class HealingBehaviour_OnStateEnter_Patch
 
     private static void Prefix(HealingBehaviour __instance, Animator animator, ref Penitent ____penitent)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner != null)
         {
             ____penitent = owner;
@@ -156,7 +156,7 @@ internal static class HealingBehaviour_OnStateEnter_Patch
 
     private static void Postfix(Animator animator)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner != null)
         {
             PlayerLogicBlocker.SetBlocked(owner, true);
@@ -171,7 +171,7 @@ internal static class HealingBehaviour_OnStateExit_Patch
 
     private static void Prefix(HealingBehaviour __instance, Animator animator, ref Penitent ____penitent)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner != null)
         {
             ____penitent = owner;
@@ -185,7 +185,7 @@ internal static class HealingBehaviour_OnStateExit_Patch
 
     private static void Postfix(Animator animator)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner != null)
         {
             PlayerLogicBlocker.SetBlocked(owner, false);
@@ -207,7 +207,7 @@ internal static class LungeAttackBehaviour_OnStateEnter_Patch
 {
     private static void Prefix(Animator animator, ref LungeAttack ____lungeAttack)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner == null)
         {
             return;
@@ -276,7 +276,7 @@ internal static class ManyPlayerAnimationBehaviours_PenitentOwnerFix_Patch
 
     private static void Prefix(Animator animator, ref Penitent ____penitent)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner != null)
         {
             ____penitent = owner;
@@ -351,7 +351,7 @@ internal static class AirUpwardAttackBehaviour_FixSkippedInit_P2_Patch
 
     private static void Postfix(AirUpwardAttackBehaviour __instance, Penitent ____penitent)
     {
-        if (____penitent == null || ____penitent != CoopLocal.Player2 || !initialized.Add(__instance))
+        if (____penitent == null || !CoopLocal.IsGuestPlayer(____penitent, out _) || !initialized.Add(__instance))
         {
             return;
         }

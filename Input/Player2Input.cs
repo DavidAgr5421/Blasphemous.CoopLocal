@@ -288,6 +288,25 @@ internal static class Player2Input
         return Player2Pad.GetAttackUp(pad, slotIndex);
     }
 
+    // Ataque a Distancia: botón propio (KeyRange / PadRange). Mantener/soltar ATAQUE no lo dispara.
+    internal static bool GetRangeAttackDown(int slotIndex)
+    {
+        if (slotIndex >= 0 && slotIndex < 4 && CoopGameConfig.Slots[slotIndex].Device == CoopDeviceType.RemoteSteam)
+            return CoopNetworkManager.GetRemoteButtonDown(slotIndex, CoopButtonFlags.Range);
+        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKeyDown(CoopControlsConfig.GetBindings(slotIndex).KeyRange);
+        var pad = Player2Pad.GetPadForSlot(slotIndex);
+        return Player2Pad.GetRangeDown(pad, slotIndex);
+    }
+
+    internal static bool GetRangeAttackUp(int slotIndex)
+    {
+        if (slotIndex >= 0 && slotIndex < 4 && CoopGameConfig.Slots[slotIndex].Device == CoopDeviceType.RemoteSteam)
+            return CoopNetworkManager.GetRemoteButtonUp(slotIndex, CoopButtonFlags.Range);
+        if (slotIndex == ActiveKeyboardPlayerIndex) return Input.GetKeyUp(CoopControlsConfig.GetBindings(slotIndex).KeyRange);
+        var pad = Player2Pad.GetPadForSlot(slotIndex);
+        return Player2Pad.GetRangeUp(pad, slotIndex);
+    }
+
     internal static bool GetAttackHeld(int slotIndex)
     {
         if (slotIndex >= 0 && slotIndex < 4 && CoopGameConfig.Slots[slotIndex].Device == CoopDeviceType.RemoteSteam)
@@ -416,6 +435,30 @@ internal static class Player2Input
     // edge rather than JumpHeld's continuous state.
     internal static bool JumpDown { get; private set; }
     private static bool previousJumpHeld;
+
+    // Igual que JumpDown pero por ranura (P2-P4): flanco de subida de GetJumpHeld(slot), calculado una sola vez por fotograma
+    // (varios consumidores en el mismo fotograma ven el mismo valor) sin depender de Tick(), que solo sigue a P2.
+    private static readonly FrameEdge[] jumpEdgeBySlot = { new FrameEdge(), new FrameEdge(), new FrameEdge(), new FrameEdge() };
+
+    internal static bool GetJumpDown(int slotIndex)
+    {
+        if (slotIndex < 0 || slotIndex >= 4) return false;
+        FrameEdge edge = jumpEdgeBySlot[slotIndex];
+        int frame = Time.frameCount;
+        return edge.IsStale(frame) ? edge.Update(frame, GetJumpHeld(slotIndex)) : edge.Down;
+    }
+
+    // Flanco de subida de "Arriba" por ranura (una vez por fotograma): para interactuar (Prie-Dieu, puertas) hace falta una
+    // pulsacion nueva; con GetUp (mantenido) bastaba con llegar al santuario ya con Arriba pulsado.
+    private static readonly FrameEdge[] upEdgeBySlot = { new FrameEdge(), new FrameEdge(), new FrameEdge(), new FrameEdge() };
+
+    internal static bool GetUpDown(int slotIndex)
+    {
+        if (slotIndex < 0 || slotIndex >= 4) return false;
+        FrameEdge edge = upEdgeBySlot[slotIndex];
+        int frame = Time.frameCount;
+        return edge.IsStale(frame) ? edge.Update(frame, GetUp(slotIndex)) : edge.Down;
+    }
     internal static bool AttackDown => Mode == Player2InputMode.Gamepad ? Player2Pad.AttackDown : Input.GetKeyDown(Player2Keys.Attack);
     internal static bool AttackUp => Mode == Player2InputMode.Gamepad ? Player2Pad.AttackUp : Input.GetKeyUp(Player2Keys.Attack);
     // Continuous "is the attack button currently held" - added for WallJump (see
@@ -471,7 +514,7 @@ internal static class Player2Input
             ApplyKeyboardPlayer(initialKb);
         }
 
-        if (Input.GetKeyDown(ToggleKey))
+        if (Input.GetKeyDown(ToggleKey) && CoopSettings.Keyboard)
         {
             CycleKeyboardPlayer();
         }
@@ -490,13 +533,13 @@ internal static class Player2Input
         // Ronda 92: Atajo F8 reservado para depuración de estadísticas / guardado de layout en árbol
 
         // Ronda 93: Atajo F5 para invocar o reiniciar un enemigo Dummy de pruebas frente al jugador
-        if (Input.GetKeyDown(KeyCode.F5))
+        if (Input.GetKeyDown(KeyCode.F5) && CoopSettings.Admin)
         {
             Combat.TestDummyManager.SpawnOrResetDummy();
         }
 
         // Atajo F2: Selector de jefes para práctica / depuración (solo cuando CoopGameSetupUI no esté abierto)
-        if (Input.GetKeyDown(KeyCode.F2) && !CoopGameSetupUI.IsOpen)
+        if (Input.GetKeyDown(KeyCode.F2) && CoopSettings.Admin && !CoopGameSetupUI.IsOpen)
         {
             Combat.BossDebugTeleportManager.ToggleMenu();
         }
@@ -520,7 +563,7 @@ internal static class Player2Input
 
         // Dentro de Tick(), lógica P2 para abrir menú de inventario y atajo F6/F7 de fervor máximo:
         // Atajo de prueba Hot-Plug dinámico (F10 + 2 / 3 / 4 para conectar/desconectar P2, P3, P4)
-        if (Input.GetKey(KeyCode.F10))
+        if (Input.GetKey(KeyCode.F10) && CoopSettings.Admin)
         {
             if (Input.GetKeyDown(KeyCode.Alpha2) || Input.GetKeyDown(KeyCode.Keypad2))
             {
@@ -536,7 +579,7 @@ internal static class Player2Input
             }
         }
 
-        if (Input.GetKeyDown(KeyCode.F6))
+        if (Input.GetKeyDown(KeyCode.F6) && CoopSettings.Admin)
         {
             var p1 = Framework.Managers.Core.Logic.Penitent;
             if (p1 != null && p1.Stats != null && p1.Stats.Fervour != null)

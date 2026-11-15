@@ -156,6 +156,40 @@ internal static class Player2Pad
     internal static bool GetSelectDown(Rewired.Joystick pad) =>
         ButtonDown(pad, "A Button", "Button A", "Action Button 1", "Cross", "Button 0", "A");
 
+    // Botón de Ataque a Distancia (acción propia del jugador; por defecto B / Círculo). Ya NO se dispara con mantener/soltar Ataque.
+    private static string RangeName(int slotIndex) => slotIndex >= 0 ? CoopControlsConfig.GetBindings(slotIndex).PadRange : null;
+
+    internal static bool GetRangeDown(Rewired.Joystick pad, int slotIndex = -1)
+    {
+        string mapped = RangeName(slotIndex);
+        if (!string.IsNullOrEmpty(mapped) && GetButtonDownMapped(pad, mapped)) return true;
+        return string.IsNullOrEmpty(mapped) && ButtonDown(pad, "B Button", "Button B", "Action Button 2", "Circle", "Button 1", "B");
+    }
+
+    internal static bool GetRangeUp(Rewired.Joystick pad, int slotIndex = -1)
+    {
+        string mapped = RangeName(slotIndex);
+        if (!string.IsNullOrEmpty(mapped))
+        {
+            if (ButtonUp(pad, mapped)) return true;
+            if (AxisUp(pad, "MappedTrigger_" + mapped, mapped)) return true;
+            return false;
+        }
+        return ButtonUp(pad, "B Button", "Button B", "Action Button 2", "Circle", "Button 1", "B");
+    }
+
+    internal static bool GetRangeHeld(Rewired.Joystick pad, int slotIndex = -1)
+    {
+        string mapped = RangeName(slotIndex);
+        if (!string.IsNullOrEmpty(mapped))
+        {
+            if (ButtonHeld(pad, mapped)) return true;
+            if (AxisHeld(pad, "MappedTrigger_" + mapped, mapped)) return true;
+            return false;
+        }
+        return ButtonHeld(pad, "B Button", "Button B", "Action Button 2", "Circle", "Button 1", "B");
+    }
+
     internal static bool GetAttackDown(Rewired.Joystick pad, int slotIndex = -1)
     {
         if (slotIndex >= 0)

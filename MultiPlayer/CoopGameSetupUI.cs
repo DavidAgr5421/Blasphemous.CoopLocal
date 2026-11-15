@@ -1446,6 +1446,7 @@ internal sealed class CoopGameSetupUI : MonoBehaviour
         ApplyGameFont(canvasObj);
 
         canvasObj.SetActive(true);
+        CoopUiFontScaler.NotifyMenuShown();
 
         RefreshDisplay();
 

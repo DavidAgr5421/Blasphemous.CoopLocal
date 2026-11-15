@@ -36,8 +36,10 @@ using UnityEngine.UI;
 
 namespace Blasphemous.CoopLocal;
 
-// Debug-only logging, not meant to ship long-term - grep BepInEx/LogOutput.log for
-// "[DashParryDebug]" to follow any of it.
+// Log del mod (debug_log.txt en LocalLow/.../CoopLocalMod). Las líneas se encolan en memoria y un hilo de fondo las vuelca por
+// lotes (ver BufferedLogWriter): llamar a Log() cuesta una concatenación y un lock, no una escritura a disco. Hasta ~250 ms
+// de líneas pueden perderse si el proceso muere de golpe; Flush() las fuerza (se llama al descargar el mod y al salir).
+// Solo avisos/errores se copian al log de BepInEx (LogOutput.log); lo demás vive únicamente en debug_log.txt.
 internal static class DashParryDebugLog
 {
     internal static string Label(Penitent p)
@@ -46,50 +48,82 @@ internal static class DashParryDebugLog
         {
             return "null";
         }
-        return p == CoopLocal.Player2 ? "P2" : "P1";
+        int idx = CoopPlayerRegistry.GetPlayerIndex(p);
+        return idx >= 0 ? "P" + (idx + 1) : "P?";
     }
 
-    // Round 76 audit: Directory.CreateDirectory() is a syscall - cheap, but pointless to repeat
-    // on literally every single Log() call (this fires many times per second across 83 call
-    // sites in the mod) once the directory demonstrably exists already. Cached after the first
-    // successful creation; File.AppendAllText itself still opens/writes/closes every call (no
-    // buffering) which is an accepted tradeoff for "never lose a line on a crash/relaunch".
     private const long MaxLogBytes = 5L * 1024L * 1024L;
-    private static bool directoryEnsured;
-    private static bool sessionInitialized;
-    private static readonly object fileLock = new object();
+    private const int FlushIntervalMs = 250;
+    private static readonly object stateLock = new object();
     private static readonly HashSet<string> loggedOnceKeys = new HashSet<string>(StringComparer.Ordinal);
+    private static string logPath;       // se resuelve en el hilo principal (Application.persistentDataPath no es seguro fuera de él)
+    private static bool sessionInitialized;
+    private static BufferedLogWriter writer;
 
     internal static bool VerboseEnabled = false;
 
+    /// <summary>true = además de a debug_log.txt, las líneas informativas se copian al log de BepInEx (más lento; solo para depurar).</summary>
+    internal static bool MirrorInfoToModLog = false;
+
+    private static BufferedLogWriter Writer
+    {
+        get
+        {
+            if (writer == null)
+            {
+                lock (stateLock)
+                {
+                    if (writer == null)
+                    {
+                        var w = new BufferedLogWriter(ResolvePath, MaxLogBytes);
+                        w.Start(FlushIntervalMs);
+                        writer = w;
+                        try { AppDomain.CurrentDomain.ProcessExit += (sender, e) => Flush(); } catch (Exception) { /* sin ProcessExit: se vuelca por el hilo */ }
+                    }
+                }
+            }
+            return writer;
+        }
+    }
+
+    private static string ResolvePath()
+    {
+        if (logPath != null) return logPath;
+        try
+        {
+            string p = UnityEngine.Application.persistentDataPath;
+            if (string.IsNullOrEmpty(p)) return null;
+            logPath = System.IO.Path.Combine(System.IO.Path.Combine(p, "CoopLocalMod"), "debug_log.txt");
+        }
+        catch (Exception) { return null; } // fuera del hilo principal / Unity aún no listo: reintentar luego
+        return logPath;
+    }
+
+    /// <summary>Rota la sesión anterior (debug_log.txt -> debug_log_prev.txt) y arranca el escritor. Llamar una vez al iniciar el mod.</summary>
     internal static void InitializeSession()
     {
         try
         {
-            string dir = System.IO.Path.Combine(UnityEngine.Application.persistentDataPath, "CoopLocalMod");
-            lock (fileLock)
+            lock (stateLock)
             {
                 if (sessionInitialized) return;
                 sessionInitialized = true;
-                if (!directoryEnsured)
+            }
+            string path = ResolvePath();
+            if (path != null)
+            {
+                string dir = System.IO.Path.GetDirectoryName(path);
+                if (!System.IO.Directory.Exists(dir)) System.IO.Directory.CreateDirectory(dir);
+                string prevPath = BufferedLogWriter.PrevPath(path);
+                if (System.IO.File.Exists(path))
                 {
-                    System.IO.Directory.CreateDirectory(dir);
-                    directoryEnsured = true;
+                    if (System.IO.File.Exists(prevPath)) System.IO.File.Delete(prevPath);
+                    System.IO.File.Move(path, prevPath);
                 }
-
-                string currentPath = System.IO.Path.Combine(dir, "debug_log.txt");
-                string prevPath = System.IO.Path.Combine(dir, "debug_log_prev.txt");
-                if (System.IO.File.Exists(currentPath))
-                {
-                    if (System.IO.File.Exists(prevPath))
-                    {
-                        System.IO.File.Delete(prevPath);
-                    }
-                    System.IO.File.Move(currentPath, prevPath);
-                }
+                Writer.ResetSizeCache();
             }
         }
-        catch { /* ignorado intencionalmente: fallo al rotar log de sesión no debe impedir arranque */ }
+        catch (Exception) { /* fallo al rotar el log de sesión: no debe impedir el arranque */ }
     }
 
     internal static void Log(string message)
@@ -106,59 +140,32 @@ internal static class DashParryDebugLog
     internal static void LogOnce(string key, string message, bool isWarning = false)
     {
         if (string.IsNullOrEmpty(key)) return;
-        lock (fileLock)
+        lock (stateLock)
         {
             if (!loggedOnceKeys.Add(key)) return;
         }
         WriteLine(message, isWarning);
     }
 
+    /// <summary>Fuerza el volcado de las líneas pendientes a disco (síncrono).</summary>
+    internal static void Flush()
+    {
+        try { if (writer != null) writer.Flush(); } catch (Exception) { /* el log nunca debe tumbar el juego */ }
+    }
+
     private static void WriteLine(string line, bool isWarning)
     {
-        if (Main.CoopLocal != null)
+        if (Main.CoopLocal != null && (isWarning || MirrorInfoToModLog))
         {
             if (isWarning)
                 Blasphemous.ModdingAPI.ModLog.Warn(line, Main.CoopLocal);
             else
                 Blasphemous.ModdingAPI.ModLog.Info(line, Main.CoopLocal);
         }
-        // Persistente append-only con rotación a 5 MB (1 copia previa: debug_log_prev.txt)
-        try
-        {
-            string dir = System.IO.Path.Combine(UnityEngine.Application.persistentDataPath, "CoopLocalMod");
-            string ts = System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
-            lock (fileLock)
-            {
-                if (!sessionInitialized)
-                {
-                    sessionInitialized = true;
-                }
-                if (!directoryEnsured)
-                {
-                    System.IO.Directory.CreateDirectory(dir);
-                    directoryEnsured = true;
-                }
-                string path = System.IO.Path.Combine(dir, "debug_log.txt");
-                if (System.IO.File.Exists(path))
-                {
-                    var fi = new System.IO.FileInfo(path);
-                    if (fi.Length >= MaxLogBytes)
-                    {
-                        string prevPath = System.IO.Path.Combine(dir, "debug_log_prev.txt");
-                        if (System.IO.File.Exists(prevPath))
-                        {
-                            System.IO.File.Delete(prevPath);
-                        }
-                        System.IO.File.Move(path, prevPath);
-                    }
-                }
-                System.IO.File.AppendAllText(path, $"[{ts}] {line}{System.Environment.NewLine}");
-            }
-        }
-        catch { /* ignorado intencionalmente: no fallar si el disco/archivo de debug_log está bloqueado */ }
+        Writer.Enqueue("[" + System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + "] " + line);
     }
 
-    internal static string PersistentLogPath => System.IO.Path.Combine(System.IO.Path.Combine(UnityEngine.Application.persistentDataPath, "CoopLocalMod"), "debug_log.txt");
+    internal static string PersistentLogPath => ResolvePath() ?? "debug_log.txt";
 }
 
 // Logs the current animation clip name for either player whenever it changes - used to trace
@@ -171,6 +178,7 @@ internal static class AnimatorClipChangeLogger_Patch
 
     private static void Postfix(Penitent ____penitent)
     {
+        if (!DashParryDebugLog.VerboseEnabled) return; // solo registra: sin log detallado no hay nada que calcular
         if (____penitent == null || ____penitent.Animator == null)
         {
             return;

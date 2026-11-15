@@ -58,6 +58,7 @@ internal static class Player2ModeIndicator
 
     internal static void SetMenuOverlayHidden(bool hidden)
     {
+        if (!CoopSettings.Keyboard) hidden = true;
         if (label != null)
         {
             label.gameObject.SetActive(!hidden);
@@ -66,6 +67,7 @@ internal static class Player2ModeIndicator
 
     internal static void ShowPlayer(int playerIndex, string playerName)
     {
+        if (!CoopSettings.Keyboard) { if (label != null) label.gameObject.SetActive(false); return; }
         EnsureCreated();
         if (label != null)
         {

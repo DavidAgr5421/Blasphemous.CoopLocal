@@ -56,7 +56,7 @@ internal static class CrouchAttackBehaviour_OnStateEnter_Patch
 {
     private static void Prefix(Animator animator, ref Penitent ____penitent)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner != null)
         {
             ____penitent = owner;
@@ -69,7 +69,7 @@ internal static class CrouchUpBehaviour_OnStateEnter_Patch
 {
     private static void Prefix(Animator animator, ref Penitent ____penitent)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner != null)
         {
             ____penitent = owner;
@@ -89,7 +89,7 @@ internal static class HangOnCliffLedeBehaviour_OnStateEnter_Patch
 {
     private static void Prefix(Animator animator, ref Penitent ____penitent)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner != null)
         {
             ____penitent = owner;
@@ -102,7 +102,7 @@ internal static class ClimbCliffLedeBehaviour_OnStateEnter_Patch
 {
     private static void Prefix(Animator animator, ref Penitent ____penitent)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner != null)
         {
             ____penitent = owner;

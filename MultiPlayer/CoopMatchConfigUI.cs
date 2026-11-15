@@ -673,6 +673,7 @@ public class CoopMatchConfigUI : MonoBehaviour
             if (rootCanvasObj != null)
             {
                 rootCanvasObj.SetActive(true);
+                CoopUiFontScaler.NotifyMenuShown();
             }
             Framework.Managers.Core.Audio?.PlayOneShot("event:/SFX/UI/ChangeTab");
             if (Main.CoopLocal != null)

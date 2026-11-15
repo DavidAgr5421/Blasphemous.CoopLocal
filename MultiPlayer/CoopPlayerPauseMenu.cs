@@ -48,6 +48,7 @@ public class CoopPlayerPauseMenu : MonoBehaviour
         CoopAction.Jump,
         CoopAction.Dash,
         CoopAction.Parry,
+        CoopAction.RangeAttack,
         CoopAction.Heal,
         CoopAction.Interact,
         CoopAction.Prayer,
@@ -287,6 +288,7 @@ public class CoopPlayerPauseMenu : MonoBehaviour
 
         CoopGameSetupUI.ApplyGameFont(rootCanvasObj);
         rootCanvasObj.SetActive(true);
+        CoopUiFontScaler.NotifyMenuShown();
         UpdateHeaderAndViews();
     }
 

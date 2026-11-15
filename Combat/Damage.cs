@@ -226,7 +226,7 @@ internal static class PenitentDamageArea_RaiseDamageEvent_HudFix_Patch
     private static void Postfix(object __instance)
     {
         Penitent penitent = PenitentField.GetValue(__instance) as Penitent;
-        if (penitent == null || penitent != CoopLocal.Player2)
+        if (penitent == null || !CoopLocal.IsGuestPlayer(penitent, out _))
         {
             return;
         }

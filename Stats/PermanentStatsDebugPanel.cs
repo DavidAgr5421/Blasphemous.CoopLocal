@@ -66,7 +66,7 @@ internal class PermanentStatsDebugPanelDriver : MonoBehaviour
         // Player2Keys/Player2Pad/PlayerLogicBlocker).
         // F8 = menú debug in-game navegable con teclado/mando (CoopDebugMenu).
         // Todo el contenido del panel IMGUI antiguo (stats, skills, baseline) vive ahora en CoopDebugMenu.
-        if (Input.GetKeyDown(KeyCode.F8) && !CoopDebugMenu.IsOpen
+        if (Input.GetKeyDown(KeyCode.F8) && CoopSettings.Admin && !CoopDebugMenu.IsOpen
             && !CoopGameSetupUI.IsOpen && !CoopPlayerPauseMenu.IsOpen)
         {
             CoopDebugMenu.Toggle();

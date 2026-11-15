@@ -139,7 +139,7 @@ internal static class DashBehaviour_OnStateEnter_Patch
 {
     private static void Prefix(Animator animator, ref Penitent ____penitent)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner != null)
         {
             ____penitent = owner;
@@ -159,7 +159,7 @@ internal static class AirDashBehaviour_OnStateEnter_Patch
 {
     private static void Prefix(Animator animator, ref Penitent ____penitent)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner != null)
         {
             ____penitent = owner;
@@ -172,7 +172,7 @@ internal static class DashStopBehaviour_OnStateEnter_Patch
 {
     private static void Prefix(Animator animator, ref Penitent ____penitent)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner != null)
         {
             ____penitent = owner;
@@ -185,7 +185,7 @@ internal static class RunAfterDashBehaviour_OnStateEnter_Patch
 {
     private static void Prefix(Animator animator, ref Penitent ____penitent)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner != null)
         {
             ____penitent = owner;
@@ -356,7 +356,7 @@ internal static class DashBehaviour_BlockerTracking_OnStateEnter_Patch
 {
     private static void Postfix(Animator animator)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         PlayerLogicBlocker.SetBlocked(owner, true);
         SetActionStateWatchWindow.OpenIfPlayer2(owner);
         DashParryDebugLog.Log($"{DashParryDebugLog.Label(owner)} DASH lock ON (frame {Time.frameCount})");
@@ -368,7 +368,7 @@ internal static class DashBehaviour_BlockerTracking_OnStateExit_Patch
 {
     private static void Prefix(Animator animator)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         PlayerLogicBlocker.SetBlocked(owner, false);
         DashParryDebugLog.Log($"{DashParryDebugLog.Label(owner)} DASH lock OFF (frame {Time.frameCount})");
     }
@@ -424,7 +424,7 @@ internal static class PlatformCharacterInput_Blocked_Patch
         if (____penitent != null && (!lastLogged.TryGetValue(____penitent, out bool last) || last != __result))
         {
             lastLogged[____penitent] = __result;
-            DashParryDebugLog.Log($"{DashParryDebugLog.Label(____penitent)}.Blocked -> {__result} (raw={raw}, reason={reason}, frame {Time.frameCount})");
+            if (DashParryDebugLog.VerboseEnabled) DashParryDebugLog.LogVerbose($"{DashParryDebugLog.Label(____penitent)}.Blocked -> {__result} (raw={raw}, reason={reason}, frame {Time.frameCount})");
         }
     }
 }
@@ -673,7 +673,7 @@ internal static class DashBehaviour_OnStateUpdate_Patch
 
     private static bool Prefix(DashBehaviour __instance, Animator animator, AnimatorStateInfo stateInfo)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner == null || !CoopLocal.IsGuestPlayer(owner, out int guestSlot))
         {
             return true;

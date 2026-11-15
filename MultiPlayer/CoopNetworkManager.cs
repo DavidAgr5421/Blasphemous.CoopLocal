@@ -44,6 +44,9 @@ public class CoopNetworkManager : MonoBehaviour
         public CoopButtonFlags PrevButtons;
         public CoopButtonFlags CurrentButtons;
         public CoopButtonFlags ButtonsDown;
+        // Pulsaciones recibidas desde el ultimo fotograma del host (el cliente envia a 60 Hz sin fiabilidad: si llegan dos
+        // paquetes entre dos fotogramas, un pulso de 1 fotograma se perdia al sobrescribir CurrentButtons).
+        public CoopButtonFlags PendingDown;
         public CoopButtonFlags ButtonsUp;
         public float AxisX;
         public float AxisY;
@@ -515,6 +518,7 @@ public class CoopNetworkManager : MonoBehaviour
         if (Input.GetKey(KeyCode.Q)) buttons |= CoopButtonFlags.Prayer;
         if (Input.GetKey(KeyCode.Escape)) buttons |= CoopButtonFlags.Pause;
         if (Input.GetKey(KeyCode.I) || Input.GetKey(KeyCode.Tab)) buttons |= CoopButtonFlags.Menu;
+        if (Input.GetKey(CoopControlsConfig.GetBindings(0).KeyRange)) buttons |= CoopButtonFlags.Range;
 
         // Comprobación opcional de mando Rewired si está conectado
         var pad = Player2Pad.GetPadForSlot(0) ?? Player2Pad.Pad;
@@ -533,6 +537,7 @@ public class CoopNetworkManager : MonoBehaviour
             if (Player2Pad.GetInteractDown(pad)) buttons |= CoopButtonFlags.Interact;
             if (Player2Pad.GetStartDown(pad)) buttons |= CoopButtonFlags.Pause;
             if (Player2Pad.GetMenuDown(pad)) buttons |= CoopButtonFlags.Menu;
+            if (Player2Pad.GetRangeHeld(pad, 0)) buttons |= CoopButtonFlags.Range;
         }
 
         // 2. Empaquetar y enviar a 60Hz sin retraso (UnreliableNoDelay)
@@ -559,12 +564,15 @@ public class CoopNetworkManager : MonoBehaviour
         if (input.Sequence >= session.LastSequence || (session.LastSequence - input.Sequence > 30000))
         {
             session.LastSequence = input.Sequence;
+            session.PendingDown |= input.Buttons & ~session.CurrentButtons;
             session.CurrentButtons = input.Buttons;
             session.AxisX = input.AxisX / 1000f;
             session.AxisY = input.AxisY / 1000f;
             session.LastPacketTime = Time.time;
         }
     }
+
+    private const float StaleInputSeconds = 0.5f;
 
     private void UpdateHostInputTransitions()
     {
@@ -573,7 +581,17 @@ public class CoopNetworkManager : MonoBehaviour
             RemoteClientSession session = slotClients[i];
             if (session != null)
             {
-                session.ButtonsDown = session.CurrentButtons & ~session.PrevButtons;
+                // El cliente transmite siempre (60 Hz): si no llega nada en 0.5 s el ultimo estado esta obsoleto y un boton
+                // "mantenido" (p. ej. Arriba) se quedaria pulsado para siempre. Se libera todo.
+                if (Time.time - session.LastPacketTime > StaleInputSeconds)
+                {
+                    session.CurrentButtons = CoopButtonFlags.None;
+                    session.AxisX = 0f;
+                    session.AxisY = 0f;
+                    session.PendingDown = CoopButtonFlags.None;
+                }
+                session.ButtonsDown = (session.CurrentButtons & ~session.PrevButtons) | session.PendingDown;
+                session.PendingDown = CoopButtonFlags.None;
                 session.ButtonsUp = ~session.CurrentButtons & session.PrevButtons;
                 session.PrevButtons = session.CurrentButtons;
             }

@@ -67,19 +67,26 @@ public static class BossTargetController
     /// <summary>
     /// Comprueba si una entidad enemiga es un Jefe (por jerarquía de clases, namespace o perfil de escalado).
     /// </summary>
+    // El resultado de las pruebas por nombre solo depende del Type: se calcula una vez por tipo (antes, cada enemigo cada fotograma).
+    private static readonly Dictionary<Type, bool> BossByTypeNameCache = new Dictionary<Type, bool>();
+
     public static bool IsBoss(Enemy enemy)
     {
         if (enemy == null) return false;
         if (enemy is TestDummyEnemy) return false;
         if (CoopEnemyScaling.IsBoss(enemy)) return true;
 
-        string ns = enemy.GetType().Namespace ?? "";
-        if (ns.IndexOf("Bosses", StringComparison.OrdinalIgnoreCase) >= 0) return true;
-
-        string typeName = enemy.GetType().Name ?? "";
-        if (typeName.IndexOf("Boss", StringComparison.OrdinalIgnoreCase) >= 0) return true;
-
-        return false;
+        Type t = enemy.GetType();
+        bool byName;
+        if (!BossByTypeNameCache.TryGetValue(t, out byName))
+        {
+            string ns = t.Namespace ?? "";
+            string typeName = t.Name ?? "";
+            byName = ns.IndexOf("Bosses", StringComparison.OrdinalIgnoreCase) >= 0
+                  || typeName.IndexOf("Boss", StringComparison.OrdinalIgnoreCase) >= 0;
+            BossByTypeNameCache[t] = byName;
+        }
+        return byName;
     }
 
     /// <summary>

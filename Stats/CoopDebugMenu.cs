@@ -90,6 +90,7 @@ public class CoopDebugMenu : MonoBehaviour
         Core.Audio?.PlayOneShot("event:/SFX/UI/ChangeTab");
         CoopGameSetupUI.ApplyGameFont(rootObj);
         rootObj.SetActive(true);
+        CoopUiFontScaler.NotifyMenuShown();
         Refresh();
     }
 

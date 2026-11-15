@@ -11,7 +11,7 @@ namespace Blasphemous.CoopLocal;
 /// Sistema de escala de texto de los menús del mod (pre-partida, unirse, config de partida, pausa por jugador, debug F8).
 /// Cada menú tiene un multiplicador propio (más uno global). Se aplica a TODOS los Text hijos del canvas del menú,
 /// recordando el tamaño base original, así que no hay que tocar el código de cada menú.
-/// Editor en vivo: F4 (ventana IMGUI). Se guarda en coop_ui_fonts.cfg (persistentDataPath/CoopLocalMod).
+/// Editor en vivo: F4 (ventana IMGUI). Posición/escala por elemento: F11 (CoopUiLayoutEditor). Se guarda en coop_ui_fonts.cfg (persistentDataPath/CoopLocalMod).
 /// </summary>
 internal static class CoopUiFontSettings
 {
@@ -134,6 +134,23 @@ public class CoopUiFontScaler : MonoBehaviour
     private Rect window = new Rect(16f, 100f, 400f, 330f);
     private const int WindowId = 574831;
 
+    /// <summary>
+    /// Los menús lo llaman justo al mostrarse: localiza sus canvases y aplica la escala en el acto (sin "salto" de tamaño),
+    /// lo que permite que el sondeo periódico sea mucho más espaciado (antes: búsqueda de TODOS los Canvas 4 veces por segundo).
+    /// </summary>
+    internal static void NotifyMenuShown()
+    {
+        CoopUiLayoutEditor.NotifyMenuShown();
+        if (_instance == null) return;
+        _instance.RefreshCanvases();
+        _instance.canvasRefreshTimer = CanvasRefreshSeconds;
+        _instance.ApplyAll(force: true);
+        _instance.applyTimer = ActiveApplySeconds;
+    }
+
+    private const float CanvasRefreshSeconds = 3f;   // red de seguridad; el aviso NotifyMenuShown cubre la apertura normal
+    private const float ActiveApplySeconds = 0.2f;   // texto nuevo en un menú ya visible
+
     internal static void EnsureCreated()
     {
         if (_instance != null) return;
@@ -146,7 +163,7 @@ public class CoopUiFontScaler : MonoBehaviour
     private void Update()
     {
         bool alt = Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt);
-        if (Input.GetKeyDown(KeyCode.F4) && !alt) { IsOpen = !IsOpen; status = ""; }
+        if (Input.GetKeyDown(KeyCode.F4) && !alt && CoopSettings.Ui) { IsOpen = !IsOpen; status = ""; }
 
         if (IsOpen)
         {
@@ -160,10 +177,10 @@ public class CoopUiFontScaler : MonoBehaviour
         if (statusTimer > 0f) { statusTimer -= Time.unscaledDeltaTime; if (statusTimer <= 0f) status = ""; }
 
         canvasRefreshTimer -= Time.unscaledDeltaTime;
-        if (canvasRefreshTimer <= 0f) { canvasRefreshTimer = 0.25f; RefreshCanvases(); }
+        if (canvasRefreshTimer <= 0f) { canvasRefreshTimer = CanvasRefreshSeconds; RefreshCanvases(); }
 
         applyTimer -= Time.unscaledDeltaTime;
-        if (dirty || applyTimer <= 0f) { applyTimer = 0.1f; ApplyAll(); dirty = false; }
+        if (dirty || applyTimer <= 0f) { applyTimer = ActiveApplySeconds; ApplyAll(force: dirty); dirty = false; }
 
         cleanTimer -= Time.unscaledDeltaTime;
         if (cleanTimer <= 0f) { cleanTimer = 5f; CleanDead(); }
@@ -211,12 +228,14 @@ public class CoopUiFontScaler : MonoBehaviour
         }
     }
 
-    private void ApplyAll()
+    /// <param name="force">true = también los canvases ocultos (cambio de escala / aviso de apertura); false = solo los visibles.</param>
+    private void ApplyAll(bool force = false)
     {
         for (int k = 0; k < canvases.Count; k++)
         {
             Canvas c = canvases[k].Key;
             if (c == null) continue;
+            if (!force && !c.gameObject.activeInHierarchy) continue; // un menú oculto no cambia: se escala al mostrarse o al cambiar la escala
             float scale = CoopUiFontSettings.EffectiveFor(canvases[k].Value);
             tmp.Clear();
             c.GetComponentsInChildren(true, tmp);

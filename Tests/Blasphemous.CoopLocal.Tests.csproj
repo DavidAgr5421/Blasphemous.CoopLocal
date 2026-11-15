@@ -14,5 +14,7 @@
   <ItemGroup>
     <!-- Lógica pura del mod compilada sin el juego/Unity: se enlazan los archivos, con stubs mínimos (Stubs.cs) para sus dependencias. -->
     <Compile Include="..\Diagnostics\SwallowedExceptions.cs" Link="Linked\SwallowedExceptions.cs" />
+    <Compile Include="..\Diagnostics\BufferedLogWriter.cs" Link="Linked\BufferedLogWriter.cs" />
+    <Compile Include="..\Input\FrameEdge.cs" Link="Linked\FrameEdge.cs" />
   </ItemGroup>
 </Project>

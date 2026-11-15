@@ -385,7 +385,7 @@ internal static class PlayerDeathAnimationBehaviour_OnStateEnter_P2Fix_Patch
     private static readonly FieldInfo PenitentField = Reflect.Field(typeof(PlayerDeathAnimationBehaviour), "_penitent");
     private static void Prefix(Animator animator, PlayerDeathAnimationBehaviour __instance)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner != null)
         {
             PenitentField.SetValue(__instance, owner);
@@ -403,7 +403,7 @@ internal static class PlayerDeathAnimationBehaviour_OnStateUpdate_P1Fix_Patch
         if (stateInfo.normalizedTime >= 0.95f)
         {
             Penitent owner = (Penitent)PenitentField.GetValue(__instance);
-            if (owner == null) owner = animator.GetComponentInParent<Penitent>();
+            if (owner == null) owner = PenitentOwnerCache.Of(animator);
             if (owner != null && owner.Status.Dead)
             {
                 if (owner == Core.Logic.Penitent && PlayerDeathFixShared.AreAnyOtherPlayersAlive(owner))
@@ -421,7 +421,7 @@ internal static class PlayerDeathFallBehaviour_OnStateEnter_P2Fix_Patch
     private static readonly FieldInfo PenitentField = Reflect.Field(typeof(PlayerDeathFallBehaviour), "_penitent");
     private static void Prefix(Animator animator, PlayerDeathFallBehaviour __instance)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner != null)
         {
             PenitentField.SetValue(__instance, owner);
@@ -435,7 +435,7 @@ internal static class PlayerDeathSpikeBehaviour_OnStateEnter_P2Fix_Patch
     private static readonly FieldInfo PenitentField = Reflect.Field(typeof(PlayerDeathSpikeBehaviour), "_penitent");
     private static void Prefix(Animator animator, PlayerDeathSpikeBehaviour __instance)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner != null)
         {
             PenitentField.SetValue(__instance, owner);
@@ -545,7 +545,15 @@ internal static class DrivePlayer_MoveToPosition_DeadP1_Patch
     {
         Penitent owner = (Penitent)PenitentField.GetValue(__instance);
         if (owner == null) owner = Core.Logic?.Penitent;
-        if (owner != null && (owner.Status.Dead || Player1DeathState.IsPendingRevive()))
+        // "Pendiente de revivir" es por jugador: antes el flag global de P1 teletransportaba tambien a cualquier invitado vivo.
+        bool ownerDown = owner != null && owner.Status.Dead;
+        if (owner != null && !ownerDown)
+        {
+            int guestSlot;
+            if (CoopLocal.IsGuestPlayer(owner, out guestSlot)) ownerDown = Player2DeathState.IsPendingRevive(guestSlot);
+            else ownerDown = Player1DeathState.IsPendingRevive();
+        }
+        if (owner != null && ownerDown)
         {
             owner.transform.position = position;
             owner.SetOrientation(finalOrientation);

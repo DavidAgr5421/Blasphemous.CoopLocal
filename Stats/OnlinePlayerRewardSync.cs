@@ -30,9 +30,15 @@ internal static class Penitent_GetPurge_OnlinePlayerSync_Patch
         if (!isPrimaryReceiver)
         {
             bool p1Dead = (Core.Logic?.Penitent == null || Core.Logic.Penitent.Status.Dead);
-            if (p1Dead && __instance == CoopLocal.Player2)
+            if (p1Dead)
             {
-                isPrimaryReceiver = true;
+                // El primer invitado VIVO (menor índice) procesa la baja; los demás no, para no repartir la recompensa varias veces.
+                CoopPlayerContext first = null;
+                foreach (CoopPlayerContext c in CoopPlayers.ActiveGuests)
+                {
+                    if (c.IsAlive) { first = c; break; }
+                }
+                isPrimaryReceiver = first != null && first.Penitent == __instance;
             }
         }
 

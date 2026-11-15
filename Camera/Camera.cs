@@ -281,7 +281,7 @@ internal class CameraTargetDebugToggleDriver : MonoBehaviour
 {
     private void Update()
     {
-        if (Input.GetKeyDown(KeyCode.F10))
+        if (Input.GetKeyDown(KeyCode.F10) && CoopSettings.Camera)
         {
             CameraTargetDebugToggle.CycleMode();
         }
@@ -298,6 +298,7 @@ internal static class CameraTargetModeIndicator
 
     internal static void Show(CameraDebugTargetMode mode)
     {
+        if (!CoopSettings.Camera) { if (label != null) label.gameObject.SetActive(false); return; }
         EnsureCreated();
         if (label != null)
         {

@@ -1971,3 +1971,47 @@ algo) si se hubieran aplicado a ciegas.
 - Fervour clone now keeps ONLY: Fervour Bar, Flask, PrayerDetail, PrayerDetail PE02, Spark, PrayerTimer, Image Fore (HudCloneCleaner.KeepOnlyChildren; falls back to type-based strip if "Fervour Bar" is missing). Full hierarchy dump + parsing scripts: Temp scratchpad hier.txt.
 - Note: P1FervourRect is LeftPart, so p1_fervour in coop_hud_layout.json moves the whole P1 HUD (health included), p1_health moves Health Bar inside it.
 - Cloned PlayerFervour sets static Instance in Awake (mod restores it), reads Core.Logic.Penitent (patched elsewhere).
+
+## Logger rewrite (perf)
+- `Diagnostics/BufferedLogWriter.cs` (pure, unit-tested) + `DashParryDebugLog`: Log() only enqueues; a background thread flushes every 250 ms; rotation by in-memory byte count; only warnings go to the BepInEx log (set `DashParryDebugLog.MirrorInfoToModLog = true` to mirror info lines). Flush() on dispose/process exit; up to ~250 ms of lines can be lost on a hard crash.
+- 12 per-frame input/animation traces (pressed its own..., raw Input..., ladder state, DoClimbing, crouch, WallJump, AttackArea, Blocked, GrabLadder) now only run when `VerboseEnabled` (they were ~90% of a 14k-line log).
+
+## Phase 1 batch 1 (P2-only gates -> any guest)
+- Generalized to any guest (CoopLocal.IsGuestPlayer): Damage.cs HUD-life fix, GuardianPrayer orbit (+TPO anim now on caster), AirUpwardAttack skipped-init fix, permanent-upgrade credit (Prefix+Postfix together), DashParryDebugLog.Label (P1..P4, was P2/P1).
+- NOT changed (need work / unverified): LadderMechanics 128/180/263/370 (263 needs per-slot JumpDown in Player2Input; the others depend on guests isJoystickDown/SetActionState being driven per guest), OnlinePlayerRewardSync:33 (needs lowest-index living guest as receiver, else triple reward), debug-only P2 sites, Player2Input non-slot accessors (grep callers: WallJump etc).
+
+## Phase 1 batch 2 (ladders for P3/P4)
+- LadderMechanics: StopDrift, Crouch ladder guard, GrabLadder.OnUpdate dismount replacement, DoClimbing in-air axis now apply to ANY guest (IsGuestPlayer). Dismount uses per-slot input: GetDashDown(slot) || (GetDown(slot) && Player2Input.GetJumpDown(slot)); new GetJumpDown(slot) computes the press edge once per frame per slot (legacy P2 JumpDown/Tick kept). Crouch guard logs are verbose-only. P2 now reads slot-1 bindings (same as Movement patch) instead of legacy Player2Keys/Pad statics.
+- Verified: Movement.PlatformCharacterInput_Update_Patch already drives isJoystickDown/SetActionState for every guest slot. In-game check: P3/P4 climb, drop and air-grab ladders without P1 input interfering.
+- OnlinePlayerRewardSync: when P1 is dead/absent the lowest-index LIVING guest (not only P2) is the single receiver that distributes the 60% online share.
+
+## Perf round 1 (see REFACTOR_PLAN phase 2)
+- Logger buffered (BufferedLogWriter); font scaler no longer scans all canvases 4x/s (menus call CoopUiFontScaler.NotifyMenuShown); HUD layer apply skipped when layers are 0.
+- EnemyTargetingSystem: living-players list cached per frame (was a new List per enemy per frame); BossTargetController.IsBoss name tests cached per Type; Parry execution lookup allocation-free; 4 pure-logging patches return immediately unless VerboseEnabled; inventory purge-counter array cached.
+- Not done (inventory from Haiku audit, unverified for gain): reflection GetValue per frame in guest patches (Fervour/Range/Prayer/Skill), GetComponentInParent<Penitent> per frame in ~8 animation-behaviour patches, Entity.Update targeting still runs every frame per enemy (could be throttled).
+- Entity_Update_Targeting_Patch: retarget every 3rd frame per enemy (staggered by InstanceID); `RetargetEveryNFrames = 1` restores per-frame. GetTarget still computes on demand.
+
+## Duplicate guest on Prie-Dieu revive (P4 "clone")
+- `SpawnAllGuestPlayers` is also called from `PrieDieuCoopSync.OnPrieDieuStart` and `PrieDieu_ShallowActivationLogic_HealPlayer2_Patch` when a guest was pending revive. It instantiated a NEW Penitent for every active slot without destroying the living ones, leaving unregistered orphans (log: `P? DASH lock ON` next to `P1 DASH lock ON`, they follow P1's vanilla input).
+- Fix: `CoopLocal.SpawnGuestIfNeeded` keeps a living guest, cleans a dead one before spawning.
+- Prie-Dieu "P3 activates from afar" NOT root-caused yet: guest branch in `Interactable_InteractionTriggered_Patch` already checks distance <= 2.8 on the guest's own Penitent. Added log `[Interact] ... activated by Pn at distance ...` to see who/what triggers next time.
+- Prie-Dieu "up" from afar ROOT CAUSE: `Interactable_InteractionTriggered_Patch` P1 branch accepted raw `Input.GetKeyDown(W/UpArrow/E/U)` as P1's press. When the keyboard belongs to P3/P4, their key credited P1 (near the shrine). Now only counts if `Player2Input.ActiveKeyboardPlayerIndex == 0`.
+
+## Hardening Phase 1 (audit of P1/P2 hard-codes + orphan guard)
+- `MultiPlayer/PenitentOrphanGuard.cs`: 1 s check, logs `[OrphanGuard]` and destroys an unregistered Penitent after 3 consecutive sightings.
+- `DrivePlayer_MoveToPosition_DeadP1_Patch`: the global P1 pending-revive flag no longer teleports living guests; each owner uses its own death/pending state.
+- Audits (haiku subagents): no other raw-input/Rewired-P0 path credits the wrong player (Rewired P0 loses the keyboard when a guest holds it). Remaining items are log-only/debug-only P2 checks, plus (unverified, left alone) `PrayerEffectsExpanded.cs:766` plays the teleport-to-prie-dieu animation on P1 when a guest casts. `Damage.cs:237` restoring P1 life into LogicManager is intentional.
+- Not fixed: client input streaming (`CoopNetworkManager.StreamLocalClientInput`) uses fixed keys, ignoring custom bindings.
+
+## Hardening Phase 2 (online/input robustness)
+- `CoopNetworkManager.UpdateHostInputTransitions`: a remote session with no packet for 0.5 s (`StaleInputSeconds`; the client streams at 60 Hz) has buttons/axes cleared, so a held Up/Run can't stay stuck. New `PendingDown` latch: button presses seen between two host frames are no longer lost when two packets arrive in one frame.
+- `Player2Input.GetUpDown(slot)` (rising edge of Up, cached per frame) now used for shrine/door/interact triggers instead of held `GetUp`; `CoopInputEdgePump` evaluates it every frame so entering range already holding Up doesn't count as a press.
+
+## Hardening Phase 3 (performance)
+- `MultiPlayer/PenitentOwnerCache.Of(Animator)`: cached animator -> Penitent (by InstanceID, negatives cached, destroyed entries recomputed/pruned). Replaced 64 per-frame `animator.GetComponentInParent<Penitent>()` calls in StateMachineBehaviour/Animator patches (Dash, Parry, Movement, MovementAnimationFixes, Abilities, Combat, Prayer).
+- Audit of `Find*`: remaining calls are one-shot (level load, menu open, font lookup) or cached (HUD originals), so nothing to change. `__instance.GetComponentInParent` (25 sites on components) and reflection `FieldInfo.GetValue` left as is (cheap relative to the above, riskier to cache).
+- Retarget throttle (`RetargetEveryNFrames = 3`) still needs an in-game feel check.
+
+## Hardening Phase 4 (quality)
+- `Input/FrameEdge.cs`: pure once-per-frame rising-edge helper; `Player2Input.GetUpDown/GetJumpDown` now use it. 4 new unit tests (`Tests/FrameEdgeTests.cs`); suite is 24 passing (`cd Tests && dotnet test`).
+- Not done on purpose: migrating the ~27 `CoopLocal.GetAllExtraPlayers()` call sites (the iterator allocation is tiny; a cached list would risk "collection modified" in nested loops) and the big partial-class splits (pure moves with no behaviour gain; do them in a quiet moment, one file at a time).

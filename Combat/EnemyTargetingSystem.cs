@@ -81,9 +81,18 @@ internal static class EnemyTargetingSystem
     /// <summary>
     /// Obtiene todos los Penitentes activos y vivos en la sala (P1, P2 y futuros P3/P4).
     /// </summary>
+    // Se llama una vez por enemigo y por fotograma (parche en Entity.Update): la lista se calcula UNA vez por fotograma y se
+    // reutiliza. Los llamadores solo la leen (no deben modificarla ni conservarla entre fotogramas).
+    private static readonly List<Penitent> livingPlayersCache = new List<Penitent>(4);
+    private static int livingPlayersCacheFrame = -1;
+
     public static List<Penitent> GetActiveLivingPlayers()
     {
-        List<Penitent> players = new List<Penitent>(4);
+        int frame = Time.frameCount;
+        if (livingPlayersCacheFrame == frame) return livingPlayersCache;
+        livingPlayersCacheFrame = frame;
+        List<Penitent> players = livingPlayersCache;
+        players.Clear();
 
         Penitent p1 = Core.Logic?.Penitent;
         if (p1 != null && p1.gameObject.activeInHierarchy && !p1.Status.Dead)
@@ -257,12 +266,19 @@ internal static class EnemyTargetingSystem
 [HarmonyPatch(typeof(Entity), "Update")]
 internal static class Entity_Update_Targeting_Patch
 {
+    /// <summary>1 = cada fotograma (comportamiento anterior). 3 = ~20 Hz a 60 fps.</summary>
+    internal const int RetargetEveryNFrames = 3;
+
     private static void Postfix(Entity __instance)
     {
         // Online client is a renderer only: enemies are host-authoritative, never retarget locally.
         if (Blasphemous.CoopLocal.MultiPlayer.CoopNetworkManager.IsOnlineClient) return;
         if (__instance is Enemy enemy && !enemy.Status.Dead)
         {
+            // Reevaluar el objetivo cada RetargetEveryNFrames fotogramas (~20 Hz a 60 fps) en vez de cada fotograma, escalonado por
+            // enemigo (su InstanceID) para no concentrar todo el trabajo en el mismo fotograma. La IA que consulta
+            // EnemyBehaviour.GetTarget sigue recibiendo el objetivo al instante (ese parche calcula bajo demanda).
+            if ((Time.frameCount + enemy.GetInstanceID()) % RetargetEveryNFrames != 0) return;
             EnemyTargetingSystem.UpdateEnemyTarget(enemy);
         }
     }

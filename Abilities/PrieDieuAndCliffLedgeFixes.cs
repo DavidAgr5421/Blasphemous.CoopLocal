@@ -125,6 +125,7 @@ internal static class GrabCliffLede_Update_DebugLogger_Patch
 
     private static void Postfix(GrabCliffLede __instance)
     {
+        if (!DashParryDebugLog.VerboseEnabled) return; // solo registra: sin log detallado no hay nada que calcular
         Penitent owner = (Penitent)PenitentField.GetValue(__instance);
         if (owner == null || owner != CoopLocal.Player2)
         {

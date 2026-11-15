@@ -20,7 +20,8 @@ public enum CoopAction
     Interact,
     Prayer,
     Pause,
-    Menu
+    Menu,
+    RangeAttack
 }
 
 [Serializable]
@@ -40,6 +41,7 @@ public class PlayerControlBindings
     public KeyCode KeyPrayer = KeyCode.Q;
     public KeyCode KeyPause = KeyCode.Escape;
     public KeyCode KeyMenu = KeyCode.I;
+    public KeyCode KeyRange = KeyCode.U;
 
     // Mapeo para mando (nombres de botones/ejes de Rewired)
     public string PadAttack = "X Button";
@@ -51,6 +53,7 @@ public class PlayerControlBindings
     public string PadPrayer = "Left Trigger";
     public string PadPause = "Start";
     public string PadMenu = "Back";
+    public string PadRange = "B Button";
 
     public KeyCode GetKey(CoopAction action)
     {
@@ -69,6 +72,7 @@ public class PlayerControlBindings
             case CoopAction.Prayer: return KeyPrayer;
             case CoopAction.Pause: return KeyPause;
             case CoopAction.Menu: return KeyMenu;
+            case CoopAction.RangeAttack: return KeyRange;
             default: return KeyCode.None;
         }
     }
@@ -90,6 +94,7 @@ public class PlayerControlBindings
             case CoopAction.Prayer: KeyPrayer = key; break;
             case CoopAction.Pause: KeyPause = key; break;
             case CoopAction.Menu: KeyMenu = key; break;
+            case CoopAction.RangeAttack: KeyRange = key; break;
         }
     }
 
@@ -106,6 +111,7 @@ public class PlayerControlBindings
             case CoopAction.Prayer: return PadPrayer;
             case CoopAction.Pause: return PadPause;
             case CoopAction.Menu: return PadMenu;
+            case CoopAction.RangeAttack: return PadRange;
             default: return "";
         }
     }
@@ -123,6 +129,7 @@ public class PlayerControlBindings
             case CoopAction.Prayer: PadPrayer = buttonName; break;
             case CoopAction.Pause: PadPause = buttonName; break;
             case CoopAction.Menu: PadMenu = buttonName; break;
+            case CoopAction.RangeAttack: PadRange = buttonName; break;
         }
     }
 }
@@ -154,6 +161,7 @@ public static class CoopControlsConfig
             case CoopAction.Prayer: return "Activar Rezo";
             case CoopAction.Pause: return "Pausa / Opciones";
             case CoopAction.Menu: return "Menú de Inventario / Habilidades";
+            case CoopAction.RangeAttack: return "Ataque a Distancia";
             default: return action.ToString();
         }
     }

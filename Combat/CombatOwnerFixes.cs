@@ -56,7 +56,7 @@ internal static class AttackBehaviour_OnStateEnter_Patch
             return;
         }
 
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner == null)
         {
             return;
@@ -84,7 +84,7 @@ internal static class HurtSubStateBehaviour_OnStateEnter_Patch
             return;
         }
 
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner == null)
         {
             return;
@@ -113,7 +113,7 @@ internal static class GroundHurtBehaviour_OnStateEnter_Patch
 {
     private static void Prefix(Animator animator, ref Penitent ____penitent)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner != null)
         {
             ____penitent = owner;
@@ -126,7 +126,7 @@ internal static class AirHurtBehaviour_OnStateEnter_Patch
 {
     private static void Prefix(Animator animator, ref Penitent ____penitent)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner != null)
         {
             ____penitent = owner;
@@ -259,7 +259,7 @@ internal static class AttackArea_SetSize_DebugLog_Patch
             return;
         }
         lastLogged[__instance] = size;
-        DashParryDebugLog.Log($"{DashParryDebugLog.Label(owner)} AttackArea.SetSize -> {size} (frame {Time.frameCount})");
+        if (DashParryDebugLog.VerboseEnabled) DashParryDebugLog.LogVerbose($"{DashParryDebugLog.Label(owner)} AttackArea.SetSize -> {size} (frame {Time.frameCount})");
     }
 }
 
@@ -280,7 +280,7 @@ internal static class AttackArea_SetOffset_DebugLog_Patch
             return;
         }
         lastLogged[__instance] = offset;
-        DashParryDebugLog.Log($"{DashParryDebugLog.Label(owner)} AttackArea.SetOffset -> {offset} (frame {Time.frameCount})");
+        if (DashParryDebugLog.VerboseEnabled) DashParryDebugLog.LogVerbose($"{DashParryDebugLog.Label(owner)} AttackArea.SetOffset -> {offset} (frame {Time.frameCount})");
     }
 
 
@@ -298,7 +298,7 @@ internal static class AttackBehaviour_OnStateUpdate_OwnerAxis_Patch
         Penitent owner = (Penitent)PenitentField.GetValue(__instance);
         if (owner == null)
         {
-            owner = animator.GetComponentInParent<Penitent>();
+            owner = PenitentOwnerCache.Of(animator);
             if (owner != null) PenitentField.SetValue(__instance, owner);
         }
 
@@ -326,7 +326,7 @@ internal static class CancelComboBehaviour_OnStateEnter_Patch
 
     private static void Prefix(CancelComboBehaviour __instance, Animator animator)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner != null)
         {
             PenitentProp.SetValue(__instance, owner, null);
@@ -341,7 +341,7 @@ internal static class CancelComboBehaviour_OnStateUpdate_Patch
 
     private static void Prefix(CancelComboBehaviour __instance, Animator animator)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner != null)
         {
             PenitentProp.SetValue(__instance, owner, null);
@@ -377,7 +377,7 @@ internal static class GroundAttackSubStateBehaviour_OnStateEnter_Patch
 
     private static void Prefix(GroundAttackSubStateBehaviour __instance, Animator animator)
     {
-        Penitent owner = animator.GetComponentInParent<Penitent>();
+        Penitent owner = PenitentOwnerCache.Of(animator);
         if (owner != null)
         {
             PenitentField.SetValue(__instance, owner);
@@ -392,7 +392,7 @@ internal static class GroundAttackSubStateBehaviour_IsRunningParry_Patch
 {
     private static bool Prefix(GroundAttackSubStateBehaviour __instance, Animator animator, ref bool __result)
     {
-        Penitent owner = animator != null ? animator.GetComponentInParent<Penitent>() : null;
+        Penitent owner = animator != null ? PenitentOwnerCache.Of(animator) : null;
         if (owner == null) return true;
 
         Parry parry = owner.Parry;

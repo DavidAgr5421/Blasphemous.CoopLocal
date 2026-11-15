@@ -96,8 +96,8 @@ internal static class WallJump_OnUpdate_P2_Patch
     private static readonly MethodInfo UnhangByEventMethod = Reflect.Method(typeof(WallJump), "UnhangByEvent");
 
     // Logging edge-triggered para hipótesis familia 4 (Ronda 64) - solo para diagnóstico, no fix.
-    private static bool _lastStickOnWallBool;
-    private static int _lastWallStateHash;
+    private static readonly bool[] _lastStickOnWallBool = new bool[4];
+    private static readonly int[] _lastWallStateHash = new int[4];
 
     // Round 72 - Play(WallClimbContact) retry state. _stickStartFrame records the exact frame the
     // stick-start branch below called Play() for the first time - the retry check must not fire on
@@ -106,8 +106,16 @@ internal static class WallJump_OnUpdate_P2_Patch
     // after every script's Update() has run) - checking STICK_ON_WALL on the start frame itself
     // would always read the pre-Play() value and look like a "failure" even in the 90%+ of cases
     // that succeed one frame later.
-    private static int _stickStartFrame = -1;
-    private static int _stuckRetryFrames;
+    private static readonly int[] _stickStartFrame = { -1, -1, -1, -1 };
+    private static readonly int[] _stuckRetryFrames = new int[4];
+
+    // Anti-encadenado (equivalente a los temporizadores vanilla, pero a prueba de reinicios espurios por IsGrounded):
+    // tiempo real del último despegue, del inicio del agarre y tiempo continuo en suelo, POR jugador.
+    private static readonly float[] _lastDetachTime = { -99f, -99f, -99f, -99f };
+    private static readonly float[] _stickBeginTime = { -99f, -99f, -99f, -99f };
+    private static readonly float[] _groundedTime = new float[4];
+    private const float MinStickDuration = 0.35f;   // antes de poder despegarse de la pared
+    private const float StableGroundSeconds = 0.12f; // suelo continuo necesario para reiniciar el estado de pared
     private const int MaxStickRetryFrames = 60; // ~1s of stuck frames before the safety release fires.
 
     // Ronda 67 - resolución de hash->nombre en runtime (evita reimplementar a ciegas el algoritmo
@@ -164,13 +172,16 @@ internal static class WallJump_OnUpdate_P2_Patch
             return true;
         }
 
+        int gs = Mathf.Clamp(guestSlot, 0, 3);
         PlatformCharacterController controller = __instance.CharacterController;
         bool stickToWall = (bool)StickToWallField.GetValue(__instance);
         float stickCoolDownTimer = (float)StickCoolDownTimerField.GetValue(__instance);
         float jumpOffCoolDownTimer = (float)JumpOffCoolDownTimerField.GetValue(__instance);
         bool jumpOffWall = (bool)JumpOffWallField.GetValue(__instance);
 
-        if (owner.Status.IsGrounded)
+        if (owner.Status.IsGrounded && controller.IsGrounded) _groundedTime[gs] += Time.deltaTime; else _groundedTime[gs] = 0f;
+
+        if (owner.Status.IsGrounded && _groundedTime[gs] >= StableGroundSeconds)
         {
             // ResetWallJumpStatus(), inlined - no owner-hardcode issue in the original, just moved
             // here so every field write for P2 lives in one place.
@@ -194,7 +205,9 @@ internal static class WallJump_OnUpdate_P2_Patch
         WallHitField.SetValue(__instance, wallHit);
 
         bool endStickCoolDown = stickCoolDownTimer < 0f;
-        if (Player2Input.GetAttackHeld(guestSlot) && !controller.IsGrounded && wallHit.collider != null && !stickToWall && endStickCoolDown)
+        // Re-agarre: además del temporizador vanilla (StickCoolDown), tiempo real mínimo desde el último despegue.
+        bool restickReady = (Time.time - _lastDetachTime[gs]) >= Mathf.Max(0.6f, __instance.StickCoolDown);
+        if (Player2Input.GetAttackHeld(guestSlot) && !controller.IsGrounded && wallHit.collider != null && !stickToWall && endStickCoolDown && restickReady)
         {
             if (!_loggedCandidateHashTable)
             {
@@ -232,8 +245,9 @@ internal static class WallJump_OnUpdate_P2_Patch
             // (!stickToWall) branch below already resets these on every exit, including the
             // safety-release path itself, but resetting again here guards against any future
             // exit path that doesn't).
-            _stickStartFrame = Time.frameCount;
-            _stuckRetryFrames = 0;
+            _stickStartFrame[gs] = Time.frameCount;
+            _stickBeginTime[gs] = Time.time;
+            _stuckRetryFrames[gs] = 0;
             PlayerStickedOrientationField.SetValue(__instance, owner.Status.Orientation);
             owner.Animator.ResetTrigger("AIR_ATTACK");
             owner.Animator.Play(WallClimbContactAnim);
@@ -267,14 +281,14 @@ internal static class WallJump_OnUpdate_P2_Patch
             AnimatorStateInfo st = owner.Animator.GetCurrentAnimatorStateInfo(0);
             string stateName = ResolveStateName(st.shortNameHash, st.normalizedTime);
             int curHash = st.shortNameHash;
-            if (stickOnWallBool != _lastStickOnWallBool || curHash != _lastWallStateHash)
+            if (stickOnWallBool != _lastStickOnWallBool[gs] || curHash != _lastWallStateHash[gs])
             {
                 bool airAttackBool = owner.Animator.GetBool("AIR_ATTACK");
                 bool fallingBool = owner.Animator.GetBool("FALLING");
                 Vector3 vel = controller.PlatformCharacterPhysics.Velocity;
-                DashParryDebugLog.Log($"P2 WallJump while-stuck frame {Time.frameCount} STICK_ON_WALL={stickOnWallBool} state={stateName} stickToWall={stickToWall} AttackHeld={Player2Input.AttackHeld} AttackDown={Player2Input.AttackDown} AIR_ATTACK={airAttackBool} FALLING={fallingBool} all-true-bools: {DumpTrueBoolParameters(owner.Animator)} floats: {DumpFloatParameters(owner.Animator)} vel={vel} vSpeed={controller.PlatformCharacterPhysics.VSpeed:F2}");
-                _lastStickOnWallBool = stickOnWallBool;
-                _lastWallStateHash = curHash;
+                if (DashParryDebugLog.VerboseEnabled) DashParryDebugLog.LogVerbose($"P2 WallJump while-stuck frame {Time.frameCount} STICK_ON_WALL={stickOnWallBool} state={stateName} stickToWall={stickToWall} AttackHeld={Player2Input.AttackHeld} AttackDown={Player2Input.AttackDown} AIR_ATTACK={airAttackBool} FALLING={fallingBool} all-true-bools: {DumpTrueBoolParameters(owner.Animator)} floats: {DumpFloatParameters(owner.Animator)} vel={vel} vSpeed={controller.PlatformCharacterPhysics.VSpeed:F2}");
+                _lastStickOnWallBool[gs] = stickOnWallBool;
+                _lastWallStateHash[gs] = curHash;
             }
 
             // Round 72 - retry Play(WallClimbContact) on every subsequent frame while STICK_ON_WALL
@@ -286,32 +300,33 @@ internal static class WallJump_OnUpdate_P2_Patch
             // (not controllable from this side), keep re-issuing Play() every frame until it takes,
             // bounded by MaxStickRetryFrames as a safety net against a genuinely stuck case this
             // session's logs haven't captured. Skip the very first frame of this stick attempt
-            // (Time.frameCount == _stickStartFrame): Play() never takes effect synchronously within
+            // (Time.frameCount == _stickStartFrame[gs]): Play() never takes effect synchronously within
             // the same Update() that calls it (Round 67), so checking STICK_ON_WALL that same frame
             // would always look like a failure even in the normal, working case.
-            if (Time.frameCount != _stickStartFrame)
+            if (Time.frameCount != _stickStartFrame[gs])
             {
                 if (!stickOnWallBool)
                 {
-                    _stuckRetryFrames++;
-                    if (_stuckRetryFrames == 1)
+                    _stuckRetryFrames[gs]++;
+                    if (_stuckRetryFrames[gs] == 1)
                     {
                         DashParryDebugLog.Log($"P2 WallJump STICK_ON_WALL still False frame {Time.frameCount} state={stateName} - retrying Play(WallClimbContact)");
                     }
                     owner.Animator.Play(WallClimbContactAnim);
 
-                    if (_stuckRetryFrames > MaxStickRetryFrames)
+                    if (_stuckRetryFrames[gs] > MaxStickRetryFrames)
                     {
                         DashParryDebugLog.Log($"P2 WallJump retry limit ({MaxStickRetryFrames} frames) exceeded at frame {Time.frameCount}, state={stateName} - forcing UnhangByEvent safety release");
                         UnhangByEventMethod.Invoke(__instance, null);
                         stickToWall = false;
-                        _stuckRetryFrames = 0;
+                        _lastDetachTime[gs] = Time.time;
+                        _stuckRetryFrames[gs] = 0;
                     }
                 }
-                else if (_stuckRetryFrames > 0)
+                else if (_stuckRetryFrames[gs] > 0)
                 {
-                    DashParryDebugLog.Log($"P2 WallJump STICK_ON_WALL recovered to True at frame {Time.frameCount} after {_stuckRetryFrames} Play() retries, state={stateName}");
-                    _stuckRetryFrames = 0;
+                    DashParryDebugLog.Log($"P2 WallJump STICK_ON_WALL recovered to True at frame {Time.frameCount} after {_stuckRetryFrames[gs]} Play() retries, state={stateName}");
+                    _stuckRetryFrames[gs] = 0;
                 }
             }
 
@@ -338,12 +353,12 @@ internal static class WallJump_OnUpdate_P2_Patch
         else
         {
             // Reset edge cache cuando sale del wall-stick para que el próximo enganche loguee fresh.
-            _lastStickOnWallBool = false;
-            _lastWallStateHash = 0;
-            _stuckRetryFrames = 0;
+            _lastStickOnWallBool[gs] = false;
+            _lastWallStateHash[gs] = 0;
+            _stuckRetryFrames[gs] = 0;
         }
 
-        if (Player2Input.GetJumpHeld(guestSlot) && stickToWall && jumpOffCoolDownTimer < 0f && owner.Animator.GetBool("STICK_ON_WALL") && !Gameplay.UI.UIController.instance.IsShowingMenu)
+        if (Player2Input.GetJumpDown(guestSlot) && stickToWall && jumpOffCoolDownTimer < 0f && (Time.time - _stickBeginTime[gs]) >= MinStickDuration && owner.Animator.GetBool("STICK_ON_WALL") && !Gameplay.UI.UIController.instance.IsShowingMenu)
         {
             DOTween.Kill(owner.transform);
             __instance.ToogleAbilities(true);
@@ -352,6 +367,7 @@ internal static class WallJump_OnUpdate_P2_Patch
             StickToWallField.SetValue(__instance, false);
             JumpOffWallField.SetValue(__instance, true);
             jumpOffWall = true;
+            _lastDetachTime[gs] = Time.time;
             controller.PlatformCharacterPhysics.Gravity = new Vector3(0f, -9.8f, 0f);
             PlayerLogicBlocker.SetBlocked(owner, false);
             Core.Input.SetBlocker("PLAYER_LOGIC", blocking: false);
@@ -493,6 +509,6 @@ internal static class AnimatorInyector_AirAttack_OrderDebugLogger_Patch
             // skip logging the (very frequent) no-op frames.
             return;
         }
-        DashParryDebugLog.Log($"P2 AnimatorInyector.AirAttack() SetTrigger(AIR_ATTACK) frame {Time.frameCount} (order marker vs WallJump logs at same frame)");
+        if (DashParryDebugLog.VerboseEnabled) DashParryDebugLog.LogVerbose($"P2 AnimatorInyector.AirAttack() SetTrigger(AIR_ATTACK) frame {Time.frameCount} (order marker vs WallJump logs at same frame)");
     }
 }
