@@ -45,6 +45,8 @@ public class CoopNetworkManager : MonoBehaviour
         return false;
     }
     public static bool IsOnlineClient => CoopLobbyManager.State == LobbyConnectionState.Connected && !CoopLobbyManager.IsHost;
+    /// <summary>Partida online en marcha (anfitrión con sala abierta o cliente conectado): los menús no pausan el juego.</summary>
+    public static bool IsOnlineActive => IsOnlineHost || IsOnlineClient;
     public static bool IsOnlineHost => CoopLobbyManager.State == LobbyConnectionState.Hosting;
 
     // --- Sesiones de Clientes Conectados (Solo Anfitrión) ---
@@ -665,6 +667,9 @@ public class CoopNetworkManager : MonoBehaviour
             if (Player2Pad.GetMenuDown(pad)) buttons |= CoopButtonFlags.Menu;
             if (Player2Pad.GetRangeHeld(pad, 0)) buttons |= CoopButtonFlags.Range;
         }
+
+        // Con un menú propio abierto (el juego ya no se pausa en online) su personaje no debe moverse en el anfitrión
+        if (Player2MenuView.IsShowingAnyMenu || CoopPlayerPauseMenu.IsOpen) { buttons = CoopButtonFlags.None; ax = 0f; ay = 0f; }
 
         // Empaquetar y enviar a 60Hz sin retraso (UnreliableNoDelay); un paquete por puesto
         PlayerInputData inputData = new PlayerInputData

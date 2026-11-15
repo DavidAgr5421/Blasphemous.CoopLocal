@@ -435,10 +435,9 @@ internal static class PlatformCharacterInput_Update_Patch
         }
         Player2Input.Tick();
 
-        bool isMenuBlocked = GlobalBlockerTracker.AnyBlockerOtherThanPlayerLogic()
-            || Player2MenuView.IsShowingAnyMenu
+        bool isMenuBlocked = Player2MenuView.MenuBlocksSlot(slotIndex)
             || Time.frameCount == Player2MenuView.LastMenuToggleFrame
-            || Time.timeScale <= 0.0001f || CoopPlayerPauseMenu.IsOpen;
+            || Time.timeScale <= 0.0001f;
         bool blocked = PlayerLogicBlocker.IsBlocked(____penitent) || ____penitent.Status.Dead || isPrayerAnimPlaying || isHealingAnimPlaying || isMenuBlocked;
 
         bool rawDown = Player2Input.GetDown(slotIndex);

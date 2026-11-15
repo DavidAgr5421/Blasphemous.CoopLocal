@@ -29,7 +29,12 @@ internal static class CoopMainMenuCloser
             {
                 FieldInfo widgetField = typeof(NewMainMenu).GetField("selectSaveSlotsWidget", any);
                 SelectSaveSlots widget = widgetField != null ? widgetField.GetValue(menu) as SelectSaveSlots : null;
-                if (widget != null) widget.IsShowing = false;
+                if (widget != null)
+                {
+                    // IsShowing tiene el setter privado: por reflexión (el acceso directo falla al compilar el método con JIT).
+                    PropertyInfo showing = typeof(SelectSaveSlots).GetProperty("IsShowing", any);
+                    if (showing != null) showing.SetValue(widget, false, null);
+                }
             }
             catch (Exception e) { SwallowedExceptions.Report(e, "CoopMainMenuCloser:widget"); }
 

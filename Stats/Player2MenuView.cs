@@ -46,6 +46,19 @@ internal static class Player2MenuView
         (Gameplay.UI.UIController.instance.IsShowingMenu || Gameplay.UI.UIController.instance.IsShowingInventory))
         || Combat.BossDebugTeleportManager.IsMenuOpen;
 
+    /// <summary>
+    /// ¿El menú abierto en esta PC bloquea el input del puesto <paramref name="slot"/>? Sin online: cualquier menú bloquea a todos
+    /// (el juego está en pausa). En online no hay pausa y los menús son locales: solo bloquean a su propio jugador.
+    /// </summary>
+    internal static bool MenuBlocksSlot(int slot)
+    {
+        bool vanillaMenu = IsShowingAnyMenu;
+        if (!MultiPlayer.CoopNetworkManager.IsOnlineActive)
+            return GlobalBlockerTracker.AnyBlockerOtherThanPlayerLogic() || vanillaMenu || CoopPlayerPauseMenu.IsOpen;
+        bool owner = (vanillaMenu && ActivePlayerIndex == slot) || (CoopPlayerPauseMenu.IsOpen && CoopPlayerPauseMenu.ActiveSlotIndex == slot);
+        return owner || (!vanillaMenu && !CoopPlayerPauseMenu.IsOpen && GlobalBlockerTracker.AnyBlockerOtherThanPlayerLogic());
+    }
+
     internal static bool IsGuestView => ActivePlayerIndex > 0;
 
     internal static bool IsSkillGuestView => SkillViewPlayer > 0;

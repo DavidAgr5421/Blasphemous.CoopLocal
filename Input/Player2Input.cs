@@ -562,7 +562,7 @@ internal static class Player2Input
                 int maxPlayers = Mathf.Clamp(CoopGameConfig.PlayerCount, 2, 4);
                 for (int slot = 1; slot < maxPlayers; slot++)
                 {
-                    if (GetPauseDown(slot))
+                    if (!CoopGameConfig.IsRemoteSlot(slot) && GetPauseDown(slot))
                     {
                         CoopPlayerPauseMenu.OpenMenu(slot);
                         break;
@@ -612,7 +612,7 @@ internal static class Player2Input
             int activeGuestCount = Mathf.Clamp(CoopGameConfig.PlayerCount, 2, 4);
             for (int p = 1; p < activeGuestCount; p++)
             {
-                if (GetMenuDown(p) && Gameplay.UI.UIController.instance != null && Time.frameCount != Player2MenuView.LastMenuToggleFrame)
+                if (!CoopGameConfig.IsRemoteSlot(p) && GetMenuDown(p) && Gameplay.UI.UIController.instance != null && Time.frameCount != Player2MenuView.LastMenuToggleFrame)
                 {
                     NewInventoryWidget widget = NewInventoryMenuField.GetValue(Gameplay.UI.UIController.instance) as NewInventoryWidget;
                     bool isMenuOpen = widget != null && widget.currentlyActive;
