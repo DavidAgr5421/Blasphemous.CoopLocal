@@ -18,7 +18,7 @@ namespace Blasphemous.CoopLocal;
 /// </summary>
 internal sealed class CoopUpdater : MonoBehaviour
 {
-    private const string LatestUrl = "https://api.github.com/repos/DavidAgr5421/Blasphemous.CoopLocal/releases/latest";
+    private const string LatestUrl = "https://codeberg.org/api/v1/repos/David542agr/BlasphemousCoopMod/releases/latest";
     private const float StartDelay = 4f;
 
     private enum State { Idle, Checking, Available, Downloading, Ready, Failed }

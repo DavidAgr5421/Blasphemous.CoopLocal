@@ -92,7 +92,7 @@ Para jugar normalmente deja `DebugMode = false`. Para desarrollar o calibrar, po
 
 - **El mod no aparece / no hay menú de coop:** comprueba que existe `Modding/plugins/CoopLocal.dll` y que el Modding de Blasphemous funciona sin este mod.
 - **No puedo unirme en línea:** ambos jugadores necesitan Steam abierto y la misma versión del mod.
-- **Algo falla:** revisa el log del Modding (`Modding/logs`) y abre un [issue](https://github.com/DavidAgr5421/Blasphemous.CoopLocal/issues) adjuntándolo.
+- **Algo falla:** revisa el log del Modding (`Modding/logs`) y abre un [issue](https://codeberg.org/David542agr/BlasphemousCoopMod/issues) adjuntándolo.
 
 ---
 
