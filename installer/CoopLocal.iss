@@ -73,7 +73,7 @@ begin
   if CurStep = ssPostInstall then
   begin
     if not FileExists(ExpandConstant('{app}\Modding\plugins\ModdingAPI.dll')) then
-      MsgBox('El mod se instalo, pero no se encontro el Modding API de Blasphemous (Modding\\plugins\\ModdingAPI.dll). '
+      MsgBox('El mod se instalo, pero no se encontro el Modding API de Blasphemous (Modding\plugins\ModdingAPI.dll). '
         + 'Instala BepInEx y el Modding API por separado antes de jugar; las instrucciones estan en el README / INSTALL.md.', mbInformation, MB_OK);
   end;
 end;
