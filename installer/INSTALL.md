@@ -2,8 +2,8 @@
 
 No necesitas instalar nada antes: **los instaladores descargan e instalan BepInEx y el Modding API solos** (desde los repositorios oficiales de BrandenEK, siempre la última versión) si no los encuentran. Solo hace falta conexión a internet la primera vez. Todos los jugadores de una partida deben tener la misma versión del mod.
 
-## Opción A — Setup de Windows (recomendada): `BlasphemousCoopLocal_Setup.exe`
-Doble clic → elige la carpeta del juego (se detecta sola desde Steam) → Instalar. Instala BepInEx, el Modding API y el mod. Se desinstala desde "Aplicaciones".
+## Opción A — Setup de Windows: `BlasphemousCoopLocal_Setup.exe`
+Doble clic → elige la carpeta del juego (se detecta sola desde Steam) → Instalar. **Instala solo los archivos del mod**: BepInEx y el Modding API deben estar ya instalados (usa la opción B o C si no los tienes). Se desinstala desde "Aplicaciones".
 
 ## Opción B — Script sin setup
 - **Windows:** doble clic en `install.bat` (`uninstall.bat` para quitarlo). Opciones: `powershell -ExecutionPolicy Bypass -File install.ps1 -GamePath "D:\Juegos\Blasphemous"`; `-UpdateDeps` fuerza actualizar BepInEx y el Modding API.

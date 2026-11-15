@@ -8,11 +8,11 @@ Mod cooperativo para **Blasphemous** (el primero) que permite jugar de **2 a 4 j
 
 ## Instalación rápida
 
-No necesitas instalar BepInEx ni nada más antes: **el instalador descarga e instala BepInEx y el Modding API automáticamente** (última versión oficial) si no están.
+**Requisitos previos (se instalan aparte):** [BepInEx + Modding Tools](https://github.com/BrandenEK/Blasphemous.ModdingTools) y el [Modding API](https://github.com/BrandenEK/Blasphemous.ModdingAPI/releases/latest) de Blasphemous. Si ya juegas Blasphemous con mods, ya los tienes.
 
-1. Descarga desde la [página de Releases](https://github.com/DavidAgr5421/Blasphemous.CoopLocal/releases):
-   - **`BlasphemousCoopLocal_Setup.exe`** (Windows, recomendado): doble clic, elige la carpeta del juego (se detecta sola) e instala.
-   - o **`BlasphemousCoopLocal-1.0.1.zip`** (sin setup): descomprime y ejecuta `install.bat` (Windows) o `./install.sh` (Linux / Steam Deck).
+1. Descarga desde la página de Releases:
+   - **`BlasphemousCoopLocal_Setup.exe`** (Windows): doble clic, elige la carpeta del juego (se detecta sola) e instala **solo los archivos del mod**.
+   - o **`BlasphemousCoopLocal-<versión>.zip`**: descomprime y ejecuta `install.bat` (Windows) o `./install.sh` (Linux / Steam Deck). Estos scripts sí descargan BepInEx y el Modding API si faltan.
 2. Inicia el juego.
 
 Todos los jugadores de una partida en línea deben tener **la misma versión** del mod. Instalación manual y detalles: [installer/INSTALL.md](installer/INSTALL.md).

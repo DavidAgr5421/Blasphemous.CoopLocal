@@ -28,7 +28,6 @@ Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Files]
-Source: "install.ps1"; DestDir: "{tmp}"; Flags: deleteafterinstall
 Source: "..\dist\payload\*"; DestDir: "{app}\Modding"; Flags: recursesubdirs createallsubdirs ignoreversion
 
 [Code]
@@ -69,14 +68,12 @@ begin
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
-var Code: Integer;
 begin
+  // El setup solo instala los archivos del mod. BepInEx y el Modding API se instalan aparte (ver README / INSTALL.md).
   if CurStep = ssPostInstall then
   begin
-    WizardForm.StatusLabel.Caption := 'Instalando BepInEx y Modding API (requiere internet)...';
-    if not Exec('powershell.exe',
-      '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{tmp}\install.ps1') + '" -GamePath "' + ExpandConstant('{app}') + '" -DepsOnly -NoPause',
-      '', SW_HIDE, ewWaitUntilTerminated, Code) or (Code <> 0) then
-      MsgBox('No se pudo descargar/instalar BepInEx o el Modding API (revisa tu conexion a internet). El mod se copio, pero necesitas instalar esas dependencias: ejecuta de nuevo el setup con internet.', mbError, MB_OK);
+    if not FileExists(ExpandConstant('{app}\Modding\plugins\ModdingAPI.dll')) then
+      MsgBox('El mod se instalo, pero no se encontro el Modding API de Blasphemous (Modding\\plugins\\ModdingAPI.dll). '
+        + 'Instala BepInEx y el Modding API por separado antes de jugar; las instrucciones estan en el README / INSTALL.md.', mbInformation, MB_OK);
   end;
 end;
