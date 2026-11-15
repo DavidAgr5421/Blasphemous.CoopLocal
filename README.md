@@ -2,21 +2,20 @@
 
 Mod cooperativo para **Blasphemous** (el primero) que permite jugar de **2 a 4 jugadores**, en local (varios mandos / teclado) o **en línea por Steam**. Inspirado en el mod multijugador de BrandenEK.
 
-> Versión actual: **v1.0.0** · Plataforma: Windows (y Linux / Steam Deck vía Proton) · Requiere el Modding de Blasphemous (BepInEx + ModdingAPI).
+> Versión actual: **v1.0.0** · Plataforma: Windows y Linux / Steam Deck · BepInEx y el Modding API se instalan automáticamente.
 
 ---
 
 ## Instalación rápida
 
-1. **Instala el Modding de Blasphemous** (BepInEx + Blasphemous.ModdingAPI) si no lo tienes. Debe existir `Modding/plugins/ModdingAPI.dll` dentro de la carpeta del juego.
-2. Descarga `BlasphemousCoopLocal-1.0.0.zip` desde la [página de Releases](https://github.com/DavidAgr5421/Blasphemous.CoopLocal/releases) y descomprímelo.
-3. Ejecuta el instalador:
-   - **Windows:** doble clic en `install.bat` (detecta el juego desde Steam; `uninstall.bat` para quitarlo).
-   - **Linux / Steam Deck:** `chmod +x install.sh && ./install.sh`
-   - **Manual (sin instalador):** copia **todo el contenido** de la carpeta `payload` dentro de la carpeta `Modding` del juego. Debe quedar `Modding/plugins/CoopLocal.dll`.
-4. Inicia el juego.
+No necesitas instalar BepInEx ni nada más antes: **el instalador descarga e instala BepInEx y el Modding API automáticamente** (última versión oficial) si no están.
 
-Todos los jugadores de una partida en línea deben tener **la misma versión** del mod. Instrucciones detalladas: [installer/INSTALL.md](installer/INSTALL.md).
+1. Descarga desde la [página de Releases](https://github.com/DavidAgr5421/Blasphemous.CoopLocal/releases):
+   - **`BlasphemousCoopLocal_Setup.exe`** (Windows, recomendado): doble clic, elige la carpeta del juego (se detecta sola) e instala.
+   - o **`BlasphemousCoopLocal-1.0.0.zip`** (sin setup): descomprime y ejecuta `install.bat` (Windows) o `./install.sh` (Linux / Steam Deck).
+2. Inicia el juego.
+
+Todos los jugadores de una partida en línea deben tener **la misma versión** del mod. Instalación manual y detalles: [installer/INSTALL.md](installer/INSTALL.md).
 
 ---
 

@@ -6,6 +6,7 @@
 [Setup]
 AppId={{B7A5C3E0-6C6B-4D3B-9E57-0C00FE100001}
 AppName={#AppName}
+AppVersion={#AppVersion}
 
 DefaultDirName={code:FindGameDir}
 DisableProgramGroupPage=yes
@@ -19,6 +20,7 @@ OutputBaseFilename=BlasphemousCoopLocal_Setup
 Compression=lzma2
 SolidCompression=yes
 PrivilegesRequired=lowest
+PrivilegesRequiredOverridesAllowed=dialog
 WizardStyle=modern
 
 [Languages]
@@ -26,6 +28,7 @@ Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Files]
+Source: "install.ps1"; DestDir: "{tmp}"; Flags: deleteafterinstall
 Source: "..\dist\payload\*"; DestDir: "{app}\Modding"; Flags: recursesubdirs createallsubdirs ignoreversion
 
 [Code]
@@ -62,10 +65,18 @@ begin
       MsgBox('No se encuentra Blasphemous.exe en esa carpeta. Elige la carpeta del juego.', mbError, MB_OK);
       Result := False;
     end
-    else if not FileExists(AddBackslash(WizardDirValue) + 'Modding\plugins\ModdingAPI.dll') then
-    begin
-      MsgBox('Falta el Modding de Blasphemous (BepInEx + ModdingAPI). Instalalo primero y vuelve a ejecutar este instalador.', mbError, MB_OK);
-      Result := False;
-    end;
+  end;
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+var Code: Integer;
+begin
+  if CurStep = ssPostInstall then
+  begin
+    WizardForm.StatusLabel.Caption := 'Instalando BepInEx y Modding API (requiere internet)...';
+    if not Exec('powershell.exe',
+      '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{tmp}\install.ps1') + '" -GamePath "' + ExpandConstant('{app}') + '" -DepsOnly -NoPause',
+      '', SW_HIDE, ewWaitUntilTerminated, Code) or (Code <> 0) then
+      MsgBox('No se pudo descargar/instalar BepInEx o el Modding API (revisa tu conexion a internet). El mod se copio, pero necesitas instalar esas dependencias: ejecuta de nuevo el setup con internet.', mbError, MB_OK);
   end;
 end;

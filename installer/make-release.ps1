@@ -21,6 +21,8 @@ try {
     $zip = Join-Path $dist "BlasphemousCoopLocal-$Version.zip"
     Compress-Archive -Path "$pkg\*" -DestinationPath $zip
     Write-Host "Paquete: $zip" -ForegroundColor Green
-    if (Get-Command iscc -ErrorAction SilentlyContinue) { iscc (Join-Path $PSScriptRoot 'CoopLocal.iss') } else { Write-Host "Inno Setup (iscc) no encontrado: omito setup.exe (opcional)." }
+    $iscc = (Get-Command iscc -ErrorAction SilentlyContinue).Source
+    if (-not $iscc) { foreach ($c in "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe", "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe") { if (Test-Path $c) { $iscc = $c; break } } }
+    if ($iscc) { & $iscc (Join-Path $PSScriptRoot 'CoopLocal.iss') } else { Write-Host 'Inno Setup no encontrado: omito setup.exe (winget install JRSoftware.InnoSetup).' }
 }
 finally { Pop-Location }
