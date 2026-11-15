@@ -29,6 +29,9 @@ internal static class CoopSettings
     private static bool AdminTools => DebugMode && adminTools;
 
     private static bool uiEditors, cameraChanger, adminTools;
+    private static bool autoUpdate = true;
+    /// <summary>Comprobar al abrir el juego si hay una versión nueva (y ofrecer actualizar).</summary>
+    internal static bool AutoUpdate { get { EnsureLoaded(); return autoUpdate; } }
     private static bool loaded;
 
     internal static void EnsureLoaded()
@@ -116,6 +119,10 @@ internal static class CoopSettings
             "# F6 fervor al maximo, F8 menu debug (habilidades/estadisticas),",
             "# F10+2/3/4 conectar o desconectar jugadores en caliente",
             "AdminTools = true",
+            "",
+            "# --- ACTUALIZACIONES ---------------------------------------------",
+            "# Al abrir el juego comprueba si hay una version nueva y te pregunta si quieres instalarla",
+            "AutoUpdate = true",
             ""
         });
     }
@@ -138,6 +145,7 @@ internal static class CoopSettings
             else if (key.Equals("UiEditors", StringComparison.OrdinalIgnoreCase)) uiEditors = b;
             else if (key.Equals("CameraChanger", StringComparison.OrdinalIgnoreCase)) cameraChanger = b;
             else if (key.Equals("AdminTools", StringComparison.OrdinalIgnoreCase)) adminTools = b;
+            else if (key.Equals("AutoUpdate", StringComparison.OrdinalIgnoreCase)) autoUpdate = b;
         }
     }
 

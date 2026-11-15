@@ -160,6 +160,7 @@ public class CoopLocal : BlasMod
         CoopGuestHeartEffects.EnsureCreated();
         PenitentOrphanGuard.EnsureCreated();
         CoopInputEdgePump.EnsureCreated();
+        CoopUpdater.EnsureCreated();
         Player2InventoryManager.SyncAllVanillaInventoryToCoopPlayers();
 
 
